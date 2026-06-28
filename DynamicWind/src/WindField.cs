@@ -57,6 +57,13 @@ public class WindField
     public readonly List<PressureCell> Cells = new();
 
     /// <summary>
+    /// Optional terrain-driven thermal pressure contribution at (x, z, totalHours). Set per side
+    /// (server uses world data; client samples its loaded world). + = low (warm land), − = high
+    /// (cool water). Added on top of the moving cell pressure in <see cref="PressureAt"/>.
+    /// </summary>
+    public Func<double, double, double, double>? ThermalPressureFunc;
+
+    /// <summary>
     /// Slow, deterministic large-scale meander in [-1, 1]. A handful of incommensurate sines gives an
     /// organic wander that is identical on server and client without needing a shared noise seed.
     /// </summary>
@@ -128,6 +135,7 @@ public class WindField
             double norm2 = dist2 / (cell.Radius * cell.Radius);
             p += cell.Strength * Math.Exp(-norm2);
         }
+        p += ThermalPressureFunc?.Invoke(x, z, totalHours) ?? 0.0;
         return p;
     }
 }

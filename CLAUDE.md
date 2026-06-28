@@ -18,6 +18,14 @@ systems, and couples the rest of the world to it:
   headwind −10% (piecewise by heading-vs-wind alignment). Tacking is out of scope.
 - **Weather** — `OnGetClimate` hook raises rainfall inside lows (storms form in low pressure) and lowers
   it in highs. Lows also add circulation, so storms = stronger, swirlier wind.
+- **Terrain thermal pressure** (`TerrainThermal`) — beyond the moving synoptic cells, pressure has a
+  terrain-driven baseline: warm, sun-exposed dry land → low (rising air), cool water → high (sinking air),
+  modulated by time of day + temperature. Added into `WindField.PressureAt` via `ThermalPressureFunc` (set
+  per side: each samples its own world's surface height + `GetClimateAt`). This is what gives the minimap
+  spatial pressure variation (blue land / crimson water) instead of a uniform tint, and biases storms toward
+  hot low-pressure land. NOTE: `WeatherCoupling.OnGetClimate` calls `PressureAt` → thermal → `GetClimateAt`,
+  so it uses a `[ThreadStatic]` reentrancy guard to avoid infinite recursion. (Thermal currently feeds
+  pressure/weather/visualization only, not wind direction — sea-breeze wind coupling is possible future work.)
 - **Terrain (orographic)** — server-side, via Algernons Terrain Sampler: slows wind over high terrain and
   deflects it around ridges / along valleys.
 - **Minimap overlay** (`WindArrowMapLayer`) — a fixed 24×24 grid of arrows on the minimap + world map.

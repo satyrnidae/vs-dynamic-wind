@@ -24,6 +24,8 @@ public class DynamicWindModClient : DynamicWindModCommon
         DynamicWindRuntime.ClientField = Field;
         DynamicWindRuntime.ClientConfig = Config;
 
+        Field.ThermalPressureFunc = (x, z, th) => TerrainThermal.PressureAt(api.World, x, z, th);
+
         api.Event.OnGetWindSpeed += OnGetWindSpeed;
 
         ClientChannel.SetMessageHandler<DynamicWindConfig>(OnConfigReceived);

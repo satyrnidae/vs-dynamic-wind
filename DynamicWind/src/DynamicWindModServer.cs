@@ -36,6 +36,8 @@ public class DynamicWindModServer : DynamicWindModCommon
             Mod.Logger.Error("[dynamicwind] Algernons Terrain Sampler not found — orographic effects disabled. (It is a required dependency.)");
         }
 
+        Field.ThermalPressureFunc = (x, z, th) => TerrainThermal.PressureAt(api.World, x, z, th);
+
         sim = new WindFieldSimulation(api, Field, Config);
 
         api.Event.SaveGameLoaded += () => sim.Load();
