@@ -24,6 +24,9 @@ public class PressureCell
     public double BornTotalHours;
     public double DiesTotalHours;
 
+    // Computed; excluded from protobuf (ImplicitFields.AllPublic would otherwise try to deserialize
+    // into this read-only property and throw).
+    [ProtoIgnore]
     public bool IsLow => Strength > 0f;
 }
 
