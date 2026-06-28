@@ -20,7 +20,8 @@ systems, and couples the rest of the world to it:
   it in highs. Lows also add circulation, so storms = stronger, swirlier wind.
 - **Terrain thermal pressure** (`TerrainThermal`) — beyond the moving synoptic cells, pressure has a
   terrain-driven baseline: warm, sun-exposed dry land → low (rising air), cool water → high (sinking air),
-  modulated by time of day + temperature. Added into `WindField.PressureAt` via `ThermalPressureFunc` (set
+  modulated by time of day + temperature. Water high pressure scales with **depth** (sea level −
+  `GetTerrainMapheightAt` seabed, full at `WaterFullDepth`≈20 blocks) so shallow coasts read near-neutral. Added into `WindField.PressureAt` via `ThermalPressureFunc` (set
   per side: each samples its own world's surface height + `GetClimateAt`). This is what gives the minimap
   spatial pressure variation (blue land / crimson water) instead of a uniform tint, and biases storms toward
   hot low-pressure land. NOTE: `WeatherCoupling.OnGetClimate` calls `PressureAt` → thermal → `GetClimateAt`,
