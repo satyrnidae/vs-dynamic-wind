@@ -20,7 +20,7 @@ systems, and couples the rest of the world to it:
   it in highs. Lows also add circulation, so storms = stronger, swirlier wind.
 - **Terrain (orographic)** — server-side, via Algernons Terrain Sampler: slows wind over high terrain and
   deflects it around ridges / along valleys.
-- **Minimap overlay** (`WindArrowMapLayer`) — a fixed 32×32 grid of arrows on the minimap + world map.
+- **Minimap overlay** (`WindArrowMapLayer`) — a fixed 24×24 grid of arrows on the minimap + world map.
   Each samples `GetWindSpeedAt` at its cell's world midpoint (player Y), rotates to the bearing, and scales
   its length by wind speed (~10% at 1% speed → 100% at full; hidden at 0%). The greyscale arrow art is tinted
   by pressure (from the synced field's `PressureAt`): low → sky blue `#66C4FF`, high → crimson `#FF4D35`,

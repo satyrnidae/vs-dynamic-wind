@@ -7,7 +7,7 @@ using Vintagestory.GameContent;
 namespace DynamicWind;
 
 /// <summary>
-/// Minimap / world-map overlay that draws wind direction as a fixed 32×32 grid of arrows across the
+/// Minimap / world-map overlay that draws wind direction as a fixed 24×24 grid of arrows across the
 /// map element. Each arrow samples the real wind (<c>GetWindSpeedAt</c>) at the world midpoint of its
 /// cell, at the player's Y level, and is rotated to the wind bearing. Because the grid is fixed in
 /// screen space, zooming the map out makes each arrow cover more world distance.
@@ -18,7 +18,7 @@ namespace DynamicWind;
 /// </summary>
 public class WindArrowMapLayer : MapLayer
 {
-    public const int Grid = 32;
+    public const int Grid = 24;
     private const double RefSpeed = 1.0;       // wind speed treated as "100%"
     private const double RecomputeInterval = 0.15; // seconds between resamples
 
