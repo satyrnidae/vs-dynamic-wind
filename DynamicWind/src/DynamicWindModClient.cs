@@ -1,6 +1,7 @@
 using HarmonyLib;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
+using Vintagestory.GameContent;
 
 namespace DynamicWind;
 
@@ -30,6 +31,10 @@ public class DynamicWindModClient : DynamicWindModCommon
 
         harmony = new Harmony("dynamicwind.client");
         CloudRendererPatch.Apply(harmony, api, Mod.Logger);
+
+        // Wind-direction arrow overlay on the minimap + world map. Registered before the map manager
+        // instantiates layers (OnLvlFinalize), so it is picked up automatically.
+        api.ModLoader.GetModSystem<WorldMapManager>()?.RegisterMapLayer<WindArrowMapLayer>("dynamicwindarrows", 1.0);
 
         // Optional ConfigLib GUI. Isolated + guarded so a missing configlib.dll can never trip a
         // type-load failure (see DynamicWindConfigLib).
