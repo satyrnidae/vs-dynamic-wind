@@ -26,11 +26,16 @@ public class WindArrowMapLayer : MapLayer
     private MeshRef? quadModel;
     private int arrowTexId;
     private readonly Matrixf mvMat = new();
-    private readonly Vec4f white = new(1f, 1f, 1f, 1f);
+
+    // Pressure tint endpoints (arrow art is greyscale; rgbaIn multiplies it).
+    private static readonly Vec4f White = new(1f, 1f, 1f, 1f);
+    private static readonly Vec4f LowColor = new(0x66 / 255f, 0xC4 / 255f, 0xFF / 255f, 1f);  // sky blue #66C4FF
+    private static readonly Vec4f HighColor = new(0xFF / 255f, 0x4D / 255f, 0x35 / 255f, 1f); // crimson #FF4D35
 
     // Per-cell cache (index = row*Grid + col).
     private readonly float[] cAngle = new float[Grid * Grid];
     private readonly float[] cVScale = new float[Grid * Grid];
+    private readonly Vec4f[] cColor = new Vec4f[Grid * Grid];
     private readonly bool[] cVisible = new bool[Grid * Grid];
     private double accum;
     private bool haveCache;
@@ -72,7 +77,6 @@ public class WindArrowMapLayer : MapLayer
         float renderY = (float)b.renderY;
 
         IShaderProgram shader = capi.Render.GetEngineShader((EnumShaderProgram)17);
-        shader.Uniform("rgbaIn", white);
         shader.Uniform("extraGlow", 0);
         shader.Uniform("applyColor", 0);
         shader.Uniform("noTexture", 0f);
@@ -89,6 +93,7 @@ public class WindArrowMapLayer : MapLayer
                 float px = renderX + (float)((col + 0.5) * cellW);
                 float py = renderY + (float)((row + 0.5) * cellH);
 
+                shader.Uniform("rgbaIn", cColor[idx]); // pressure tint (multiplies greyscale art)
                 mvMat.Set(capi.Render.CurrentModelviewMatrix)
                     .Translate(px, py, 60f)
                     .RotateZ(cAngle[idx])
@@ -105,6 +110,8 @@ public class WindArrowMapLayer : MapLayer
         Cuboidd vb = mapElem.CurrentBlockViewBounds;
         double playerY = capi!.World.Player?.Entity?.Pos.Y ?? capi.World.SeaLevel;
         var pos = new Vec3d();
+        WindField? field = DynamicWindRuntime.ClientField;
+        double th = capi.World.Calendar.TotalHours;
 
         for (int row = 0; row < Grid; row++)
         {
@@ -130,10 +137,19 @@ public class WindArrowMapLayer : MapLayer
                 // Rotate model up (0,-1) onto the wind screen vector (w.X, w.Z).
                 cAngle[idx] = (float)Math.Atan2(w.X, -w.Z);
                 cVScale[idx] = (float)vfrac;
+
+                // Pressure tint: low (+) → sky blue, high (−) → crimson, neutral → white.
+                double p = field?.PressureAt(wx, wz, th) ?? 0.0;
+                float t = (float)Math.Min(1.0, Math.Abs(p));
+                cColor[idx] = LerpColor(White, p >= 0 ? LowColor : HighColor, t);
+
                 cVisible[idx] = true;
             }
         }
     }
+
+    private static Vec4f LerpColor(Vec4f a, Vec4f b, float t)
+        => new(a.R + (b.R - a.R) * t, a.G + (b.G - a.G) * t, a.B + (b.B - a.B) * t, 1f);
 
     public override void Dispose()
     {
