@@ -36,7 +36,14 @@ public class DynamicWindModServer : DynamicWindModCommon
             Mod.Logger.Error("[dynamicwind] Algernons Terrain Sampler not found — orographic effects disabled. (It is a required dependency.)");
         }
 
-        Field.ThermalPressureFunc = (x, z, th) => TerrainThermal.PressureAt(api.World, x, z, th);
+        var thermalCache = new ThermalCache((x, z, th) => TerrainThermal.PressureAt(api.World, x, z, th));
+        Field.ThermalPressureFunc = thermalCache.Get;
+        if (sampler != null)
+        {
+            // Algernons Terrain Sampler gives terrain height at any coordinate without chunk gen.
+            var heightCache = new ThermalCache((x, z, _) => sampler.GetBlockColumnHeight((int)x, (int)z), tile: 8.0, bucketHours: 1e9);
+            Field.TerrainHeightFunc = (x, z) => heightCache.Get(x, z, 0);
+        }
 
         sim = new WindFieldSimulation(api, Field, Config);
 
@@ -96,13 +103,6 @@ public class DynamicWindModServer : DynamicWindModCommon
 
         ServerChannel.BroadcastPacket(Config);
         Mod.Logger.Notification("[dynamicwind] Config updated by {0} and broadcast to all clients.", fromPlayer.PlayerName);
-    }
-
-    /// <summary>Slow over high terrain and deflect along height gradients (server-only; needs the sampler).</summary>
-    protected override void ApplyOrographic(Vec3d pos, ref double nx, ref double nz, ref double strengthMul)
-    {
-        if (sampler == null || !Config.Orographic.Enabled) return;
-        OrographicSampler.Apply(sampler, Config.Orographic, pos, ref nx, ref nz, ref strengthMul);
     }
 
     public override void Dispose()

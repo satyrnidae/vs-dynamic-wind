@@ -26,9 +26,20 @@ systems, and couples the rest of the world to it:
   hot low-pressure land. NOTE: `WeatherCoupling.OnGetClimate` calls `PressureAt` → thermal → `GetClimateAt`,
   so it uses a `[ThreadStatic]` reentrancy guard to avoid infinite recursion. (Thermal currently feeds
   pressure/weather/visualization only, not wind direction — sea-breeze wind coupling is possible future work.)
-- **Terrain (orographic)** — server-side, via Algernons Terrain Sampler: slows wind over high terrain and
-  deflects it around ridges / along valleys.
-- **Minimap overlay** (`WindArrowMapLayer`) — a fixed 24×24 grid of arrows on the minimap + world map.
+- **Pressure-gradient wind** — wind bleeds down the pressure gradient (high → low), so the synoptic cells
+  AND the terrain thermal contrast (water→land sea breeze) actually push the air. `WindField.WindAt` adds
+  `PressureWindStrength · ∇P` (numeric gradient of `PressureAt`, clamped). Runs on both sides.
+- **Terrain (orographic)** — in `WindField.WindAt` on BOTH sides via a per-side `TerrainHeightFunc`
+  (server: Algernons Terrain Sampler at any coord; client: rain-map height for loaded chunks, so the minimap
+  shows it). Wind climbing into a slope slows (stagnation) and curves along the contour around the obstacle;
+  wind sheltered by higher terrain upwind slows in the lee wake. Tunables in `OrographicConfig`
+  (`SlowdownFactor`, `DeflectionStrength`, `WakeFactor`).
+- The thermal-pressure and terrain-height lookups are wrapped in `ThermalCache` (coarse tile + time bucket,
+  thread-safe) because `WindAt` samples them several times per call on a hot path; this also keeps the
+  weather-coupling re-entry rare.
+- **Wind overlay** (`WindArrowMapLayer`) — a fixed 24×24 grid of arrows on the **full world map only**
+  (skips the minimap HUD via the `GuiElementMap.snapToPlayer` flag). Arrow length scales **logarithmically**
+  with wind speed so low speeds stay legible.
   Each samples `GetWindSpeedAt` at its cell's world midpoint (player Y), rotates to the bearing, and scales
   its length by wind speed (~10% at 1% speed → 100% at full; hidden at 0%). The greyscale arrow art is tinted
   by pressure (from the synced field's `PressureAt`): low → sky blue `#66C4FF`, high → crimson `#FF4D35`,

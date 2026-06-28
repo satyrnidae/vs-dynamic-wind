@@ -26,6 +26,11 @@ public class DynamicWindConfig
     [Description("Maximum meander of the jetstream bearing, in radians. 0 = perfectly straight east.")]
     public float JetstreamMeanderAmplitude { get; set; } = 0.5f;
 
+    [Category("Jetstream")]
+    [Range(0.0, 500.0)]
+    [Description("How strongly wind flows down the pressure gradient (high → low). 0 disables pressure-driven wind.")]
+    public float PressureWindStrength { get; set; } = 150f;
+
     // ── Pressure systems ────────────────────────────────────────────────────
     [Category("PressureSystems")]
     [Range(0.0, 24.0)]
@@ -73,6 +78,7 @@ public class DynamicWindConfig
     {
         BaseJetstreamStrength = Clamp(BaseJetstreamStrength, 0f, 3f);
         JetstreamMeanderAmplitude = Clamp(JetstreamMeanderAmplitude, 0f, 1.5f);
+        PressureWindStrength = Clamp(PressureWindStrength, 0f, 500f);
         LowSpawnRatePerDay = Clamp(LowSpawnRatePerDay, 0f, 24f);
         HighSpawnRatePerDay = Clamp(HighSpawnRatePerDay, 0f, 24f);
         CellRadiusMin = Clamp(CellRadiusMin, 50f, 8000f);
@@ -100,6 +106,7 @@ public class DynamicWindConfig
         if (o == null) return;
         BaseJetstreamStrength = o.BaseJetstreamStrength;
         JetstreamMeanderAmplitude = o.JetstreamMeanderAmplitude;
+        PressureWindStrength = o.PressureWindStrength;
         LowSpawnRatePerDay = o.LowSpawnRatePerDay;
         HighSpawnRatePerDay = o.HighSpawnRatePerDay;
         CellRadiusMin = o.CellRadiusMin;
@@ -111,6 +118,7 @@ public class DynamicWindConfig
         Orographic.HeightThreshold = o.Orographic.HeightThreshold;
         Orographic.SlowdownFactor = o.Orographic.SlowdownFactor;
         Orographic.DeflectionStrength = o.Orographic.DeflectionStrength;
+        Orographic.WakeFactor = o.Orographic.WakeFactor;
         Windmill.Directionality = o.Windmill.Directionality;
         Windmill.MinEfficiency = o.Windmill.MinEfficiency;
         Sailboat.Enabled = o.Sailboat.Enabled;
@@ -138,14 +146,20 @@ public class OrographicConfig
 
     [Category("Orographic")]
     [Range(0.0, 3.0)]
-    [Description("How strongly terrain gradients deflect/channel the wind direction.")]
+    [Description("How strongly terrain gradients deflect/curve the wind around obstacles.")]
     public float DeflectionStrength { get; set; } = 1.0f;
+
+    [Category("Orographic")]
+    [Range(0.0, 1.0)]
+    [Description("Wind speed loss in the sheltered lee (downwind) of higher terrain.")]
+    public float WakeFactor { get; set; } = 0.5f;
 
     public void Validate()
     {
         HeightThreshold = DynamicWindConfig.Clamp(HeightThreshold, 0f, 255f);
         SlowdownFactor = DynamicWindConfig.Clamp(SlowdownFactor, 0f, 1f);
         DeflectionStrength = DynamicWindConfig.Clamp(DeflectionStrength, 0f, 3f);
+        WakeFactor = DynamicWindConfig.Clamp(WakeFactor, 0f, 1f);
     }
 }
 
@@ -157,13 +171,13 @@ public class WindmillConfig
     public bool Directionality { get; set; } = true;
 
     [Category("Windmill")]
-    [Range(-1.0, 1.0)]
-    [Description("Floor for the directional efficiency. -1 allows full reverse under a head-on backwind; 0 stops instead of reversing.")]
-    public float MinEfficiency { get; set; } = -1.0f;
+    [Range(0.0, 1.0)]
+    [Description("Minimum directional efficiency floor so mills don't fully stall when wind is perpendicular to the axle. 0 = can stall completely.")]
+    public float MinEfficiency { get; set; } = 0.0f;
 
     public void Validate()
     {
-        MinEfficiency = DynamicWindConfig.Clamp(MinEfficiency, -1f, 1f);
+        MinEfficiency = DynamicWindConfig.Clamp(MinEfficiency, 0f, 1f);
     }
 }
 

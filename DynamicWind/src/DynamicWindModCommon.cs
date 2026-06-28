@@ -64,6 +64,11 @@ public abstract class DynamicWindModCommon : ModSystem
         Field.BaseStrength = Config.BaseJetstreamStrength;
         Field.MeanderAmplitude = Config.JetstreamMeanderAmplitude;
         Field.CyclonicInflowAngle = Config.CyclonicInflowAngleDeg * GameMath.DEG2RAD;
+        Field.GradientWindScale = Config.PressureWindStrength;
+        Field.OrographicEnabled = Config.Orographic.Enabled;
+        Field.OroSlowdown = Config.Orographic.SlowdownFactor;
+        Field.OroDeflection = Config.Orographic.DeflectionStrength;
+        Field.OroWake = Config.Orographic.WakeFactor;
     }
 
     /// <summary>
@@ -81,19 +86,8 @@ public abstract class DynamicWindModCommon : ModSystem
         double strengthMul = w.Length();
         if (strengthMul < 1e-6) return; // leave vanilla value (calm)
 
-        double nx = w.X / strengthMul;
-        double nz = w.Y / strengthMul;
-
-        ApplyOrographic(pos, ref nx, ref nz, ref strengthMul);
-
         double speed = mag * strengthMul;
-        windSpeed.X = speed * nx;
-        windSpeed.Z = speed * nz;
+        windSpeed.X = speed * w.X / strengthMul;
+        windSpeed.Z = speed * w.Y / strengthMul;
     }
-
-    /// <summary>
-    /// Server-only terrain correction (deflect over gradients, slow over high terrain). No-op on the
-    /// client because Algernons Terrain Sampler is server-side; client visuals use the base field.
-    /// </summary>
-    protected virtual void ApplyOrographic(Vec3d pos, ref double nx, ref double nz, ref double strengthMul) { }
 }

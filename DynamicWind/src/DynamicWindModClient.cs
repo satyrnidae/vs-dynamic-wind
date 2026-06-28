@@ -24,7 +24,12 @@ public class DynamicWindModClient : DynamicWindModCommon
         DynamicWindRuntime.ClientField = Field;
         DynamicWindRuntime.ClientConfig = Config;
 
-        Field.ThermalPressureFunc = (x, z, th) => TerrainThermal.PressureAt(api.World, x, z, th);
+        var thermalCache = new ThermalCache((x, z, th) => TerrainThermal.PressureAt(api.World, x, z, th));
+        Field.ThermalPressureFunc = thermalCache.Get;
+        // Client has no terrain sampler; use the rain-map height (loaded chunks) so the minimap shows
+        // orographic curving around terrain near the player.
+        var heightCache = new ThermalCache((x, z, _) => api.World.BlockAccessor.GetRainMapHeightAt((int)x, (int)z), tile: 8.0, bucketHours: 1e9);
+        Field.TerrainHeightFunc = (x, z) => heightCache.Get(x, z, 0);
 
         api.Event.OnGetWindSpeed += OnGetWindSpeed;
 

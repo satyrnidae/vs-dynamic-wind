@@ -64,6 +64,29 @@ public class WindField
     public Func<double, double, double, double>? ThermalPressureFunc;
 
     /// <summary>
+    /// Optional terrain surface height (blocks) at (x, z). Server: Algernons Terrain Sampler; client:
+    /// rain-map height for loaded chunks. Drives orographic deflection/slowdown in <see cref="WindAt"/>.
+    /// </summary>
+    public Func<double, double, double>? TerrainHeightFunc;
+
+    /// <summary>Strength of down-gradient (high→low) pressure flow added to the wind. 0 = off.</summary>
+    public double GradientWindScale;
+
+    // Orographic (terrain) interaction.
+    public bool OrographicEnabled;
+    public double OroSlowdown = 0.5;   // windward speed loss climbing into terrain (0..1)
+    public double OroDeflection = 1.0; // how strongly flow curves around obstacles
+    public double OroWake = 0.5;       // lee-side (downwind) speed loss in a hill's shadow (0..1)
+
+    private const double GradSampleDist = 48.0;
+    private const double GradMaxWind = 1.5;
+    private const double OroGradDist = 24.0;   // terrain gradient sample spacing
+    private const double OroSlopeSens = 3.0;   // slope (blocks/block) → climb factor
+    private const double OroWakeProbe = 48.0;  // how far upwind to look for a sheltering rise
+    private const double OroWakeMinRise = 8.0; // upwind terrain must be this much higher to count
+    private const double OroWakeScale = 40.0;  // rise over this → full wake
+
+    /// <summary>
     /// Slow, deterministic large-scale meander in [-1, 1]. A handful of incommensurate sines gives an
     /// organic wander that is identical on server and client without needing a shared noise seed.
     /// </summary>
@@ -118,7 +141,77 @@ public class WindField
             wz += scale * (cosIn * tz - sinIn * rz);
         }
 
+        // 3. Down-gradient flow: air bleeds from high toward low pressure (+∇P points to lows).
+        if (GradientWindScale > 0)
+        {
+            double d = GradSampleDist;
+            double gx = (PressureAt(x + d, z, totalHours) - PressureAt(x - d, z, totalHours)) / (2 * d);
+            double gz = (PressureAt(x, z + d, totalHours) - PressureAt(x, z - d, totalHours)) / (2 * d);
+            double gwx = GradientWindScale * gx;
+            double gwz = GradientWindScale * gz;
+            double gm = Math.Sqrt(gwx * gwx + gwz * gwz);
+            if (gm > GradMaxWind) { double s = GradMaxWind / gm; gwx *= s; gwz *= s; }
+            wx += gwx;
+            wz += gwz;
+        }
+
+        // 4. Orographic interaction with terrain.
+        if (OrographicEnabled && TerrainHeightFunc != null)
+        {
+            ApplyOrographic(ref wx, ref wz, x, z);
+        }
+
         return new Vec2d(wx, wz);
+    }
+
+    /// <summary>
+    /// Terrain interaction: wind climbing into a slope slows (stagnation) and curves along the contour
+    /// around the obstacle; wind sheltered by higher terrain upwind slows in the lee wake.
+    /// </summary>
+    private void ApplyOrographic(ref double wx, ref double wz, double x, double z)
+    {
+        double spd = Math.Sqrt(wx * wx + wz * wz);
+        if (spd < 1e-4) return;
+        double dirx = wx / spd;
+        double dirz = wz / spd;
+
+        Func<double, double, double> H = TerrainHeightFunc!;
+        double d = OroGradDist;
+        double h = H(x, z);
+        double hx = (H(x + d, z) - H(x - d, z)) / (2 * d);
+        double hz = (H(x, z + d) - H(x, z - d)) / (2 * d);
+        double gmag = Math.Sqrt(hx * hx + hz * hz);
+
+        // Windward: climbing into rising terrain → slow + deflect along the contour toward lower ground.
+        double along = dirx * hx + dirz * hz; // > 0 = uphill ahead
+        if (gmag > 1e-5 && along > 0)
+        {
+            double climb = along * OroSlopeSens;
+            if (climb > 1) climb = 1;
+
+            double cx = -hz / gmag, cz = hx / gmag; // contour (perpendicular to gradient)
+            if (dirx * cx + dirz * cz < 0) { cx = -cx; cz = -cz; } // keep generally forward
+            double k = OroDeflection * climb;
+            double ndx = dirx * (1 - k) + cx * k;
+            double ndz = dirz * (1 - k) + cz * k;
+            double nl = Math.Sqrt(ndx * ndx + ndz * ndz);
+            if (nl > 1e-6) { dirx = ndx / nl; dirz = ndz / nl; }
+
+            spd *= 1.0 - OroSlowdown * climb;
+        }
+
+        // Lee wake: terrain upwind significantly higher than here → sheltered, low wind.
+        double hUp = H(x - dirx * OroWakeProbe, z - dirz * OroWakeProbe);
+        double rise = hUp - h;
+        if (rise > OroWakeMinRise)
+        {
+            double wake = (rise - OroWakeMinRise) / OroWakeScale;
+            if (wake > 1) wake = 1;
+            spd *= 1.0 - OroWake * wake;
+        }
+
+        wx = dirx * spd;
+        wz = dirz * spd;
     }
 
     /// <summary>Signed pressure at a position (sum of cell contributions). + = low, - = high.</summary>

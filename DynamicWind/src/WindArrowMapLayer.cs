@@ -1,4 +1,6 @@
 using System;
+using System.Reflection;
+using HarmonyLib;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
@@ -7,14 +9,14 @@ using Vintagestory.GameContent;
 namespace DynamicWind;
 
 /// <summary>
-/// Minimap / world-map overlay that draws wind direction as a fixed 24×24 grid of arrows across the
-/// map element. Each arrow samples the real wind (<c>GetWindSpeedAt</c>) at the world midpoint of its
-/// cell, at the player's Y level, and is rotated to the wind bearing. Because the grid is fixed in
-/// screen space, zooming the map out makes each arrow cover more world distance.
+/// World-map overlay (full map only, NOT the minimap HUD) that draws wind direction as a fixed 24×24
+/// grid of arrows across the map element. Each arrow samples the real wind (<c>GetWindSpeedAt</c>) at
+/// the world midpoint of its cell, at the player's Y level, and is rotated to the wind bearing. Because
+/// the grid is fixed in screen space, zooming the map out makes each arrow cover more world distance.
 ///
-/// The arrow's length (its vertical axis) scales with wind speed: ~10% at 1% speed up to 100% at full
-/// speed (base footprint = half a grid cell); cells with no wind are hidden. Samples are recomputed a
-/// few times per second and cached, so the per-frame cost stays low even with 1024 cells.
+/// The arrow's length (its vertical axis) scales logarithmically with wind speed so low speeds stay
+/// legible (base footprint = half a grid cell); cells with no wind are hidden. Samples are recomputed a
+/// few times per second and cached, so the per-frame cost stays low.
 /// </summary>
 public class WindArrowMapLayer : MapLayer
 {
@@ -26,6 +28,7 @@ public class WindArrowMapLayer : MapLayer
     private MeshRef? quadModel;
     private int arrowTexId;
     private readonly Matrixf mvMat = new();
+    private static readonly FieldInfo? fSnapToPlayer = AccessTools.Field(typeof(GuiElementMap), "snapToPlayer");
 
     // Pressure tint endpoints (arrow art is greyscale; rgbaIn multiplies it).
     private static readonly Vec4f White = new(1f, 1f, 1f, 1f);
@@ -59,6 +62,9 @@ public class WindArrowMapLayer : MapLayer
     public override void Render(GuiElementMap mapElem, float dt)
     {
         if (!Active || capi == null || quadModel == null) return;
+
+        // Only on the full world map, not the minimap HUD (which snaps to the player).
+        if (fSnapToPlayer?.GetValue(mapElem) is bool snap && snap) return;
 
         accum += dt;
         if (!haveCache || accum >= RecomputeInterval)
@@ -130,7 +136,9 @@ public class WindArrowMapLayer : MapLayer
 
                 double f = speed / RefSpeed;
                 if (f > 1) f = 1;
-                double vfrac = 0.1 + 0.9 * f; // 1% speed → ~10% length, 100% → 100%
+                // Logarithmic length so low wind speeds stay legible (linear made them too small <50%).
+                double g = Math.Log(1 + 9 * f) / Math.Log(10); // 0..1, boosts the low end
+                double vfrac = 0.1 + 0.9 * g;
                 if (vfrac > 1) vfrac = 1;
 
                 // Arrow art points up (north, screen -Y). Map +X=East=screen right, +Z=South=screen down.
