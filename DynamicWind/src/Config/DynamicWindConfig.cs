@@ -27,12 +27,12 @@ public class DynamicWindConfig
     [Category("Jetstream")]
     [Range(0.0, 1.5)]
     [Description("Maximum meander of the jetstream bearing, in radians. 0 = perfectly straight east.")]
-    public float JetstreamMeanderAmplitude { get; set; } = 0.5f;
+    public float JetstreamMeanderAmplitude { get; set; } = 0.9f;
 
     [Category("Jetstream")]
     [Range(0.1, 4.0)]
     [Description("Frequency of the jetstream meander: higher makes the bearing snake more across north/south distance and evolve faster over time.")]
-    public float JetstreamMeanderFrequency { get; set; } = 1.5f;
+    public float JetstreamMeanderFrequency { get; set; } = 2.0f;
 
     [Category("Jetstream")]
     [Range(0.0, 1.0)]

@@ -36,7 +36,7 @@ public class WindFieldSimulation
     // clustered far to the west. Cell radii are a fraction of this range so neighbours overlap into
     // broad, merging blobs.
     private const double SpawnRangeBlocks = 6000.0; // half-extent of the spawn scatter box
-    private const double SpawnWestLean = 0.3;       // fraction of the range the box is shifted west
+    private const double SpawnUpwindLean = 0.3;     // min upwind offset (fraction of range) along the jet bearing
 
     // Terrain thermal seeding: spawn mobile cells from terrain hotspots near players.
     private const double ThermalSeedRatePerDay = 14.0;   // seed attempts per game day (terrain reacts faster)
@@ -270,22 +270,31 @@ public class WindFieldSimulation
         // apart). Config radii act as safety clamps.
         float radius = GameMath.Clamp((float)((0.15 + rand.NextDouble() * 0.2) * SpawnRangeBlocks), config.CellRadiusMin, config.CellRadiusMax);
 
-        // Jetstream advection speed in blocks/hour (eastbound), scaled by base strength.
+        // Mean jetstream bearing (seasonally tilted N/S). Systems spawn UPWIND along this bearing and
+        // scatter to either side of it, so they drift back down the jet THROUGH the player's area rather
+        // than being carried off to the north/south when the stream tilts with the season — the old
+        // due-west lean made seasonally-tilted systems sail past the player. The wide cross-stream
+        // scatter still spreads systems across the map.
+        double jetAng = field.SeasonalBiasMaxAngle * field.SeasonalBiasZ;
+        double fx = Math.Cos(jetAng), fz = Math.Sin(jetAng); // downwind unit vector
+        double sxn = -fz, szn = fx;                          // cross-stream unit vector
+
+        // Advection speed in blocks/hour along the bearing, scaled by base strength.
         double advect = (300.0 + rand.NextDouble() * 300.0) * Math.Max(0.2, config.BaseJetstreamStrength);
-        double velX = advect;
-        double velZ = (rand.NextDouble() - 0.5) * advect * 0.3;
+        double velX = fx * advect;
+        double velZ = fz * advect;
 
         // Lifetime: lows are shorter-lived/sharper than highs.
         double durationHours = isLow ? (12 + rand.NextDouble() * 24) : (24 + rand.NextDouble() * 48);
 
-        // Scatter across a wide box centred on the population centre but leaning west, so systems exist
-        // all across the map (and generally approach from the west) rather than all bunching far upwind.
-        double startX = cx - SpawnWestLean * SpawnRangeBlocks + (rand.NextDouble() - 0.5) * 2.0 * SpawnRangeBlocks;
-        double startZ = cz + (rand.NextDouble() - 0.5) * 2.0 * SpawnRangeBlocks;
+        double along = -SpawnRangeBlocks * (SpawnUpwindLean + rand.NextDouble() * (1.0 - SpawnUpwindLean)); // upwind
+        double cross = (rand.NextDouble() - 0.5) * 2.0 * SpawnRangeBlocks;                                  // across the map
+        double startX = cx + fx * along + sxn * cross;
+        double startZ = cz + fz * along + szn * cross;
 
-        // Highs are spawned as strong as lows: a high starts far to the west and must travel (and slowly
-        // decay) across the populated area before it can pair with a low into a front. Starting them weak
-        // (the old -0.3..-1.0) left them below the marker/front threshold by the time they arrived, so the
+        // Highs are spawned as strong as lows: a high starts upwind and must travel (and slowly decay)
+        // across the populated area before it can pair with a low into a front. Starting them weak (the
+        // old -0.3..-1.0) left them below the marker/front threshold by the time they arrived, so the
         // overlay showed only lows and never drew a front line.
         float strength = isLow
             ? (float)(0.6 + rand.NextDouble() * 1.0)
