@@ -11,6 +11,12 @@ systems, and couples the rest of the world to it:
 - **Particles, foliage sway, blowing snow, dropped items (incl. maple seeds), ground-movement wind** —
   follow the true wind vector *for free*, because vanilla routes them through `GetWindSpeedAt` and we
   rewrite that vector's X/Z in an `OnGetWindSpeed` hook. No patches for these.
+- **Wind speed is additive, not multiplicative.** The hook keeps vanilla's own wind speed (SimplexNoise
+  over time — its natural variation, *not* diurnal) as the baseline jetstream speed, points it along our
+  direction, then ADDS front wind = `FrontWindStrength · max(0, |WindAt| − BaseStrength)` (the amount the
+  pressure cells/gradients push the field above its calm baseline). So a calm vanilla pattern can't zero
+  the wind globally, fronts still blow when vanilla is calm, and an area with no pressure differential
+  falls back to vanilla's (possibly near-zero) speed — local calm is fine, global night-death is not.
 - **Clouds** — Harmony postfix on `CloudRenderer.CloudTick` rotates the cloud-drift vector to the wind bearing.
 - **Windmills** — Harmony postfix on `BEBehaviorWindmillRotor.CheckWindSpeed`: power × cos(angle between
   wind and rotor axle). Head-on = full, perpendicular = stalled, from-behind = negative → spins backwards.

@@ -36,6 +36,11 @@ public class DynamicWindConfig
     public float PressureWindStrength { get; set; } = 150f;
 
     [Category("Jetstream")]
+    [Range(0.0, 2.0)]
+    [Description("Extra wind speed added by pressure fronts on top of vanilla's wind (additive, so fronts blow even when vanilla wind is calm). 0 = fronts add no wind, wind is purely vanilla's speed in our direction.")]
+    public float FrontWindStrength { get; set; } = 0.3f;
+
+    [Category("Jetstream")]
     [Description("Shift the westerly bias north/south with the seasons (poleward in summer → southwesterly, equatorward in winter → northwesterly; mirrored per hemisphere).")]
     public bool SeasonalBias { get; set; } = true;
 
@@ -171,6 +176,7 @@ public class DynamicWindConfig
         BaseJetstreamStrength = Clamp(BaseJetstreamStrength, 0f, 3f);
         JetstreamMeanderAmplitude = Clamp(JetstreamMeanderAmplitude, 0f, 1.5f);
         PressureWindStrength = Clamp(PressureWindStrength, 0f, 500f);
+        FrontWindStrength = Clamp(FrontWindStrength, 0f, 2f);
         SeasonalBiasMaxAngleDeg = Clamp(SeasonalBiasMaxAngleDeg, 0f, 80f);
         LowSpawnRatePerDay = Clamp(LowSpawnRatePerDay, 0f, 24f);
         HighSpawnRatePerDay = Clamp(HighSpawnRatePerDay, 0f, 24f);
@@ -209,6 +215,7 @@ public class DynamicWindConfig
         BaseJetstreamStrength = o.BaseJetstreamStrength;
         JetstreamMeanderAmplitude = o.JetstreamMeanderAmplitude;
         PressureWindStrength = o.PressureWindStrength;
+        FrontWindStrength = o.FrontWindStrength;
         SeasonalBias = o.SeasonalBias;
         SeasonalBiasMaxAngleDeg = o.SeasonalBiasMaxAngleDeg;
         LowSpawnRatePerDay = o.LowSpawnRatePerDay;

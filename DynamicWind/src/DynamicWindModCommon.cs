@@ -75,22 +75,29 @@ public abstract class DynamicWindModCommon : ModSystem
     }
 
     /// <summary>
-    /// Directional wind hook. Vanilla's weather system runs first and stores the scalar wind strength
-    /// in <c>windSpeed.X</c>; we read that as the magnitude and rewrite X/Z to point along the true
-    /// wind direction from <see cref="WindField.WindAt"/>, scaled by the field's strength multiplier.
-    /// Every consumer that calls <c>GetWindSpeedAt</c> (particles, foliage, blowing snow, dropped
-    /// items incl. maple seeds, ground-movement wind) then follows the real direction for free.
+    /// Directional wind hook. Vanilla's weather system runs first and stores its own scalar wind speed
+    /// (SimplexNoise over time, not diurnal) in <c>windSpeed.X</c>. We keep that as the baseline
+    /// jetstream speed and just point it along the true wind direction from <see cref="WindField.WindAt"/>;
+    /// then pressure fronts (cells/gradients that push the field magnitude above the calm baseline) ADD
+    /// wind on top. This is additive, NOT multiplicative — so a calm vanilla pattern can't zero the wind
+    /// globally, fronts still blow when vanilla is calm, and an area with no pressure differential simply
+    /// falls back to vanilla's own (possibly near-zero) speed. Every consumer that calls
+    /// <c>GetWindSpeedAt</c> (particles, foliage, blowing snow, dropped items, ground-movement) follows it.
     /// </summary>
     protected void OnGetWindSpeed(Vec3d pos, ref Vec3d windSpeed)
     {
-        double mag = windSpeed.X;
+        double vsSpeed = windSpeed.X; // vanilla's own wind-speed variation
         Vec2d w = Field.WindAt(pos.X, pos.Z, Api.World.Calendar.TotalHours);
 
-        double strengthMul = w.Length();
-        if (strengthMul < 1e-6) return; // leave vanilla value (calm)
+        double mag = w.Length();
+        if (mag < 1e-6) return; // degenerate field → leave vanilla value
 
-        double speed = mag * strengthMul;
-        windSpeed.X = speed * w.X / strengthMul;
-        windSpeed.Z = speed * w.Y / strengthMul;
+        // Front contribution: how far the field magnitude exceeds the calm baseline (cells, gradients).
+        double frontExcess = mag - Field.BaseStrength;
+        if (frontExcess < 0) frontExcess = 0;
+        double speed = vsSpeed + Config.FrontWindStrength * frontExcess;
+
+        windSpeed.X = speed * w.X / mag;
+        windSpeed.Z = speed * w.Y / mag;
     }
 }

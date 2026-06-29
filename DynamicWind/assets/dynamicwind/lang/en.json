@@ -2,6 +2,7 @@
     "setting-BaseJetstreamStrength": "Jetstream strength",
     "setting-JetstreamMeanderAmplitude": "Jetstream meander amplitude",
     "setting-PressureWindStrength": "Pressure-gradient wind strength",
+    "setting-FrontWindStrength": "Front wind strength (added on top)",
     "setting-SeasonalBias": "Seasonal N/S bias",
     "setting-SeasonalBiasMaxAngleDeg": "Seasonal bias max angle (deg)",
 
