@@ -146,8 +146,10 @@ public class WindArrowMapLayer : MapLayer
                 cAngle[idx] = (float)Math.Atan2(w.X, -w.Z);
                 cVScale[idx] = (float)vfrac;
 
-                // Pressure tint: low (+) → sky blue, high (−) → crimson, neutral → white.
-                double p = field?.PressureAt(wx, playerY, wz, th) ?? 0.0;
+                // Pressure tint: low (+) → sky blue, high (−) → crimson, neutral → white. The map is a
+                // horizontal slice, so we use the 2D field WITHOUT the vertical altitude lapse (which is
+                // a per-Y effect — adding it here just washes every tile by a constant playerY offset).
+                double p = field?.PressureAt(wx, wz, th) ?? 0.0;
                 float t = (float)Math.Min(1.0, Math.Abs(p));
                 cColor[idx] = LerpColor(White, p >= 0 ? LowColor : HighColor, t);
 
