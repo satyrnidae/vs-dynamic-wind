@@ -51,10 +51,10 @@ public class BlockEntityWeathervane : BlockEntity
         if (Api == null) return float.NaN;
         Vec3d w = Api.World.BlockAccessor.GetWindSpeedAt(Pos.ToVec3d());
         if (w.X * w.X + w.Z * w.Z < 1e-8) return float.NaN; // calm
-        // Arrow points downwind (away from the source). The −π/2 corrects the model arrow's actual
-        // rendered orientation (RotateY here maps producedBearing = −yaw − 90°), so the arrow lands on
-        // the true downwind bearing instead of 90° behind it.
-        return (float)(Math.Atan2(-w.X, -w.Z) - Math.PI / 2.0);
+        // Arrow points downwind (away from the source). The +π/2 corrects the model arrow's actual
+        // rendered orientation so it lands on the true downwind bearing (−π/2 was 90° off the other way
+        // and pointed into the wind; +π/2 is the correct quarter-turn).
+        return (float)(Math.Atan2(-w.X, -w.Z) + Math.PI / 2.0);
     }
 
     public override bool OnTesselation(ITerrainMeshPool mesher, ITesselatorAPI tessThreadTesselator)
