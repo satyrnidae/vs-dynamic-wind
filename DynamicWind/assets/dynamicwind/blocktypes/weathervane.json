@@ -6,7 +6,7 @@
 	],
 	"shape": { "base": "dynamicwind:blocks/weathervane" },
 	"textures": {
-		"copper.png": { "base": "block/metal/plate/{metal}" }
+		"metal": { "base": "game:block/metal/plate/{metal}" }
 	},
 	"blockmaterial": "Metal",
 	"drawtype": "JSON",

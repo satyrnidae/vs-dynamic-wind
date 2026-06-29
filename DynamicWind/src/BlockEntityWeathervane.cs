@@ -13,8 +13,11 @@ namespace DynamicWind;
 /// </summary>
 public class BlockEntityWeathervane : BlockEntity
 {
-    private static readonly string[] BaseElements = { "stalk", "nsbone", "webone" };
-    private static readonly string[] ArrowElements = { "upperportion" };
+    // "name/*" includes the element AND its whole subtree. An exact name matches only that element and
+    // passes an EMPTY child filter (VS ShapeTesselator.SelectiveMatch), dropping children — and the
+    // compass/arrow groups are zero-size locators whose geometry lives entirely in their children.
+    private static readonly string[] BaseElements = { "stalk", "nsbone/*", "webone/*" };
+    private static readonly string[] ArrowElements = { "upperportion/*" };
 
     private MeshData? baseMesh;
     private WeathervaneRenderer? renderer;
