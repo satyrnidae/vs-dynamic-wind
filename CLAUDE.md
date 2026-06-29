@@ -144,9 +144,11 @@ Cell positions are advected from a single anchor time, so one snapshot stays cor
 - `Vintagestory.GameContent.Mechanics.BEBehaviorWindmillRotor.CheckWindSpeed` (server) — field `windSpeed`,
   `ownFacing` on base `BEBehaviorMPRotor`. Sets `windSpeed` to the |alignment| magnitude and records the
   alignment sign per rotor.
-- `Vintagestory.GameContent.Mechanics.BEBehaviorMPRotor.GetTorque` (server) — postfix negates the returned
-  torque for wind-reversed windmills, so wind on the rotor's back drives the network backwards (the engine
-  can't reverse from a negative `windSpeed` — `GetTorque` does `Max(0,…)`, which would just stall).
+- `Vintagestory.GameContent.Mechanics.BEBehaviorMPRotor.GetTorque` (server) — prefix/postfix flips the
+  rotor's `propagationDir` for wind-reversed windmills so the `num` sign inverts: the rotor drives the
+  network backwards AND the vanilla speed-governor branch applies in reverse (capping the speed). Negating
+  the torque result instead would stall or, in the braking branch, accelerate without limit. Alignment is
+  taken against the perpendicular of `ownFacing` (the sail-disc faces across the axle).
 - `Vintagestory.GameContent.EntityBoat.SeatsToMotion` (both sides) — also `EntityShipwrightBoat` if present.
 - **No patch needed for maple seeds / dropped items** — vanilla `EntityItem.OnGameTick` already adds
   `GetWindSpeedAt` to motion (scaled by `1000/MaterialDensity`); our hook makes that directional for free.
