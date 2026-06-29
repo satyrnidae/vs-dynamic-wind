@@ -40,8 +40,8 @@ public struct FrontLine
 public static class FrontComputer
 {
     private const float MarkerMinStrength = 0.25f;
-    private const double PairMaxDistFactor = 1.1; // × (lowRadius + highRadius)
-    private const double FrontLengthFactor = 0.5; // × (lowRadius + highRadius)
+    private const double MaxPairDist = 12000.0;   // furthest a low will reach for a partner high
+    private const double FrontLengthFactor = 1.4; // × lowRadius — span of the front line
     private const double StationaryDot = 0.4;     // |L→H · jet| below this ⇒ stationary
 
     public static void Compute(WindField field, double totalHours, List<FrontMarker> markers, List<FrontLine> lines)
@@ -80,10 +80,9 @@ public static class FrontComputer
                 double dx = px[j] - px[i];
                 double dz = pz[j] - pz[i];
                 double d2 = dx * dx + dz * dz;
-                double maxD = PairMaxDistFactor * (low.Radius + high.Radius);
-                if (d2 < bestD2 && d2 <= maxD * maxD) { bestD2 = d2; best = j; }
+                if (d2 < bestD2) { bestD2 = d2; best = j; } // nearest high
             }
-            if (best < 0) continue;
+            if (best < 0 || bestD2 > MaxPairDist * MaxPairDist) continue;
 
             double ax = px[best] - px[i];
             double az = pz[best] - pz[i];
@@ -91,8 +90,11 @@ public static class FrontComputer
             if (dist < 1e-3) continue;
             ax /= dist; az /= dist; // unit low→high
 
-            double midX = px[i] + ax * dist * 0.5;
-            double midZ = pz[i] + az * dist * 0.5;
+            // Anchor the front to the low's leading edge (toward the high), so it stays attached to the
+            // low even when the partner high is far away, rather than floating at the midpoint.
+            double frontOffset = Math.Min(dist * 0.5, low.Radius);
+            double midX = px[i] + ax * frontOffset;
+            double midZ = pz[i] + az * frontOffset;
 
             // Front line runs perpendicular to the low→high axis.
             double dirX = -az, dirZ = ax;
@@ -114,7 +116,7 @@ public static class FrontComputer
                 DirZ = dirZ,
                 AxisX = ax,
                 AxisZ = az,
-                Length = FrontLengthFactor * (low.Radius + field.Cells[best].Radius),
+                Length = FrontLengthFactor * low.Radius,
                 Type = type,
                 Seed = low.BornTotalHours
             });

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
@@ -7,32 +8,37 @@ using Vintagestory.GameContent;
 namespace DynamicWind;
 
 /// <summary>
-/// "Doppler radar" map overlay: a grid of translucent cells tinted by the actual precipitation level
-/// (<see cref="WeatherSystemBase.GetPrecipitation(Vec3d)"/>) at each cell's world midpoint. Colours ramp
-/// green → yellow → orange → red as rain intensifies toward thunderstorm. Precipitation is only known
-/// for loaded chunks, so — like real radar — it shows weather around the player and fades out at range.
-/// Renders on both the world map and the minimap; toggle via the map legend.
+/// "Doppler radar" map overlay. Samples the actual precipitation level
+/// (<see cref="WeatherSystemBase.GetPrecipitation(double,double,double,double)"/>) on a grid anchored to
+/// WORLD coordinates (a fixed block step, not a fixed screen grid like the wind arrows), within a radar
+/// range around the player — so rain cells sit on their true world location and scale with map zoom.
+/// Colours ramp green → yellow → orange → red with an EXPONENTIAL response, so heavy rain reaches the
+/// thunderstorm end without needing precipitation near 1.0. Renders on world map + minimap; toggle in the
+/// map legend.
 /// </summary>
 public class DopplerRadarMapLayer : MapLayer
 {
-    public const int Grid = 32;
+    private const double WorldStep = 48.0;      // base world size of a radar cell, blocks
+    private const double RadarRange = 1200.0;   // blocks around the player to scan
+    private const int MaxCells = 1600;
     private const double RecomputeInterval = 0.4;
-    private const float MinPrecip = 0.03f; // below this → dry, not drawn
+    private const float MinPrecip = 0.03f;
+    private const double RampK = 4.5;           // exponential intensity steepness
 
-    // Intensity ramp stops (rain → thunderstorm).
     private static readonly Vec4f Green = Rgb(0x3D, 0xFF, 0x87);
     private static readonly Vec4f Yellow = Rgb(0xFF, 0xFB, 0x11);
     private static readonly Vec4f Orange = Rgb(0xFF, 0x90, 0x28);
     private static readonly Vec4f Red = Rgb(0xFF, 0x3F, 0x26);
 
     private ICoreClientAPI? capi;
-    private MeshRef? quadModel;
+    private MeshRef? quad;
     private int whiteTexId;
     private WeatherSystemBase? weather;
     private readonly Matrixf mvMat = new();
 
-    private readonly Vec4f[] cColor = new Vec4f[Grid * Grid];
-    private readonly bool[] cVisible = new bool[Grid * Grid];
+    private struct Cell { public double X, Z; public Vec4f Color; }
+    private readonly List<Cell> cells = new();
+    private double cellStep = WorldStep;
     private double accum;
     private bool haveCache;
 
@@ -47,15 +53,15 @@ public class DopplerRadarMapLayer : MapLayer
     {
         if (api.Side != EnumAppSide.Client) return;
         capi = (ICoreClientAPI)api;
-        quadModel = capi.Render.UploadMesh(QuadMeshUtil.GetQuad());
+        quad = capi.Render.UploadMesh(QuadMeshUtil.GetQuad());
         whiteTexId = capi.Render.GetOrLoadTexture(new AssetLocation("dynamicwind", "textures/icons/whitecell.png"));
         weather = capi.ModLoader.GetModSystem<WeatherSystemClient>();
-        Active = false; // off by default; the map legend toggles it on
+        Active = false;
     }
 
     public override void Render(GuiElementMap mapElem, float dt)
     {
-        if (!Active || capi == null || quadModel == null || weather == null) return;
+        if (!Active || capi == null || quad == null || weather == null) return;
 
         accum += dt;
         if (!haveCache || accum >= RecomputeInterval)
@@ -64,14 +70,15 @@ public class DopplerRadarMapLayer : MapLayer
             Resample(mapElem);
             haveCache = true;
         }
+        if (cells.Count == 0) return;
 
         ElementBounds b = mapElem.Bounds;
-        float cellW = (float)(b.InnerWidth / Grid);
-        float cellH = (float)(b.InnerHeight / Grid);
-        float halfW = cellW * 0.5f;
-        float halfH = cellH * 0.5f;
-        float renderX = (float)b.renderX;
-        float renderY = (float)b.renderY;
+        Cuboidd vb = mapElem.CurrentBlockViewBounds;
+        double spanX = vb.X2 - vb.X1, spanZ = vb.Z2 - vb.Z1;
+        if (spanX < 1e-6 || spanZ < 1e-6) return;
+        double scaleX = b.InnerWidth / spanX, scaleZ = b.InnerHeight / spanZ;
+        float halfW = (float)(cellStep * 0.5 * scaleX);
+        float halfH = (float)(cellStep * 0.5 * scaleZ);
 
         IShaderProgram shader = capi.Render.GetEngineShader((EnumShaderProgram)17);
         shader.Uniform("extraGlow", 0);
@@ -80,55 +87,67 @@ public class DopplerRadarMapLayer : MapLayer
         shader.BindTexture2D("tex2d", whiteTexId, 0);
         shader.UniformMatrix("projectionMatrix", capi.Render.CurrentProjectionMatrix);
 
-        for (int row = 0; row < Grid; row++)
+        for (int i = 0; i < cells.Count; i++)
         {
-            for (int col = 0; col < Grid; col++)
-            {
-                int idx = row * Grid + col;
-                if (!cVisible[idx]) continue;
-
-                float px = renderX + (col + 0.5f) * cellW;
-                float py = renderY + (row + 0.5f) * cellH;
-
-                shader.Uniform("rgbaIn", cColor[idx]);
-                mvMat.Set(capi.Render.CurrentModelviewMatrix)
-                    .Translate(px, py, 58f)
-                    .Scale(halfW, halfH, 0f);
-                shader.UniformMatrix("modelViewMatrix", mvMat.Values);
-                capi.Render.RenderMesh(quadModel);
-            }
+            Cell c = cells[i];
+            if (!ToScreen(b, vb, c.X, c.Z, out float sx, out float sy)) continue;
+            shader.Uniform("rgbaIn", c.Color);
+            mvMat.Set(capi.Render.CurrentModelviewMatrix)
+                .Translate(sx, sy, 58f)
+                .Scale(halfW, halfH, 0f);
+            shader.UniformMatrix("modelViewMatrix", mvMat.Values);
+            capi.Render.RenderMesh(quad);
         }
     }
 
     private void Resample(GuiElementMap mapElem)
     {
+        cells.Clear();
         Cuboidd vb = mapElem.CurrentBlockViewBounds;
-        double playerY = capi!.World.Player?.Entity?.Pos.Y ?? capi.World.SeaLevel;
+        double playerX = capi!.World.Player?.Entity?.Pos.X ?? 0;
+        double playerZ = capi.World.Player?.Entity?.Pos.Z ?? 0;
+        double playerY = capi.World.Player?.Entity?.Pos.Y ?? capi.World.SeaLevel;
+
+        // Only scan where data exists: the view ∩ a radar range around the player.
+        double minX = Math.Max(vb.X1, playerX - RadarRange), maxX = Math.Min(vb.X2, playerX + RadarRange);
+        double minZ = Math.Max(vb.Z1, playerZ - RadarRange), maxZ = Math.Min(vb.Z2, playerZ + RadarRange);
+        if (maxX <= minX || maxZ <= minZ) return;
+
+        // Fixed world step, coarsened only if the area would exceed the cell budget (far zoom-out).
+        double step = WorldStep;
+        while ((maxX - minX) / step * ((maxZ - minZ) / step) > MaxCells) step *= 2;
+        cellStep = step;
+
+        double startX = Math.Floor(minX / step) * step;
+        double startZ = Math.Floor(minZ / step) * step;
         double th = capi.World.Calendar.TotalDays;
-        var pos = new Vec3d();
 
-        for (int row = 0; row < Grid; row++)
+        for (double wx = startX; wx < maxX; wx += step)
         {
-            double fz = (row + 0.5) / Grid;
-            double wz = vb.Z1 + fz * (vb.Z2 - vb.Z1);
-            for (int col = 0; col < Grid; col++)
+            double cx = wx + step * 0.5;
+            for (double wz = startZ; wz < maxZ; wz += step)
             {
-                double fx = (col + 0.5) / Grid;
-                double wx = vb.X1 + fx * (vb.X2 - vb.X1);
-                int idx = row * Grid + col;
+                double cz = wz + step * 0.5;
+                float precip = weather!.GetPrecipitation(cx, playerY, cz, th);
+                if (precip < MinPrecip) continue;
 
-                pos.Set(wx, playerY, wz);
-                float precip = weather!.GetPrecipitation(pos.X, pos.Y, pos.Z, th);
-                if (precip < MinPrecip) { cVisible[idx] = false; continue; }
-
-                float t = precip > 1f ? 1f : precip;
-                cColor[idx] = RampColor(t, 0.35f + 0.45f * t); // more opaque toward thunderstorm
-                cVisible[idx] = true;
+                // Exponential response: heavy rain reaches the thunderstorm end without precip≈1.
+                double t = 1.0 - Math.Exp(-RampK * precip);
+                if (t > 1) t = 1;
+                cells.Add(new Cell { X = cx, Z = cz, Color = RampColor((float)t, (float)(0.35 + 0.45 * t)) });
             }
         }
     }
 
-    /// <summary>4-stop intensity ramp (green → yellow → orange → red) at fraction <paramref name="t"/>.</summary>
+    private static bool ToScreen(ElementBounds b, Cuboidd vb, double wx, double wz, out float sx, out float sy)
+    {
+        double fx = (wx - vb.X1) / (vb.X2 - vb.X1);
+        double fz = (wz - vb.Z1) / (vb.Z2 - vb.Z1);
+        sx = (float)(b.renderX + fx * b.InnerWidth);
+        sy = (float)(b.renderY + fz * b.InnerHeight);
+        return fx >= -0.05 && fx <= 1.05 && fz >= -0.05 && fz <= 1.05;
+    }
+
     private static Vec4f RampColor(float t, float alpha)
     {
         Vec4f c;
@@ -144,7 +163,7 @@ public class DopplerRadarMapLayer : MapLayer
 
     public override void Dispose()
     {
-        quadModel?.Dispose();
-        quadModel = null;
+        quad?.Dispose();
+        quad = null;
     }
 }
