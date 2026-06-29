@@ -111,7 +111,7 @@ public class WindFieldSimulation
         int n = field.Cells.Count;
         if (n == 0) return;
 
-        var pd = config.PressureDynamics;
+        DynamicWindConfig pd = config; // settings are flat on the config now
         double elapsed = now - field.AnchorHours; // effective-position extrapolation (≈ dGameHours)
 
         var newX = new double[n];
@@ -241,7 +241,7 @@ public class WindFieldSimulation
     private void MaybeSeedThermal(double now, double dGameHours)
     {
         if (dGameHours <= 0) return;
-        PressureDynamicsConfig pd = config.PressureDynamics;
+        DynamicWindConfig pd = config; // settings are flat on the config now
         if (!pd.ThermalSeeding || field.ThermalPressureFunc == null) return;
         if (rand.NextDouble() >= ThermalSeedRatePerDay / 24.0 * dGameHours) return;
         if (!TryGetPopulationCenter(out double cx, out double cz)) return;

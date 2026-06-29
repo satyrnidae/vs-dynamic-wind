@@ -4,11 +4,34 @@
     "setting-PressureWindStrength": "Pressure-gradient wind strength",
     "setting-SeasonalBias": "Seasonal N/S bias",
     "setting-SeasonalBiasMaxAngleDeg": "Seasonal bias max angle (deg)",
+
     "setting-LowSpawnRatePerDay": "Low-pressure systems per day",
     "setting-HighSpawnRatePerDay": "High-pressure systems per day",
     "setting-CellRadiusMin": "Pressure-cell radius min (blocks)",
     "setting-CellRadiusMax": "Pressure-cell radius max (blocks)",
     "setting-CyclonicInflowAngleDeg": "Cyclonic inflow angle (deg)",
+
     "setting-StormCouplingStrength": "Storm coupling strength",
-    "setting-CloudsFollowWind": "Clouds follow wind"
+    "setting-CloudsFollowWind": "Clouds follow wind",
+
+    "setting-AltitudePressureDrop": "Altitude pressure drop (at ceiling)",
+    "setting-AdvectWithWind": "Cells drift with the wind",
+    "setting-AdvectionSpeed": "Cell drift speed (blocks/hour)",
+    "setting-DispersalRate": "Cell dispersal rate",
+    "setting-BernoulliStrength": "Bernoulli (speed → pressure) strength",
+    "setting-ThermalSeeding": "Seed cells from terrain hotspots",
+    "setting-ThermalStaticScale": "Static terrain thermal scale",
+
+    "setting-OrographicEnabled": "Terrain deflects wind (orographic)",
+    "setting-OrographicHeightThreshold": "Orographic height threshold (blocks)",
+    "setting-OrographicSlowdownFactor": "Orographic slowdown factor",
+    "setting-OrographicDeflectionStrength": "Orographic deflection strength",
+    "setting-OrographicWakeFactor": "Orographic lee-wake factor",
+
+    "setting-WindmillDirectionality": "Windmill directionality",
+    "setting-WindmillMinEfficiency": "Windmill minimum efficiency",
+
+    "setting-SailboatEnabled": "Sailboat wind response",
+    "setting-SailboatTailwindMaxBoost": "Sailboat tailwind boost",
+    "setting-SailboatHeadwindMaxPenalty": "Sailboat headwind penalty"
 }

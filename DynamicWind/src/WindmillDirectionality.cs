@@ -12,7 +12,7 @@ namespace DynamicWind;
 /// <see cref="BEBehaviorWindmillRotor"/>.CheckWindSpeed sets a scalar <c>windSpeed</c> (strength
 /// only). Our postfix multiplies it by |cos θ| between the wind and the rotor axle (<c>ownFacing</c>):
 /// wind parallel to the axle (from either side) = full power, perpendicular = stalled. Floored by
-/// <see cref="WindmillConfig.MinEfficiency"/> so mills needn't stop dead when crosswind.
+/// <see cref="DynamicWindConfig.WindmillMinEfficiency"/> so mills needn't stop dead when crosswind.
 /// </summary>
 internal static class WindmillDirectionality
 {
@@ -43,7 +43,7 @@ internal static class WindmillDirectionality
     {
         DynamicWindConfig? cfg = DynamicWindRuntime.ServerConfig;
         WindField? field = DynamicWindRuntime.ServerField;
-        if (cfg == null || field == null || !cfg.Windmill.Directionality) return;
+        if (cfg == null || field == null || !cfg.WindmillDirectionality) return;
         if (fWindSpeed == null || fOwnFacing == null) return;
 
         if (fOwnFacing.GetValue(__instance) is not BlockFacing axle) return;
@@ -62,7 +62,7 @@ internal static class WindmillDirectionality
         // Power depends on how parallel the wind is to the axle, regardless of side: |cosθ|. A VS rotor
         // is double-sided, and a negative windSpeed just stalls it, so use the absolute alignment.
         double eff = Math.Abs((w.X * ax + w.Y * az) / (len * al)); // [0, 1]
-        if (eff < cfg.Windmill.MinEfficiency) eff = cfg.Windmill.MinEfficiency;
+        if (eff < cfg.WindmillMinEfficiency) eff = cfg.WindmillMinEfficiency;
         if (eff > 1.0) eff = 1.0;
 
         double ws = (double)fWindSpeed.GetValue(__instance)!;

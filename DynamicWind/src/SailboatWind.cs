@@ -48,7 +48,7 @@ internal static class SailboatWind
         EnumAppSide side = __instance.World.Side;
         DynamicWindConfig? cfg = DynamicWindRuntime.ConfigFor(side);
         WindField? field = DynamicWindRuntime.FieldFor(side);
-        if (cfg == null || field == null || !cfg.Sailboat.Enabled) return;
+        if (cfg == null || field == null || !cfg.SailboatEnabled) return;
 
         // Only when under sail.
         if (__instance.WatchedAttributes.GetInt("sailPosition", 0) <= 0) return;
@@ -67,8 +67,8 @@ internal static class SailboatWind
 
         double align = (tx * w.X + tz * w.Y) / (len * tl); // [-1, 1]
         double factor = 1.0 + (align >= 0
-            ? cfg.Sailboat.TailwindMaxBoost * align
-            : cfg.Sailboat.HeadwindMaxPenalty * align);
+            ? cfg.SailboatTailwindMaxBoost * align
+            : cfg.SailboatHeadwindMaxPenalty * align);
 
         __result.X *= factor;
     }

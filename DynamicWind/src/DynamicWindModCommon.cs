@@ -66,12 +66,12 @@ public abstract class DynamicWindModCommon : ModSystem
         Field.CyclonicInflowAngle = Config.CyclonicInflowAngleDeg * GameMath.DEG2RAD;
         Field.SeasonalBiasMaxAngle = Config.SeasonalBias ? Config.SeasonalBiasMaxAngleDeg * GameMath.DEG2RAD : 0.0;
         Field.GradientWindScale = Config.PressureWindStrength;
-        Field.OrographicEnabled = Config.Orographic.Enabled;
-        Field.OroSlowdown = Config.Orographic.SlowdownFactor;
-        Field.OroDeflection = Config.Orographic.DeflectionStrength;
-        Field.OroWake = Config.Orographic.WakeFactor;
-        Field.AltitudeMaxDrop = Config.PressureDynamics.AltitudePressureDrop;
-        Field.ThermalStaticScale = Config.PressureDynamics.ThermalStaticScale;
+        Field.OrographicEnabled = Config.OrographicEnabled;
+        Field.OroSlowdown = Config.OrographicSlowdownFactor;
+        Field.OroDeflection = Config.OrographicDeflectionStrength;
+        Field.OroWake = Config.OrographicWakeFactor;
+        Field.AltitudeMaxDrop = Config.AltitudePressureDrop;
+        Field.ThermalStaticScale = Config.ThermalStaticScale;
     }
 
     /// <summary>

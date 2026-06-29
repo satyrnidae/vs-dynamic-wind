@@ -23,7 +23,7 @@ systems, and couples the rest of the world to it:
   modulated by time of day + temperature. Water high pressure scales with **depth** (sea level −
   `GetTerrainMapheightAt` seabed, full at `WaterFullDepth`≈20 blocks) so shallow coasts read near-neutral. Added into `WindField.PressureAt` via `ThermalPressureFunc` (set
   per side: each samples its own world's surface height + `GetClimateAt`). Only a fraction
-  (`PressureDynamics.ThermalStaticScale`, default 0.35) stays as a static terrain-pinned baseline; the rest
+  (`ThermalStaticScale`, default 0.35) stays as a static terrain-pinned baseline; the rest
   of the terrain signal is expressed as **mobile seeded cells** (below) so the pressure differential drifts
   with the wind instead of being glued to the ground. This is what gives the minimap
   spatial pressure variation (blue land / crimson water), and biases storms toward
@@ -39,7 +39,7 @@ systems, and couples the rest of the world to it:
   S pole = +Z) and syncs it in `WindFieldState`. It is **globally uniform** because VS offsets southern-
   hemisphere seasons by half a year (`GetSeasonRel` returns `(YearRel+0.5)%1` there), so the hemisphere flip
   and the season offset cancel — one reference sample is correct everywhere. Shows in `/dynamicwind debug`.
-- **Pressure dynamics** (`PressureDynamicsConfig`, evolved in `WindFieldSimulation`) — cells are a living
+- **Pressure dynamics** (flat `*` config knobs, evolved in `WindFieldSimulation`) — cells are a living
   field, not static gaussians:
   - **Advection** — each server tick a cell drifts along the *local background wind* (`WindAt(x,z,t,excludeCell)`,
     self excluded), and its current velocity is stored so the client extrapolates linearly between snapshots.
@@ -60,8 +60,8 @@ systems, and couples the rest of the world to it:
 - **Terrain (orographic)** — in `WindField.WindAt` on BOTH sides via a per-side `TerrainHeightFunc`
   (server: Algernons Terrain Sampler at any coord; client: rain-map height for loaded chunks, so the minimap
   shows it). Wind climbing into a slope slows (stagnation) and curves along the contour around the obstacle;
-  wind sheltered by higher terrain upwind slows in the lee wake. Tunables in `OrographicConfig`
-  (`SlowdownFactor`, `DeflectionStrength`, `WakeFactor`).
+  wind sheltered by higher terrain upwind slows in the lee wake. Tunables: `OrographicSlowdownFactor`,
+  `OrographicDeflectionStrength`, `OrographicWakeFactor`.
 - The thermal-pressure and terrain-height lookups are wrapped in `ThermalCache` (coarse tile + time bucket,
   thread-safe) because `WindAt` samples them several times per call on a hot path; this also keeps the
   weather-coupling re-entry rare.
@@ -104,6 +104,10 @@ Cell positions are advected from a single anchor time, so one snapshot stays cor
 - **Config** (`DynamicWindConfig`): server-authoritative, protobuf-synced. The *same* class is the JSON
   config (`LoadModConfig`/`StoreModConfig`) AND the network packet (`[ProtoContract(ImplicitFields=AllPublic)]`,
   public auto-properties). `[Description]/[Range]/[Category]` attributes drive the optional ConfigLib GUI.
+  All settings are **flat top-level scalars** (e.g. `OrographicSlowdownFactor`, not `Orographic.SlowdownFactor`):
+  ConfigLib's managed-config reflection only sees top-level scalar properties — it does NOT recurse into nested
+  objects — so flattening makes every knob appear in the GUI. `[Category]` groups them visually. Each setting
+  needs a `setting-<PropertyName>` lang key in `assets/dynamicwind/lang/en.json` or the GUI shows the raw key.
   `Validate()` clamps. Client edits never apply locally — they send `ConfigUpdateRequestPacket`; the server
   checks `controlserver` privilege, applies, persists, and rebroadcasts (singleplayer host is privileged).
 - **Graceful degrade:** every Harmony patch resolves its target via `AccessTools` and logs + no-ops if the
