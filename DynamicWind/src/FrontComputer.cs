@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using Vintagestory.API.MathTools;
 
 namespace DynamicWind;
 
@@ -15,9 +14,10 @@ public struct FrontMarker
 }
 
 /// <summary>
-/// A front line drawn at the boundary between a paired low and high. <see cref="DirX"/>/<see cref="DirZ"/>
-/// is the unit direction the line runs; <see cref="AxisX"/>/<see cref="AxisZ"/> points from the low toward
-/// the high (the curvature-offset direction); <see cref="Length"/> is in blocks.
+/// A front line on a pressure system's active edge. <see cref="DirX"/>/<see cref="DirZ"/> is the unit
+/// direction the line runs (along the isobar); <see cref="AxisX"/>/<see cref="AxisZ"/> points toward the
+/// high-pressure side (the curvature-offset direction and the side front rain forms on);
+/// <see cref="Length"/> is in blocks.
 /// </summary>
 public struct FrontLine
 {
@@ -30,19 +30,30 @@ public struct FrontLine
 }
 
 /// <summary>
-/// Derives weather fronts purely from the (already-synced) pressure-cell field, so no extra netcode is
-/// needed — the client recomputes the same fronts from its mirror of the field. Each significant low is
-/// paired with its nearest high; the front sits on the boundary between them and is classified by how the
-/// low→high axis lines up with the local jetstream (high upwind ⇒ cold front, downwind ⇒ warm, across ⇒
-/// stationary). Markers (H/L) are emitted for every significant cell. As the cells advect/disperse on the
-/// jetstream and from terrain seeding, the fronts move and evolve with them.
+/// Derives weather fronts from the (already-synced, already-persisted) pressure-cell field ALONE — a pure,
+/// deterministic function of the field, so both sides compute the same fronts and they survive world
+/// reloads exactly as the cells do (the cells persist, so the fronts do). For each significant system a
+/// front is anchored on its ACTIVE edge — the leading edge of a low (its direction of travel) or the
+/// trailing edge of a high — at a fixed offset along that edge, which is where precipitation forms. The
+/// line runs along the local isobar (perpendicular to the pressure gradient); its high-pressure side
+/// (used by <see cref="WeatherCoupling"/> for front rain) is the up-gradient direction, and it is
+/// classified cold/warm/stationary by how that axis lines up with the jetstream. Markers (H/L) are
+/// emitted for every significant cell.
+///
+/// NOTE: front placement deliberately does NOT sample the live weather precipitation. That precipitation
+/// is stateful and side-dependent (the server's includes the front-rain feedback; the client has no
+/// coupling and re-syncs weather on reload), so driving placement from it made the fronts jump and change
+/// on every reload even though the cells were unchanged. Pressure → precipitation is already monotonic
+/// (see <see cref="WindField.PrecipGate"/>, used by the radar), so anchoring to the pressure systems keeps
+/// the fronts co-located with where it rains while staying perfectly reproducible.
 /// </summary>
 public static class FrontComputer
 {
-    private const float MarkerMinStrength = 0.25f;
-    private const double MaxPairDist = 12000.0;   // furthest a low will reach for a partner high
-    private const double FrontLengthFactor = 1.4; // × lowRadius — span of the front line
-    private const double StationaryDot = 0.4;     // |L→H · jet| below this ⇒ stationary
+    private const float MarkerMinStrength = 0.15f; // mark/draw systems down to this |strength| (incl. decayed highs)
+    private const double FrontLengthFactor = 1.4;  // × radius — span of the front line
+    private const double FrontEdgeOffset = 0.7;    // × radius — how far out along the active edge the front sits
+    private const double StationaryDot = 0.4;      // |axis · jet| below this ⇒ stationary
+    private const double GradSampleDist = 64.0;    // pressure-gradient sample spacing for the high-side axis
 
     public static void Compute(WindField field, double totalHours, List<FrontMarker> markers, List<FrontLine> lines)
     {
@@ -52,58 +63,53 @@ public static class FrontComputer
 
         double elapsed = totalHours - field.AnchorHours;
 
-        // Effective centres + markers.
-        int n = field.Cells.Count;
-        var px = new double[n];
-        var pz = new double[n];
-        for (int i = 0; i < n; i++)
+        for (int i = 0; i < field.Cells.Count; i++)
         {
             PressureCell c = field.Cells[i];
-            px[i] = c.X + c.VelX * elapsed;
-            pz[i] = c.Z + c.VelZ * elapsed;
-            if (Math.Abs(c.Strength) >= MarkerMinStrength)
-                markers.Add(new FrontMarker { X = px[i], Z = pz[i], IsHigh = !c.IsLow });
-        }
+            if (Math.Abs(c.Strength) < MarkerMinStrength) continue;
 
-        // Pair each significant low with its nearest significant high → a front on the boundary.
-        for (int i = 0; i < n; i++)
-        {
-            PressureCell low = field.Cells[i];
-            if (!low.IsLow || low.Strength < MarkerMinStrength) continue;
+            double ex = c.X + c.VelX * elapsed;
+            double ez = c.Z + c.VelZ * elapsed;
+            bool isHigh = !c.IsLow;
+            markers.Add(new FrontMarker { X = ex, Z = ez, IsHigh = isHigh });
 
-            int best = -1;
-            double bestD2 = double.MaxValue;
-            for (int j = 0; j < n; j++)
+            // Motion direction (advection); fall back to the local jetstream bearing if near-stationary.
+            double mdx = c.VelX, mdz = c.VelZ;
+            double ml = Math.Sqrt(mdx * mdx + mdz * mdz);
+            if (ml < 1e-6)
             {
-                PressureCell high = field.Cells[j];
-                if (high.IsLow || -high.Strength < MarkerMinStrength) continue;
-                double dx = px[j] - px[i];
-                double dz = pz[j] - pz[i];
-                double d2 = dx * dx + dz * dz;
-                if (d2 < bestD2) { bestD2 = d2; best = j; } // nearest high
+                double a0 = field.MeanderAmplitude * WindField.Meander(ex, ez, totalHours)
+                          + field.SeasonalBiasMaxAngle * field.SeasonalBiasZ;
+                mdx = Math.Cos(a0); mdz = Math.Sin(a0); ml = 1;
             }
-            if (best < 0 || bestD2 > MaxPairDist * MaxPairDist) continue;
+            mdx /= ml; mdz /= ml;
 
-            double ax = px[best] - px[i];
-            double az = pz[best] - pz[i];
-            double dist = Math.Sqrt(ax * ax + az * az);
-            if (dist < 1e-3) continue;
-            ax /= dist; az /= dist; // unit low→high
+            // Active edge: a low's LEADING edge (+motion), a high's TRAILING edge (−motion).
+            double edx = isHigh ? -mdx : mdx;
+            double edz = isHigh ? -mdz : mdz;
 
-            // Anchor the front to the low's leading edge (toward the high), so it stays attached to the
-            // low even when the partner high is far away, rather than floating at the midpoint.
-            double frontOffset = Math.Min(dist * 0.5, low.Radius);
-            double midX = px[i] + ax * frontOffset;
-            double midZ = pz[i] + az * frontOffset;
+            double off = FrontEdgeOffset * c.Radius;
+            double midX = ex + edx * off;
+            double midZ = ez + edz * off;
 
-            // Front line runs perpendicular to the low→high axis.
-            double dirX = -az, dirZ = ax;
+            // High-pressure side = up the actual-pressure gradient. Our field stores + = low, so higher
+            // real pressure lies along −∇(field pressure).
+            double d = GradSampleDist;
+            double gx = (field.PressureAt(midX + d, midZ, totalHours) - field.PressureAt(midX - d, midZ, totalHours)) / (2 * d);
+            double gz = (field.PressureAt(midX, midZ + d, totalHours) - field.PressureAt(midX, midZ - d, totalHours)) / (2 * d);
+            double axX = -gx, axZ = -gz;
+            double al = Math.Sqrt(axX * axX + axZ * axZ);
+            if (al < 1e-9) { axX = edx; axZ = edz; al = 1; } // flat gradient → fall back to the edge dir
+            axX /= al; axZ /= al;
 
-            // Classify by the base jetstream direction at the midpoint.
+            // Front line runs along the isobar, perpendicular to the high-side axis.
+            double dirX = -axZ, dirZ = axX;
+
+            // Classify by how the high-side axis lines up with the jetstream.
             double ang = field.MeanderAmplitude * WindField.Meander(midX, midZ, totalHours)
                        + field.SeasonalBiasMaxAngle * field.SeasonalBiasZ;
             double jetX = Math.Cos(ang), jetZ = Math.Sin(ang);
-            double dot = ax * jetX + az * jetZ; // L→H vs jet
+            double dot = axX * jetX + axZ * jetZ;
             FrontType type = dot <= -StationaryDot ? FrontType.Cold
                            : dot >= StationaryDot ? FrontType.Warm
                            : FrontType.Stationary;
@@ -114,11 +120,11 @@ public static class FrontComputer
                 MidZ = midZ,
                 DirX = dirX,
                 DirZ = dirZ,
-                AxisX = ax,
-                AxisZ = az,
-                Length = FrontLengthFactor * low.Radius,
+                AxisX = axX,
+                AxisZ = axZ,
+                Length = FrontLengthFactor * c.Radius,
                 Type = type,
-                Seed = low.BornTotalHours
+                Seed = c.BornTotalHours
             });
         }
     }

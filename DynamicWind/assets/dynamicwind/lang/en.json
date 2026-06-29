@@ -37,9 +37,9 @@
     "setting-SailboatTailwindMaxBoost": "Sailboat tailwind boost",
     "setting-SailboatHeadwindMaxPenalty": "Sailboat headwind penalty",
 
-    "maplayer-dynamicwindarrows": "Wind direction and speed",
-    "maplayer-dynamicwindradar": "Precipitation radar",
-    "maplayer-dynamicwindfronts": "Weather fronts",
+    "game:maplayer-dynamicwindarrows": "Wind direction and speed",
+    "game:maplayer-dynamicwindradar": "Precipitation radar",
+    "game:maplayer-dynamicwindfronts": "Weather fronts",
 
     "block-weathervane-copper": "Copper Weathervane",
     "block-weathervane-tinbronze": "Tin Bronze Weathervane",

@@ -127,6 +127,18 @@ public class WindField
     }
 
     /// <summary>
+    /// Precipitation gate from local pressure (+ = low, − = high): a high clears the sky (→0) and a low
+    /// opens the tap (→1). Shared by the Doppler radar overlay and the front computer so both treat the
+    /// pressure differential as the driver of where precipitation (and thus fronts) appear.
+    /// </summary>
+    public static double PrecipGate(double pressure)
+    {
+        double p = pressure < -1.5 ? -1.5 : (pressure > 1.5 ? 1.5 : pressure);
+        double g = 0.55 + 0.7 * p;
+        return g < 0 ? 0 : (g > 1 ? 1 : g);
+    }
+
+    /// <summary>
     /// Slow, deterministic large-scale meander in [-1, 1]. A handful of incommensurate sines gives an
     /// organic wander that is identical on server and client without needing a shared noise seed.
     /// </summary>

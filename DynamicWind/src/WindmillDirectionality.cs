@@ -70,7 +70,7 @@ internal static class WindmillDirectionality
         // Align against the rotor's own facing axis. (The earlier "E/W↔N/S reversed" report was a
         // spin-DIRECTION inversion — a 180° flip — not a 90° axis swap, so we keep ownFacing and flip the
         // sign below instead of rotating the axis.)
-        double ax = -axle.Normalf.X;
+        double ax = axle.Normalf.X;
         double az = axle.Normalf.Z;
         double al = Math.Sqrt(ax * ax + az * az);
         if (al < 1e-6) return;
@@ -85,7 +85,24 @@ internal static class WindmillDirectionality
         // in GetTorque (so the vanilla speed governor still caps the speed — negating torque does not).
         double ws = (double)fWindSpeed.GetValue(__instance)!;
         fWindSpeed.SetValue(__instance, ws * mag);
-        reversed.GetOrCreateValue(__instance).Value = dot > 0; // 180° flip vs the naive sign
+
+        // Update the wind-reversal state and, on a TRANSITION, reverse the whole mechanical network the
+        // way vanilla does: MechanicalNetwork.DirectionHasReversed flips the network's speed sign once on
+        // the next network update. Flipping only the rotor's torque sign (the GetTorque prefix below) is
+        // NOT enough — the engine's speed integrator clamps |speed| >= 1e-6 and keeps its sign in the
+        // braking branch, only flipping sign when |torque - resistance| is tiny. A low-resistance lone
+        // windmill coasts through zero and reverses, but a geared assembly (e.g. a large gear, whose big
+        // gearedRatio inflates networkResistance) never reaches that branch and would stall at ~0 forever.
+        // Flipping the network speed in step with the torque sign keeps the rotor DRIVING (not braking) so
+        // the assembly spins up the other way.
+        bool nowReversed = dot > 0; // 180° flip vs the naive sign
+        StrongBox<bool> box = reversed.GetOrCreateValue(__instance);
+        if (nowReversed != box.Value)
+        {
+            box.Value = nowReversed;
+            MechanicalNetwork? net = __instance.Network;
+            if (net != null) net.DirectionHasReversed = true;
+        }
     }
 
     // When the wind is on the rotor's back, flip its network propagation direction for the duration of

@@ -51,14 +51,23 @@ public class DynamicWindModClient : DynamicWindModCommon
         mapManager?.RegisterMapLayer<DopplerRadarMapLayer>("dynamicwindradar", 0.9);
         mapManager?.RegisterMapLayer<FrontMapLayer>("dynamicwindfronts", 0.95);
 
-        // Optional ConfigLib GUI. Isolated + guarded so a missing configlib.dll can never trip a
-        // type-load failure (see DynamicWindConfigLib).
+        Mod.Logger.Notification("[dynamicwind] Client started.");
+    }
+
+    public override void AssetsLoaded(ICoreAPI api)
+    {
+        base.AssetsLoaded(api);
+
+        // Optional ConfigLib GUI. Register HERE, not in StartClientSide: ConfigLib snapshots its mod
+        // list once, when it builds the config window at world-join config sync. AssetsLoaded is the
+        // one phase that runs both AFTER lang assets load (so setting labels localize) and BEFORE that
+        // snapshot — registering any later (e.g. StartClientSide) leaves us off the list entirely.
+        // Isolated + guarded so a missing configlib.dll can never trip a type-load failure (see
+        // DynamicWindConfigLib).
         if (api.ModLoader.IsModEnabled(DynamicWindConfigLib.ConfigLibModId))
         {
             DynamicWindConfigLib.TryRegister(api, Config, OnConfigEditedLocally, ApplyConfigToField, Mod.Logger);
         }
-
-        Mod.Logger.Notification("[dynamicwind] Client started.");
     }
 
     private void OnConfigReceived(DynamicWindConfig packet)

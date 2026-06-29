@@ -1,5 +1,6 @@
 {
 	"code": "weathervane",
+	"class": "Weathervane",
 	"entityClass": "Weathervane",
 	"variantgroups": [
 		{ "code": "metal", "states": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "gold", "silver", "iron", "meteoriciron", "steel"] }

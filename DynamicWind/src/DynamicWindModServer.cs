@@ -78,8 +78,10 @@ public class DynamicWindModServer : DynamicWindModCommon
         sim.OnTick(dt);
         double now = sapi.World.Calendar.TotalHours;
 
-        // Recompute fronts from the current field and hand them to the weather coupling (new list each
-        // tick, swapped atomically so OnGetClimate can read them lock-free off other threads).
+        // Recompute fronts deterministically from the current (persisted) field and hand them to the
+        // weather coupling — new list each tick, swapped atomically so OnGetClimate can read them lock-free
+        // off other threads. Fronts derive purely from the pressure systems, so they survive reloads with
+        // the cells; the coupling then rains on the high side of those fronts (cells → fronts → rain).
         var newFronts = new List<FrontLine>();
         FrontComputer.Compute(Field, now, frontMarkerScratch, newFronts);
         WeatherCoupling.SetFronts(newFronts);

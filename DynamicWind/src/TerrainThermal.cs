@@ -11,11 +11,14 @@ namespace DynamicWind;
 /// with water DEPTH (sea level − seabed), so shallow coasts read near-neutral and deep oceans read
 /// strong high. Same code runs on server and client; far/ungenerated columns return 0 (neutral).
 ///
+/// Day/night: land keeps a substantial baseline at night (stored ground heat) but peaks at solar noon;
+/// water's high pressure is STRONGER at night (the cool sea sinks hardest once the land stops radiating).
+///
 /// Sign convention matches <see cref="WindField"/>: + = low pressure, − = high pressure.
 /// </summary>
 internal static class TerrainThermal
 {
-    private const double Amplitude = 1.2;
+    private const double Amplitude = 2.6;       // master strength of the terrain pressure signal
     private const double WaterFullDepth = 20.0; // blocks of depth for full high pressure
 
     public static double PressureAt(IWorldAccessor world, double x, double z, double totalHours)
@@ -30,14 +33,16 @@ internal static class TerrainThermal
 
         int seaLevel = world.SeaLevel;
         double depth = seaLevel - terrainY;
+        double diurnal = DiurnalFactor(world); // 0 at night, 1 at solar noon
 
         if (depth > 0)
         {
-            // Water: high pressure, scaled by depth (shallow → weak, deep → strong). Steady (high
-            // thermal inertia), so no diurnal modulation.
+            // Water: high pressure, scaled by depth (shallow → weak, deep → strong). MORE pronounced at
+            // night — once the surrounding land stops radiating, the cool sea's sinking air dominates.
             double depthFactor = depth / WaterFullDepth;
             if (depthFactor > 1) depthFactor = 1;
-            return -1.0 * (0.6 * depthFactor) * Amplitude;
+            double nightBoost = 1.0 + 0.6 * (1.0 - diurnal); // 1.0 at noon → 1.6 at night
+            return -1.0 * (0.6 * depthFactor) * Amplitude * nightBoost;
         }
 
         // Land: dry, sun-exposed ground heats most; wet/forested less. Warmer + sunnier = stronger low.
@@ -45,11 +50,12 @@ internal static class TerrainThermal
         ClimateCondition cc = world.BlockAccessor.GetClimateAt(pos, EnumGetClimateMode.NowValues, totalHours / 24.0);
         if (cc == null) return 0.0;
 
-        double diurnal = DiurnalFactor(world); // 0 at night, 1 at solar noon
         double aridity = 1.0 - GameMath.Clamp(cc.Rainfall, 0f, 1f);
         double tempFactor = GameMath.Clamp((cc.Temperature + 5.0) / 30.0, 0.0, 1.0); // -5..25°C → 0..1
         double coeff = 0.2 + 0.8 * aridity;                       // low pressure (positive)
-        double mag = (0.3 + 0.7 * diurnal) * (0.3 + 0.7 * tempFactor);
+        // Stored heat: a solid 0.45 floor at night (ground stays warm) rising to full at solar noon — so
+        // land thermals still drive pressure overnight, just less than under the midday sun.
+        double mag = (0.45 + 0.55 * diurnal) * (0.3 + 0.7 * tempFactor);
         return coeff * mag * Amplitude;
     }
 

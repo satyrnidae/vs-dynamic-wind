@@ -14,10 +14,12 @@ namespace DynamicWind;
 public class BlockEntityWeathervane : BlockEntity
 {
     // "name/*" includes the element AND its whole subtree. An exact name matches only that element and
-    // passes an EMPTY child filter (VS ShapeTesselator.SelectiveMatch), dropping children — and the
-    // compass/arrow groups are zero-size locators whose geometry lives entirely in their children.
-    private static readonly string[] BaseElements = { "stalk", "nsbone/*", "webone/*" };
-    private static readonly string[] ArrowElements = { "upperportion/*" };
+    // passes an EMPTY child filter (VS ShapeTesselator.SelectiveMatch), dropping children — and these
+    // groups are zero-size locators whose geometry lives entirely in their children. The model has two
+    // top-level groups: "stationary" (post + compass letters, baked statically) and "rotating" (the
+    // wind-tracking arrow assembly, drawn by WeathervaneRenderer rotated about the block centre).
+    private static readonly string[] BaseElements = { "stationary/*" };
+    private static readonly string[] ArrowElements = { "rotating/*" };
 
     private MeshData? baseMesh;
     private WeathervaneRenderer? renderer;
@@ -45,10 +47,17 @@ public class BlockEntityWeathervane : BlockEntity
         MarkDirty(true); // re-tesselate now that baseMesh is ready (so the arrow isn't baked statically)
     }
 
-    /// <summary>Yaw (radians) for the arrow to point downwind; NaN when calm (hold position).</summary>
+    /// <summary>Yaw (radians) for the arrow to point downwind; NaN when calm/occluded (hold position).</summary>
     public float GetTargetYaw()
     {
         if (Api == null) return float.NaN;
+        // Like windmill rotors (BEBehaviorWindmillRotor.CheckWindSpeed): a weathervane buried in a cave or
+        // otherwise not sky-exposed catches no wind, so it holds still. Gate on sun light level (< 5),
+        // honouring the same `undergroundWindmills` world-config escape hatch windmills use.
+        if (Api.World.BlockAccessor.GetLightLevel(Pos, EnumLightLevelType.OnlySunLight) < 5
+            && Api.World.Config.GetString("undergroundWindmills", "false") != "true")
+            return float.NaN;
+
         Vec3d w = Api.World.BlockAccessor.GetWindSpeedAt(Pos.ToVec3d());
         if (w.X * w.X + w.Z * w.Z < 1e-8) return float.NaN; // calm
         // Arrow points downwind (away from the source). The +π/2 corrects the model arrow's actual

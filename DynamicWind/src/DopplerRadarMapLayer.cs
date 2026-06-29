@@ -8,13 +8,20 @@ using Vintagestory.GameContent;
 namespace DynamicWind;
 
 /// <summary>
-/// "Doppler radar" map overlay. Samples the actual precipitation level
+/// "Doppler radar" map overlay. Samples the precipitation noise field
 /// (<see cref="WeatherSystemBase.GetPrecipitation(double,double,double,double)"/>) on a grid anchored to
 /// WORLD coordinates (a fixed block step, not a fixed screen grid like the wind arrows), within a radar
 /// range around the player — so rain cells sit on their true world location and scale with map zoom.
-/// Colours ramp green → yellow → orange → red with a LOGARITHMIC response, so light rain is lifted into
-/// the visible range while leaving headroom toward the thunderstorm end. Renders on world map + minimap;
-/// toggle in the map legend.
+/// The vanilla precipitation noise provides the organic TEXTURE, but the PRESSURE DIFFERENTIAL drives it:
+/// the noise is gated by the local pressure from the synced wind field, so storms appear inside lows and
+/// the sky clears under highs (the radar is client-side, so it reads the client pressure field directly —
+/// the server-side rainfall coupling never reaches a client-side GetPrecipitation query).
+/// Colours ramp green → yellow → orange → red with a CONCAVE-UP (power) response: light rain and the
+/// outer fringe of a storm stay green, and only the high-precip storm core ramps through yellow/orange to
+/// red — so the overlay reads as "mostly green, red only at the epicentre" instead of painting the whole
+/// rain field hot. (An earlier logarithmic curve did the opposite — it lifted faint rain up toward red,
+/// turning entire cloud areas red — which is why this is a power curve, not a log.) Renders on world map +
+/// minimap; toggle in the map legend.
 /// </summary>
 public class DopplerRadarMapLayer : MapLayer
 {
@@ -22,8 +29,9 @@ public class DopplerRadarMapLayer : MapLayer
     private const double RadarRange = 1200.0;   // blocks around the player to scan
     private const int MaxCells = 1600;
     private const double RecomputeInterval = 0.4;
-    private const float MinPrecip = 0.03f;
-    private const double RampK = 9.0;           // logarithmic intensity steepness
+    private const float MinPrecip = 0.04f;
+    private const double RampFullPrecip = 0.9;  // precip level mapped to the red (storm-core) end
+    private const double RampExponent = 2.0;    // >1 keeps light/edge rain green; only intense precip → red
 
     private static readonly Vec4f Green = Rgb(0x3D, 0xFF, 0x87);
     private static readonly Vec4f Yellow = Rgb(0xFF, 0xFB, 0x11);
@@ -121,6 +129,8 @@ public class DopplerRadarMapLayer : MapLayer
         double startX = Math.Floor(minX / step) * step;
         double startZ = Math.Floor(minZ / step) * step;
         double th = capi.World.Calendar.TotalDays;
+        double totalHours = capi.World.Calendar.TotalHours;
+        WindField? field = DynamicWindRuntime.ClientField;
 
         for (double wx = startX; wx < maxX; wx += step)
         {
@@ -129,13 +139,22 @@ public class DopplerRadarMapLayer : MapLayer
             {
                 double cz = wz + step * 0.5;
                 float precip = weather!.GetPrecipitation(cx, playerY, cz, th);
+
+                // Pressure differential drives the field: gate the vanilla precipitation noise by the
+                // local pressure (+ = low, − = high). A low opens the tap (gate → 1), a high clears the
+                // sky (gate → 0), so storms track the lows and the radar matches the H/L systems on the
+                // fronts overlay. The noise still supplies the organic shape within each system.
+                if (field != null)
+                    precip *= (float)WindField.PrecipGate(field.PressureAt(cx, cz, totalHours));
                 if (precip < MinPrecip) continue;
 
-                // Logarithmic response: lifts light rain into the visible range while leaving headroom
-                // toward the thunderstorm (red) end. log(1+k·p)/log(1+k) maps 0→0, 1→1.
-                double t = Math.Log(1.0 + RampK * precip) / Math.Log(1.0 + RampK);
-                if (t > 1) t = 1;
-                cells.Add(new Cell { X = cx, Z = cz, Color = RampColor((float)t, (float)(0.35 + 0.45 * t)) });
+                // Concave-up response: normalise to the storm-core precip level, then raise to a power >1
+                // so light rain and storm fringes stay near 0 (green) and only high precip climbs toward 1
+                // (red). t = (p / full)^k, clamped.
+                double norm = precip / RampFullPrecip;
+                if (norm > 1) norm = 1;
+                double t = Math.Pow(norm, RampExponent);
+                cells.Add(new Cell { X = cx, Z = cz, Color = RampColor((float)t, (float)(0.3 + 0.5 * t)) });
             }
         }
     }

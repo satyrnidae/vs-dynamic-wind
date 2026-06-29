@@ -26,9 +26,9 @@ public class WindFieldSimulation
     private const double MaxRadius = 6000.0;
 
     // Terrain thermal seeding: spawn mobile cells from terrain hotspots near players.
-    private const double ThermalSeedRatePerDay = 6.0;    // seed attempts per game day
+    private const double ThermalSeedRatePerDay = 14.0;   // seed attempts per game day (terrain reacts faster)
     private const double SeedScanRadius = 1500.0;        // sample box half-extent around population center
-    private const double SeedThreshold = 0.3;            // minimum |thermal| to seed a cell
+    private const double SeedThreshold = 0.25;           // minimum |thermal| to seed a cell
     private const double SeedGain = 1.2;                 // thermal magnitude → seeded cell strength
     private const double SeedMinSeparation = 600.0;      // don't seed atop an existing cell
 
@@ -230,9 +230,13 @@ public class WindFieldSimulation
         double startX = cx - travel * (0.4 + rand.NextDouble() * 0.3);
         double startZ = cz + (rand.NextDouble() - 0.5) * radius * 2.0;
 
+        // Highs are spawned as strong as lows: a high starts far to the west and must travel (and slowly
+        // decay) across the populated area before it can pair with a low into a front. Starting them weak
+        // (the old -0.3..-1.0) left them below the marker/front threshold by the time they arrived, so the
+        // overlay showed only lows and never drew a front line.
         float strength = isLow
-            ? (float)(0.5 + rand.NextDouble() * 1.0)
-            : (float)-(0.3 + rand.NextDouble() * 0.7);
+            ? (float)(0.6 + rand.NextDouble() * 1.0)
+            : (float)-(0.6 + rand.NextDouble() * 1.0);
 
         field.Cells.Add(new PressureCell
         {
