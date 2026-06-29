@@ -49,6 +49,7 @@ public class DynamicWindModClient : DynamicWindModCommon
         WorldMapManager? mapManager = api.ModLoader.GetModSystem<WorldMapManager>();
         mapManager?.RegisterMapLayer<WindArrowMapLayer>("dynamicwindarrows", 1.0);
         mapManager?.RegisterMapLayer<DopplerRadarMapLayer>("dynamicwindradar", 0.9);
+        mapManager?.RegisterMapLayer<FrontMapLayer>("dynamicwindfronts", 0.95);
 
         // Optional ConfigLib GUI. Isolated + guarded so a missing configlib.dll can never trip a
         // type-load failure (see DynamicWindConfigLib).

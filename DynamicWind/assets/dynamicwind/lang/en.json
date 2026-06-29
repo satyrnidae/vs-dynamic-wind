@@ -35,5 +35,9 @@
 
     "setting-SailboatEnabled": "Sailboat wind response",
     "setting-SailboatTailwindMaxBoost": "Sailboat tailwind boost",
-    "setting-SailboatHeadwindMaxPenalty": "Sailboat headwind penalty"
+    "setting-SailboatHeadwindMaxPenalty": "Sailboat headwind penalty",
+
+    "maplayer-dynamicwindarrows": "Wind direction and speed",
+    "maplayer-dynamicwindradar": "Precipitation radar",
+    "maplayer-dynamicwindfronts": "Weather fronts"
 }

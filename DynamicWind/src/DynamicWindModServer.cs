@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using AlgernonsTerrainSampler;
 using HarmonyLib;
 using Vintagestory.API.Common;
@@ -21,6 +22,7 @@ public class DynamicWindModServer : DynamicWindModCommon
     private Harmony? harmony;
     private long tickListenerId;
     private double lastBroadcastHours;
+    private readonly List<FrontMarker> frontMarkerScratch = new();
 
     public override bool ShouldLoad(EnumAppSide side) => side == EnumAppSide.Server;
 
@@ -75,6 +77,13 @@ public class DynamicWindModServer : DynamicWindModCommon
     {
         sim.OnTick(dt);
         double now = sapi.World.Calendar.TotalHours;
+
+        // Recompute fronts from the current field and hand them to the weather coupling (new list each
+        // tick, swapped atomically so OnGetClimate can read them lock-free off other threads).
+        var newFronts = new List<FrontLine>();
+        FrontComputer.Compute(Field, now, frontMarkerScratch, newFronts);
+        WeatherCoupling.SetFronts(newFronts);
+
         bool heartbeat = now - lastBroadcastHours > 0.25; // ~ every 15 game-minutes
         if (sim.Dirty || heartbeat)
         {
