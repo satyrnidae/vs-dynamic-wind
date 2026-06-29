@@ -67,15 +67,16 @@ internal static class WindmillDirectionality
         double len = w.Length();
         if (len < 1e-6) return;
 
-        // The sail disc catches wind PERPENDICULAR to ownFacing, so align against the 90° rotation of
-        // the facing (this is what fixes E/W ↔ N/S reading reversed).
-        double ex = -axle.Normalf.Z;
-        double ez = axle.Normalf.X;
-        double el = Math.Sqrt(ex * ex + ez * ez);
-        if (el < 1e-6) return;
+        // Align against the rotor's own facing axis. (The earlier "E/W↔N/S reversed" report was a
+        // spin-DIRECTION inversion — a 180° flip — not a 90° axis swap, so we keep ownFacing and flip the
+        // sign below instead of rotating the axis.)
+        double ax = -axle.Normalf.X;
+        double az = axle.Normalf.Z;
+        double al = Math.Sqrt(ax * ax + az * az);
+        if (al < 1e-6) return;
 
-        // SIGNED alignment (no Math.Abs): >0 wind into the rotor's face, <0 wind from behind → reverse.
-        double dot = (w.X * ex + w.Y * ez) / (len * el); // [-1, 1]
+        // SIGNED alignment (no Math.Abs). The sign chooses spin direction; magnitude is the power.
+        double dot = (w.X * ax + w.Y * az) / (len * al); // [-1, 1]
         double mag = Math.Abs(dot);
         if (mag < cfg.WindmillMinEfficiency) mag = cfg.WindmillMinEfficiency;
         if (mag > 1.0) mag = 1.0;
@@ -84,7 +85,7 @@ internal static class WindmillDirectionality
         // in GetTorque (so the vanilla speed governor still caps the speed — negating torque does not).
         double ws = (double)fWindSpeed.GetValue(__instance)!;
         fWindSpeed.SetValue(__instance, ws * mag);
-        reversed.GetOrCreateValue(__instance).Value = dot < 0;
+        reversed.GetOrCreateValue(__instance).Value = dot > 0; // 180° flip vs the naive sign
     }
 
     // When the wind is on the rotor's back, flip its network propagation direction for the duration of
