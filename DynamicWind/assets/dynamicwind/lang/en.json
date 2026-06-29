@@ -39,5 +39,15 @@
 
     "maplayer-dynamicwindarrows": "Wind direction and speed",
     "maplayer-dynamicwindradar": "Precipitation radar",
-    "maplayer-dynamicwindfronts": "Weather fronts"
+    "maplayer-dynamicwindfronts": "Weather fronts",
+
+    "block-weathervane-copper": "Copper Weathervane",
+    "block-weathervane-tinbronze": "Tin Bronze Weathervane",
+    "block-weathervane-bismuthbronze": "Bismuth Bronze Weathervane",
+    "block-weathervane-blackbronze": "Black Bronze Weathervane",
+    "block-weathervane-gold": "Gold Weathervane",
+    "block-weathervane-silver": "Silver Weathervane",
+    "block-weathervane-iron": "Iron Weathervane",
+    "block-weathervane-meteoriciron": "Meteoric Iron Weathervane",
+    "block-weathervane-steel": "Steel Weathervane"
 }

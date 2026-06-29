@@ -1,0 +1,24 @@
+{
+	"code": "weathervane",
+	"entityClass": "Weathervane",
+	"variantgroups": [
+		{ "code": "metal", "states": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "gold", "silver", "iron", "meteoriciron", "steel"] }
+	],
+	"shape": { "base": "dynamicwind:blocks/weathervane" },
+	"textures": {
+		"copper.png": { "base": "block/metal/plate/{metal}" }
+	},
+	"blockmaterial": "Metal",
+	"drawtype": "JSON",
+	"renderpass": "OpaqueNoCull",
+	"creativeinventory": { "general": ["*"], "decorative": ["*"] },
+	"replaceable": 600,
+	"lightAbsorption": 0,
+	"rainpermeable": true,
+	"sideattachable": false,
+	"sounds": { "place": "game:block/anvil", "break": "game:block/ingot", "walk": "game:walk/stone" },
+	"collisionbox": null,
+	"selectionbox": { "x1": 0.42, "y1": 0, "z1": 0.42, "x2": 0.58, "y2": 0.5, "z2": 0.58 },
+	"sidesolid": { "all": false },
+	"sideopaque": { "all": false }
+}
