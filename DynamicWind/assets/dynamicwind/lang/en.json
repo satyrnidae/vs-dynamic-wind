@@ -1,3 +1,14 @@
 {
-    "dynamicwind:modname": "Dynamic Wind"
+    "setting-BaseJetstreamStrength": "Jetstream strength",
+    "setting-JetstreamMeanderAmplitude": "Jetstream meander amplitude",
+    "setting-PressureWindStrength": "Pressure-gradient wind strength",
+    "setting-SeasonalBias": "Seasonal N/S bias",
+    "setting-SeasonalBiasMaxAngleDeg": "Seasonal bias max angle (deg)",
+    "setting-LowSpawnRatePerDay": "Low-pressure systems per day",
+    "setting-HighSpawnRatePerDay": "High-pressure systems per day",
+    "setting-CellRadiusMin": "Pressure-cell radius min (blocks)",
+    "setting-CellRadiusMax": "Pressure-cell radius max (blocks)",
+    "setting-CyclonicInflowAngleDeg": "Cyclonic inflow angle (deg)",
+    "setting-StormCouplingStrength": "Storm coupling strength",
+    "setting-CloudsFollowWind": "Clouds follow wind"
 }

@@ -32,8 +32,8 @@ public class WindArrowMapLayer : MapLayer
 
     // Pressure tint endpoints (arrow art is greyscale; rgbaIn multiplies it).
     private static readonly Vec4f White = new(1f, 1f, 1f, 1f);
-    private static readonly Vec4f LowColor = new(0x66 / 255f, 0xC4 / 255f, 0xFF / 255f, 1f);  // sky blue #66C4FF
-    private static readonly Vec4f HighColor = new(0xFF / 255f, 0x4D / 255f, 0x35 / 255f, 1f); // crimson #FF4D35
+    private static readonly Vec4f LowColor = new(0xFF / 255f, 0x4D / 255f, 0x35 / 255f, 1f);  // crimson #FF4D35
+    private static readonly Vec4f HighColor = new(0x66 / 255f, 0xC4 / 255f, 0xFF / 255f, 1f); // sky blue #66C4FF
 
     // Per-cell cache (index = row*Grid + col).
     private readonly float[] cAngle = new float[Grid * Grid];
@@ -146,7 +146,7 @@ public class WindArrowMapLayer : MapLayer
                 cAngle[idx] = (float)Math.Atan2(w.X, -w.Z);
                 cVScale[idx] = (float)vfrac;
 
-                // Pressure tint: low (+) → sky blue, high (−) → crimson, neutral → white. The map is a
+                // Pressure tint: low (+) → crimson, high (−) → sky blue, neutral → white. The map is a
                 // horizontal slice, so we use the 2D field WITHOUT the vertical altitude lapse (which is
                 // a per-Y effect — adding it here just washes every tile by a constant playerY offset).
                 double p = field?.PressureAt(wx, wz, th) ?? 0.0;
