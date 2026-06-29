@@ -12,9 +12,9 @@ namespace DynamicWind;
 /// (<see cref="WeatherSystemBase.GetPrecipitation(double,double,double,double)"/>) on a grid anchored to
 /// WORLD coordinates (a fixed block step, not a fixed screen grid like the wind arrows), within a radar
 /// range around the player — so rain cells sit on their true world location and scale with map zoom.
-/// Colours ramp green → yellow → orange → red with an EXPONENTIAL response, so heavy rain reaches the
-/// thunderstorm end without needing precipitation near 1.0. Renders on world map + minimap; toggle in the
-/// map legend.
+/// Colours ramp green → yellow → orange → red with a LOGARITHMIC response, so light rain is lifted into
+/// the visible range while leaving headroom toward the thunderstorm end. Renders on world map + minimap;
+/// toggle in the map legend.
 /// </summary>
 public class DopplerRadarMapLayer : MapLayer
 {
@@ -23,7 +23,7 @@ public class DopplerRadarMapLayer : MapLayer
     private const int MaxCells = 1600;
     private const double RecomputeInterval = 0.4;
     private const float MinPrecip = 0.03f;
-    private const double RampK = 4.5;           // exponential intensity steepness
+    private const double RampK = 9.0;           // logarithmic intensity steepness
 
     private static readonly Vec4f Green = Rgb(0x3D, 0xFF, 0x87);
     private static readonly Vec4f Yellow = Rgb(0xFF, 0xFB, 0x11);
@@ -131,8 +131,9 @@ public class DopplerRadarMapLayer : MapLayer
                 float precip = weather!.GetPrecipitation(cx, playerY, cz, th);
                 if (precip < MinPrecip) continue;
 
-                // Exponential response: heavy rain reaches the thunderstorm end without precip≈1.
-                double t = 1.0 - Math.Exp(-RampK * precip);
+                // Logarithmic response: lifts light rain into the visible range while leaving headroom
+                // toward the thunderstorm (red) end. log(1+k·p)/log(1+k) maps 0→0, 1→1.
+                double t = Math.Log(1.0 + RampK * precip) / Math.Log(1.0 + RampK);
                 if (t > 1) t = 1;
                 cells.Add(new Cell { X = cx, Z = cz, Color = RampColor((float)t, (float)(0.35 + 0.45 * t)) });
             }
