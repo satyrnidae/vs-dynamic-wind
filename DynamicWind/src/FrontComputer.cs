@@ -14,46 +14,38 @@ public struct FrontMarker
 }
 
 /// <summary>
-/// A front line on a pressure system's active edge. <see cref="DirX"/>/<see cref="DirZ"/> is the unit
-/// direction the line runs (along the isobar); <see cref="AxisX"/>/<see cref="AxisZ"/> points toward the
-/// high-pressure side (the curvature-offset direction and the side front rain forms on);
-/// <see cref="Length"/> is in blocks.
+/// A front drawn as an ENCLOSED LOOP encircling a low-pressure system. The loop is NOT a circle: its
+/// radius varies with angle (<see cref="Radii"/>, one entry per angular bucket) so it hugs the actual
+/// shape of the low-pressure "blob" — where neighbouring cells merge, the contour bulges out to wrap
+/// them. <see cref="MoveX"/>/<see cref="MoveZ"/> is the system's unit travel direction; the renderer
+/// uses it to pick warm-front symbols on the leading edge and cold-front symbols on the trailing edge.
 /// </summary>
 public struct FrontLine
 {
-    public double MidX, MidZ;
-    public double DirX, DirZ;
-    public double AxisX, AxisZ;
-    public double Length;
-    public FrontType Type;
+    public double CenterX, CenterZ;
+    public double[] Radii;        // contour radius per angular bucket (length AngleSamples)
+    public double MoveX, MoveZ;   // unit travel direction (leading vs trailing edge classification)
     public double Seed;
 }
 
 /// <summary>
-/// Derives weather fronts from the (already-synced, already-persisted) pressure-cell field ALONE — a pure,
-/// deterministic function of the field, so both sides compute the same fronts and they survive world
-/// reloads exactly as the cells do (the cells persist, so the fronts do). For each significant system a
-/// front is anchored on its ACTIVE edge — the leading edge of a low (its direction of travel) or the
-/// trailing edge of a high — at a fixed offset along that edge, which is where precipitation forms. The
-/// line runs along the local isobar (perpendicular to the pressure gradient); its high-pressure side
-/// (used by <see cref="WeatherCoupling"/> for front rain) is the up-gradient direction, and it is
-/// classified cold/warm/stationary by how that axis lines up with the jetstream. Markers (H/L) are
-/// emitted for every significant cell.
+/// Derives weather fronts from the (already-synced, already-persisted) pressure-cell field ALONE — a
+/// pure, deterministic function of <see cref="WindField.CellPressureAt"/>, so both sides compute the
+/// same fronts and they survive world reloads exactly as the cells do (no live-weather sampling, which
+/// is stateful/side-dependent and was what made fronts jump on every reload).
 ///
-/// NOTE: front placement deliberately does NOT sample the live weather precipitation. That precipitation
-/// is stateful and side-dependent (the server's includes the front-rain feedback; the client has no
-/// coupling and re-syncs weather on reload), so driving placement from it made the fronts jump and change
-/// on every reload even though the cells were unchanged. Pressure → precipitation is already monotonic
-/// (see <see cref="WindField.PrecipGate"/>, used by the radar), so anchoring to the pressure systems keeps
-/// the fronts co-located with where it rains while staying perfectly reproducible.
+/// Each significant LOW gets a front: a closed contour traced at a fraction of the system's peak
+/// pressure. Because the contour follows the summed cell pressure, overlapping cells merge into one
+/// larger blob and the outline becomes non-circular. Markers (H/L) are emitted for every significant
+/// cell so highs still show on the overlay (highs carry no fronts, matching real surface analysis).
 /// </summary>
 public static class FrontComputer
 {
-    private const float MarkerMinStrength = 0.15f; // mark/draw systems down to this |strength| (incl. decayed highs)
-    private const double FrontLengthFactor = 1.4;  // × radius — span of the front line
-    private const double FrontEdgeOffset = 0.7;    // × radius — how far out along the active edge the front sits
-    private const double StationaryDot = 0.4;      // |axis · jet| below this ⇒ stationary
-    private const double GradSampleDist = 64.0;    // pressure-gradient sample spacing for the high-side axis
+    private const float MarkerMinStrength = 0.15f;     // mark/draw systems down to this |strength|
+    private const int AngleSamples = 36;               // contour resolution (every 10°)
+    private const double ContourFrac = 0.45;           // trace the loop where pressure = this × the centre value
+    private const double MaxContourRadiusFactor = 2.4; // cap the march at this × the cell radius
+    private const int MarchSteps = 28;                 // radial samples per angle while tracing
 
     public static void Compute(WindField field, double totalHours, List<FrontMarker> markers, List<FrontLine> lines)
     {
@@ -70,66 +62,71 @@ public static class FrontComputer
 
             double ex = c.X + c.VelX * elapsed;
             double ez = c.Z + c.VelZ * elapsed;
-            bool isHigh = !c.IsLow;
-            markers.Add(new FrontMarker { X = ex, Z = ez, IsHigh = isHigh });
+            markers.Add(new FrontMarker { X = ex, Z = ez, IsHigh = !c.IsLow });
 
-            // Motion direction (advection); fall back to the local jetstream bearing if near-stationary.
+            if (!c.IsLow) continue; // only lows carry fronts
+
+            // Centre pressure (from all cells, so a merged blob reads as one deep low) sets the contour
+            // level we trace. If the merged field is too weak here, skip.
+            double centre = field.CellPressureAt(ex, ez, totalHours);
+            if (centre < MarkerMinStrength) continue;
+            double level = ContourFrac * centre;
+            double maxR = MaxContourRadiusFactor * c.Radius;
+
+            var radii = new double[AngleSamples];
+            for (int a = 0; a < AngleSamples; a++)
+            {
+                double theta = a / (double)AngleSamples * 2 * Math.PI;
+                double ct = Math.Cos(theta), st = Math.Sin(theta);
+                // March outward until the summed cell pressure falls through the contour level; linearly
+                // interpolate the crossing for a smooth outline. Default to maxR if it never drops.
+                double r = maxR;
+                double prevR = 0, prevP = centre;
+                for (int s = 1; s <= MarchSteps; s++)
+                {
+                    double rr = maxR * s / MarchSteps;
+                    double p = field.CellPressureAt(ex + ct * rr, ez + st * rr, totalHours);
+                    if (p <= level)
+                    {
+                        double frac = (prevP - level) / Math.Max(1e-6, prevP - p);
+                        r = prevR + (rr - prevR) * frac;
+                        break;
+                    }
+                    prevR = rr; prevP = p;
+                }
+                radii[a] = r;
+            }
+
+            // Travel direction (advection); fall back to due-east if a cell is momentarily stationary.
             double mdx = c.VelX, mdz = c.VelZ;
             double ml = Math.Sqrt(mdx * mdx + mdz * mdz);
-            if (ml < 1e-6)
-            {
-                double a0 = field.MeanderAmplitude * WindField.Meander(ex, ez, totalHours)
-                          + field.SeasonalBiasMaxAngle * field.SeasonalBiasZ;
-                mdx = Math.Cos(a0); mdz = Math.Sin(a0); ml = 1;
-            }
-            mdx /= ml; mdz /= ml;
-
-            // Active edge: a low's LEADING edge (+motion), a high's TRAILING edge (−motion).
-            double edx = isHigh ? -mdx : mdx;
-            double edz = isHigh ? -mdz : mdz;
-
-            double off = FrontEdgeOffset * c.Radius;
-            double midX = ex + edx * off;
-            double midZ = ez + edz * off;
-
-            // High-pressure side = up the actual-pressure gradient. Our field stores + = low, so higher
-            // real pressure lies along −∇(field pressure).
-            double d = GradSampleDist;
-            double gx = (field.PressureAt(midX + d, midZ, totalHours) - field.PressureAt(midX - d, midZ, totalHours)) / (2 * d);
-            double gz = (field.PressureAt(midX, midZ + d, totalHours) - field.PressureAt(midX, midZ - d, totalHours)) / (2 * d);
-            double axX = -gx, axZ = -gz;
-            double al = Math.Sqrt(axX * axX + axZ * axZ);
-            if (al < 1e-9) { axX = edx; axZ = edz; al = 1; } // flat gradient → fall back to the edge dir
-            axX /= al; axZ /= al;
-
-            // Front line runs along the isobar, perpendicular to the high-side axis.
-            double dirX = -axZ, dirZ = axX;
-
-            // Classify by how the high-side axis lines up with the jetstream.
-            double ang = field.MeanderAmplitude * WindField.Meander(midX, midZ, totalHours)
-                       + field.SeasonalBiasMaxAngle * field.SeasonalBiasZ;
-            double jetX = Math.Cos(ang), jetZ = Math.Sin(ang);
-            double dot = axX * jetX + axZ * jetZ;
-            FrontType type = dot <= -StationaryDot ? FrontType.Cold
-                           : dot >= StationaryDot ? FrontType.Warm
-                           : FrontType.Stationary;
+            if (ml < 1e-6) { mdx = 1; mdz = 0; } else { mdx /= ml; mdz /= ml; }
 
             lines.Add(new FrontLine
             {
-                MidX = midX,
-                MidZ = midZ,
-                DirX = dirX,
-                DirZ = dirZ,
-                AxisX = axX,
-                AxisZ = axZ,
-                Length = FrontLengthFactor * c.Radius,
-                Type = type,
+                CenterX = ex,
+                CenterZ = ez,
+                Radii = radii,
+                MoveX = mdx,
+                MoveZ = mdz,
                 Seed = c.BornTotalHours
             });
         }
     }
 
-    /// <summary>Smooth, slowly-evolving curvature offset (blocks-scale, in [-~1.5, ~1.5]) along the front.</summary>
+    /// <summary>Contour radius at an arbitrary angle, linearly interpolated between the sampled buckets.</summary>
+    public static double RadiusAt(double[] radii, double theta)
+    {
+        double frac = theta / (2 * Math.PI);
+        frac -= Math.Floor(frac);
+        double f = frac * radii.Length;
+        int i0 = (int)f;
+        int i1 = (i0 + 1) % radii.Length;
+        double t = f - i0;
+        return radii[i0] * (1 - t) + radii[i1] * t;
+    }
+
+    /// <summary>Smooth, slowly-evolving curvature offset (in [-~1.5, ~1.5]) along the front loop.</summary>
     public static double Curve(double u, double seed, double totalHours)
     {
         return Math.Sin(u * 0.0025 + seed + totalHours * 0.05)

@@ -1,95 +1,64 @@
 using System;
-using System.Collections.Generic;
+using System.Reflection;
+using HarmonyLib;
 using Vintagestory.API.Common;
-using Vintagestory.API.MathTools;
-using Vintagestory.API.Server;
+using Vintagestory.GameContent;
 
 namespace DynamicWind;
 
 /// <summary>
-/// Couples weather to the pressure field using the public <c>OnGetClimate</c> event (no fragile
-/// internal patch): inside low-pressure cells rainfall is pushed up so the vanilla weather system
-/// selects cloudier/stormier patterns there; inside highs it is pushed down toward clear skies.
-/// Strength of the effect is scaled by <see cref="DynamicWindConfig.StormCouplingStrength"/>.
-/// (The wind-strength side of "storms = stronger, swirlier wind" is already inherent in the field,
-/// since low cells add circulation.)
+/// Couples the pressure field to REAL precipitation at the single chokepoint every consumer funnels
+/// through: <see cref="WeatherSystemBase.GetRainCloudness"/>. A postfix shifts the cloudness by the
+/// local cell pressure (+ = low → wetter, − = high → clearer), so the same gated value drives the
+/// actual falling rain, the climate's Rainfall/RainCloudOverlay (clouds) via the engine's own
+/// <c>Event_OnGetClimate</c>, AND the Doppler radar (which reads <c>GetPrecipitation</c>). They can no
+/// longer disagree — radar, clouds, and rain are one field. Precipitation moves with the wind because
+/// the gating pressure cells advect.
+///
+/// IMPORTANT: this replaces the old <c>OnGetClimate</c>-event coupling, which only touched NowValues
+/// climate and therefore never affected <c>GetPrecipitation</c> (it samples WorldGenValues), so the
+/// radar showed rain where none fell. The gate reads <see cref="WindField.CellPressureAt"/> (cells
+/// only) — never the climate/thermal path — so it cannot recurse back into GetRainCloudness.
+///
+/// Applied once (a static guard) even though both the server and client mod systems call it: in
+/// singleplayer the patched base method is shared by both weather-system instances, and the postfix
+/// picks the side (and thus the field) from the instance's <c>api.Side</c>.
 /// </summary>
 internal static class WeatherCoupling
 {
-    private static ICoreServerAPI sapi = null!;
-    private static WindField field = null!;
-    private static DynamicWindConfig config = null!;
-    private static bool registered;
-    // PressureAt → TerrainThermal → GetClimateAt re-enters this handler; guard against recursion.
-    [ThreadStatic] private static bool reentrant;
+    private const double PrecipShift = 0.6;     // cloudness units shifted per unit of (clamped) pressure
+    private const double PressureClamp = 1.5;
 
-    // Fronts (recomputed server-side each tick); swapped atomically so OnGetClimate can read lock-free.
-    private static volatile List<FrontLine> fronts = new();
-    private const double FrontRainBand = 250.0; // blocks from the front line that rain reaches
-    private const double FrontRainStrength = 0.6;
+    private static bool patched;
 
-    /// <summary>Replace the active front set (called from the server tick).</summary>
-    public static void SetFronts(List<FrontLine> f) => fronts = f ?? new List<FrontLine>();
-
-    public static void Init(ICoreServerAPI api, WindField windField, DynamicWindConfig cfg, ILogger logger)
+    public static void Apply(Harmony harmony, ILogger logger)
     {
-        sapi = api;
-        field = windField;
-        config = cfg;
-        if (!registered)
+        if (patched) return;
+        MethodInfo? target = AccessTools.Method(typeof(WeatherSystemBase), "GetRainCloudness");
+        if (target == null)
         {
-            api.Event.OnGetClimate += OnGetClimate;
-            registered = true;
-            logger.Notification("[dynamicwind] Weather coupling enabled (pressure → rainfall).");
+            logger.Warning("[dynamicwind] WeatherSystemBase.GetRainCloudness not found — precipitation coupling disabled.");
+            return;
         }
+        harmony.Patch(target, postfix: new HarmonyMethod(typeof(WeatherCoupling), nameof(Postfix)));
+        patched = true;
+        logger.Notification("[dynamicwind] Precipitation coupling enabled (pressure → rain/clouds/radar).");
     }
 
-    public static void UpdateConfig(DynamicWindConfig cfg) => config = cfg;
-
-    /// <summary>
-    /// Extra rainfall (0..1) from being on the high-pressure side of a nearby front. For each front the
-    /// position is projected onto the line (must be within its span) and onto the low→high axis; only the
-    /// high side (positive) within <see cref="FrontRainBand"/> contributes, strongest at the line.
-    /// </summary>
-    private static double FrontRainAt(double x, double z)
+    private static void Postfix(WeatherSystemBase __instance, ref float __result, double posX, double posZ, double totalDays)
     {
-        List<FrontLine> fr = fronts;
-        double best = 0;
-        for (int i = 0; i < fr.Count; i++)
-        {
-            FrontLine f = fr[i];
-            double rx = x - f.MidX, rz = z - f.MidZ;
-            double along = rx * f.DirX + rz * f.DirZ;
-            if (Math.Abs(along) > f.Length * 0.5) continue;
-            double side = rx * f.AxisX + rz * f.AxisZ; // >0 = high-pressure side
-            if (side <= 0 || side > FrontRainBand) continue;
-            double prox = 1.0 - side / FrontRainBand;
-            if (prox > best) best = prox;
-        }
-        return best;
-    }
+        EnumAppSide side = __instance?.api?.Side ?? EnumAppSide.Server;
+        WindField? field = DynamicWindRuntime.FieldFor(side);
+        DynamicWindConfig? config = DynamicWindRuntime.ConfigFor(side);
+        if (field == null || config == null || config.StormCouplingStrength <= 0f) return;
 
-    private static void OnGetClimate(ref ClimateCondition climate, BlockPos pos, EnumGetClimateMode mode, double totalDays)
-    {
-        if (reentrant) return; // inner call from PressureAt→TerrainThermal→GetClimateAt: leave base climate
-        if (climate == null || config == null || field == null) return;
-        if (config.StormCouplingStrength <= 0f) return;
-        // Only adjust the live/now climate, not worldgen values.
-        if (mode == EnumGetClimateMode.WorldGenValues) return;
+        double totalHours = totalDays * (__instance!.api.World.Calendar.HoursPerDay);
+        double p = field.CellPressureAt(posX, posZ, totalHours);
+        if (p > PressureClamp) p = PressureClamp;
+        else if (p < -PressureClamp) p = -PressureClamp;
 
-        double pressure;
-        reentrant = true;
-        try { pressure = field.PressureAt(pos.X, pos.Y, pos.Z, sapi.World.Calendar.TotalHours); }
-        finally { reentrant = false; }
-        if (pressure > 1) pressure = 1;
-        else if (pressure < -1) pressure = -1;
-
-        // Pressure rain: more in lows, less in highs.
-        double delta = config.StormCouplingStrength * pressure * 0.5;
-        // Front rain: forms on the HIGH-pressure side of a front, within a band of the front line.
-        delta += config.StormCouplingStrength * FrontRainStrength * FrontRainAt(pos.X, pos.Z);
-
-        float rain = climate.Rainfall + (float)delta;
-        climate.Rainfall = rain < 0f ? 0f : (rain > 1f ? 1f : rain);
+        // + pressure (low) raises cloudness past the 0.5 precip threshold; − (high) pushes it below.
+        __result += (float)(config.StormCouplingStrength * p * PrecipShift);
+        if (__result < 0f) __result = 0f;
     }
 }

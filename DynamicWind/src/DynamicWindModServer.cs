@@ -22,7 +22,6 @@ public class DynamicWindModServer : DynamicWindModCommon
     private Harmony? harmony;
     private long tickListenerId;
     private double lastBroadcastHours;
-    private readonly List<FrontMarker> frontMarkerScratch = new();
 
     public override bool ShouldLoad(EnumAppSide side) => side == EnumAppSide.Server;
 
@@ -66,7 +65,7 @@ public class DynamicWindModServer : DynamicWindModCommon
         harmony = new Harmony("dynamicwind.server");
         WindmillDirectionality.Apply(harmony, Mod.Logger);
         SailboatWind.Apply(harmony, api, Mod.Logger);
-        WeatherCoupling.Init(api, Field, Config, Mod.Logger);
+        WeatherCoupling.Apply(harmony, Mod.Logger);
 
         DynamicWindCommands.Register(api, Field, Config);
 
@@ -78,14 +77,9 @@ public class DynamicWindModServer : DynamicWindModCommon
         sim.OnTick(dt);
         double now = sapi.World.Calendar.TotalHours;
 
-        // Recompute fronts deterministically from the current (persisted) field and hand them to the
-        // weather coupling — new list each tick, swapped atomically so OnGetClimate can read them lock-free
-        // off other threads. Fronts derive purely from the pressure systems, so they survive reloads with
-        // the cells; the coupling then rains on the high side of those fronts (cells → fronts → rain).
-        var newFronts = new List<FrontLine>();
-        FrontComputer.Compute(Field, now, frontMarkerScratch, newFronts);
-        WeatherCoupling.SetFronts(newFronts);
-
+        // Fronts are a pure, deterministic function of the synced pressure cells, so the client computes
+        // them itself for the overlay; precipitation is coupled directly at GetRainCloudness (see
+        // WeatherCoupling), so the server no longer needs to compute fronts here.
         bool heartbeat = now - lastBroadcastHours > 0.25; // ~ every 15 game-minutes
         if (sim.Dirty || heartbeat)
         {
@@ -114,7 +108,6 @@ public class DynamicWindModServer : DynamicWindModCommon
         Config.Validate();
         ApplyConfigToField();
         DynamicWindRuntime.ServerConfig = Config;
-        WeatherCoupling.UpdateConfig(Config);
         try { sapi.StoreModConfig(Config, ConfigFileName); } catch { /* logged elsewhere */ }
 
         ServerChannel.BroadcastPacket(Config);

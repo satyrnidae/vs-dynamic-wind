@@ -129,9 +129,12 @@ public class DopplerRadarMapLayer : MapLayer
         double startX = Math.Floor(minX / step) * step;
         double startZ = Math.Floor(minZ / step) * step;
         double th = capi.World.Calendar.TotalDays;
-        double totalHours = capi.World.Calendar.TotalHours;
-        WindField? field = DynamicWindRuntime.ClientField;
 
+        // Precipitation is gated by the pressure field at its source — the WeatherCoupling patch on
+        // GetRainCloudness — so GetPrecipitation already reflects the moving lows/highs. We sample it
+        // straight, with no extra drift or gate: that guarantees the radar matches the clouds and the
+        // actual rain (which read the same gated value), and the pattern still moves because the gating
+        // pressure cells advect with the wind.
         for (double wx = startX; wx < maxX; wx += step)
         {
             double cx = wx + step * 0.5;
@@ -139,13 +142,6 @@ public class DopplerRadarMapLayer : MapLayer
             {
                 double cz = wz + step * 0.5;
                 float precip = weather!.GetPrecipitation(cx, playerY, cz, th);
-
-                // Pressure differential drives the field: gate the vanilla precipitation noise by the
-                // local pressure (+ = low, − = high). A low opens the tap (gate → 1), a high clears the
-                // sky (gate → 0), so storms track the lows and the radar matches the H/L systems on the
-                // fronts overlay. The noise still supplies the organic shape within each system.
-                if (field != null)
-                    precip *= (float)WindField.PrecipGate(field.PressureAt(cx, cz, totalHours));
                 if (precip < MinPrecip) continue;
 
                 // Concave-up response: normalise to the storm-core precip level, then raise to a power >1

@@ -31,6 +31,11 @@ public class DynamicWindConfig
     public float JetstreamMeanderAmplitude { get; set; } = 0.5f;
 
     [Category("Jetstream")]
+    [Range(0.1, 4.0)]
+    [Description("Frequency of the jetstream meander: higher makes the bearing snake more across north/south distance and evolve faster over time.")]
+    public float JetstreamMeanderFrequency { get; set; } = 1.5f;
+
+    [Category("Jetstream")]
     [Range(0.0, 1.0)]
     [Description("Amplitude of the slow jet-streak speed noise (jetstream baseline × 1 ± this). Gives faster/slower jet segments. 0 = constant.")]
     public float JetstreamNoiseAmplitude { get; set; } = 0.3f;
@@ -43,7 +48,7 @@ public class DynamicWindConfig
     [Category("Jetstream")]
     [Range(0.0, 2.0)]
     [Description("Extra wind speed added by pressure fronts on top of vanilla's wind (additive, so fronts blow even when vanilla wind is calm). 0 = fronts add no wind, wind is purely vanilla's speed in our direction.")]
-    public float FrontWindStrength { get; set; } = 0.3f;
+    public float FrontWindStrength { get; set; } = 0.67f;
 
     [Category("Jetstream")]
     [Description("Shift the westerly bias north/south with the seasons (poleward in summer → southwesterly, equatorward in winter → northwesterly; mirrored per hemisphere).")]
@@ -52,7 +57,7 @@ public class DynamicWindConfig
     [Category("Jetstream")]
     [Range(0.0, 80.0)]
     [Description("Maximum north/south tilt of the westerly at peak summer/winter, in degrees (45 ≈ pure NW/SW at the extremes).")]
-    public float SeasonalBiasMaxAngleDeg { get; set; } = 45f;
+    public float SeasonalBiasMaxAngleDeg { get; set; } = 60f;
 
     // ── Pressure systems ────────────────────────────────────────────────────
     [Category("PressureSystems")]
@@ -80,11 +85,21 @@ public class DynamicWindConfig
     [Description("Cyclonic inflow/outflow tilt of circulation around a pressure cell, in degrees.")]
     public float CyclonicInflowAngleDeg { get; set; } = 20f;
 
+    [Category("PressureSystems")]
+    [Range(0.0, 6.0)]
+    [Description("How strongly wind swirls around pressure systems (multiplier on each cell's circulation). Higher = stronger, more obvious rotation around lows/highs.")]
+    public float CirculationStrength { get; set; } = 2.5f;
+
     // ── Weather coupling ────────────────────────────────────────────────────
     [Category("Weather")]
     [Range(0.0, 2.0)]
     [Description("How strongly low pressure biases weather toward storms (and raises wind strength). 0 disables coupling.")]
     public float StormCouplingStrength { get; set; } = 1.0f;
+
+    [Category("Weather")]
+    [Range(0.0, 2.0)]
+    [Description("How strongly the weather feeds back onto pressure: clear skies lower a cell's pressure (toward high), clouds raise it (toward low), and storms raise it strongly (deep low). 0 disables the weather→pressure feedback.")]
+    public float WeatherPressureCoupling { get; set; } = 0.3f;
 
     // ── Clouds ──────────────────────────────────────────────────────────────
     [Category("Clouds")]
@@ -180,6 +195,7 @@ public class DynamicWindConfig
     {
         BaseJetstreamStrength = Clamp(BaseJetstreamStrength, 0f, 3f);
         JetstreamMeanderAmplitude = Clamp(JetstreamMeanderAmplitude, 0f, 1.5f);
+        JetstreamMeanderFrequency = Clamp(JetstreamMeanderFrequency, 0.1f, 4f);
         JetstreamNoiseAmplitude = Clamp(JetstreamNoiseAmplitude, 0f, 1f);
         PressureWindStrength = Clamp(PressureWindStrength, 0f, 500f);
         FrontWindStrength = Clamp(FrontWindStrength, 0f, 2f);
@@ -190,7 +206,9 @@ public class DynamicWindConfig
         CellRadiusMax = Clamp(CellRadiusMax, 50f, 8000f);
         if (CellRadiusMax < CellRadiusMin) CellRadiusMax = CellRadiusMin;
         CyclonicInflowAngleDeg = Clamp(CyclonicInflowAngleDeg, 0f, 60f);
+        CirculationStrength = Clamp(CirculationStrength, 0f, 6f);
         StormCouplingStrength = Clamp(StormCouplingStrength, 0f, 2f);
+        WeatherPressureCoupling = Clamp(WeatherPressureCoupling, 0f, 2f);
 
         AltitudePressureDrop = Clamp(AltitudePressureDrop, 0f, 1f);
         AdvectionSpeed = Clamp(AdvectionSpeed, 0f, 2000f);
@@ -220,6 +238,7 @@ public class DynamicWindConfig
         if (o == null) return;
         BaseJetstreamStrength = o.BaseJetstreamStrength;
         JetstreamMeanderAmplitude = o.JetstreamMeanderAmplitude;
+        JetstreamMeanderFrequency = o.JetstreamMeanderFrequency;
         JetstreamNoiseAmplitude = o.JetstreamNoiseAmplitude;
         PressureWindStrength = o.PressureWindStrength;
         FrontWindStrength = o.FrontWindStrength;
@@ -230,7 +249,9 @@ public class DynamicWindConfig
         CellRadiusMin = o.CellRadiusMin;
         CellRadiusMax = o.CellRadiusMax;
         CyclonicInflowAngleDeg = o.CyclonicInflowAngleDeg;
+        CirculationStrength = o.CirculationStrength;
         StormCouplingStrength = o.StormCouplingStrength;
+        WeatherPressureCoupling = o.WeatherPressureCoupling;
         CloudsFollowWind = o.CloudsFollowWind;
         AltitudePressureDrop = o.AltitudePressureDrop;
         AdvectWithWind = o.AdvectWithWind;

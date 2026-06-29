@@ -44,8 +44,14 @@ public class WindField
     public double BaseStrength = 1.0;
     /// <summary>Maximum meander of the base jetstream angle, in radians.</summary>
     public double MeanderAmplitude = 0.5;
+    /// <summary>Spatial/temporal frequency multiplier for the jetstream meander (higher = the bearing
+    /// wiggles over shorter N/S distances and faster in time).</summary>
+    public double MeanderFrequency = 1.0;
     /// <summary>Inflow/outflow tilt of cyclonic circulation, in radians (~20°).</summary>
     public double CyclonicInflowAngle = 0.35;
+    /// <summary>Multiplier on each pressure cell's induced circulation (tangential + radial flow).
+    /// &gt;1 makes the wind swirl around lows/highs more strongly.</summary>
+    public double CirculationStrength = 1.0;
 
     /// <summary>
     /// Seasonal meridional (north/south) bias factor in [−1, 1] applied to the base jetstream:
@@ -141,12 +147,14 @@ public class WindField
     /// <summary>
     /// Slow, deterministic large-scale meander in [-1, 1]. A handful of incommensurate sines gives an
     /// organic wander that is identical on server and client without needing a shared noise seed.
+    /// <paramref name="freq"/> scales the spatial/temporal frequency (the N/S term and the time terms
+    /// are weighted higher, so the jetstream snakes more across Z and evolves faster over time).
     /// </summary>
-    public static double Meander(double x, double z, double totalHours)
+    public static double Meander(double x, double z, double totalHours, double freq)
     {
-        double a = Math.Sin(x * 0.0005 + totalHours * 0.010);
-        double b = Math.Sin(z * 0.0005 - totalHours * 0.013);
-        double c = Math.Sin((x + z) * 0.0003 + totalHours * 0.007);
+        double a = Math.Sin(x * 0.0005 * freq + totalHours * 0.012 * freq);
+        double b = Math.Sin(z * 0.0009 * freq - totalHours * 0.020 * freq);
+        double c = Math.Sin((x + z) * 0.0004 * freq + totalHours * 0.010 * freq);
         return (a + b + c) / 3.0;
     }
 
@@ -165,7 +173,7 @@ public class WindField
     {
         // Base jetstream: due-East flow with a slow meandering bearing, tilted N/S by the season
         // (poleward in summer → −Z, equatorward in winter → +Z; sign is in SeasonalBiasZ).
-        double meander = MeanderAmplitude * Meander(x, z, totalHours);
+        double meander = MeanderAmplitude * Meander(x, z, totalHours, MeanderFrequency);
         double angle = meander + SeasonalBiasMaxAngle * SeasonalBiasZ;
         double wx = BaseStrength * Math.Cos(angle);
         double wz = BaseStrength * Math.Sin(angle);
@@ -200,7 +208,7 @@ public class WindField
             // windCell = s * falloff * (cos(inflow)*tangent - sin(inflow)*radial)
             //   low  (s>0): CCW tangent + inflow toward center  (cyclonic)
             //   high (s<0): CW tangent  + outflow from center   (anticyclonic)
-            double scale = cell.Strength * falloff;
+            double scale = cell.Strength * falloff * CirculationStrength;
             wx += scale * (cosIn * tx - sinIn * rx);
             wz += scale * (cosIn * tz - sinIn * rz);
         }
@@ -280,6 +288,27 @@ public class WindField
 
     /// <summary>Signed pressure at a position (sum of cell contributions). + = low, - = high.</summary>
     public double PressureAt(double x, double z, double totalHours) => PressureAt(x, z, totalHours, -1);
+
+    /// <summary>
+    /// Pressure from the moving cells ALONE (no terrain thermal term). Used where a deterministic,
+    /// side-independent value is required — the precipitation gate (so the gate never re-enters the
+    /// climate/thermal path) and the front-blob contour (so fronts derive purely from the synced cells
+    /// and persist across reloads exactly as the cells do). + = low, − = high.
+    /// </summary>
+    public double CellPressureAt(double x, double z, double totalHours)
+    {
+        double p = 0;
+        double elapsed = totalHours - AnchorHours;
+        for (int i = 0; i < Cells.Count; i++)
+        {
+            PressureCell cell = Cells[i];
+            double dx = x - (cell.X + cell.VelX * elapsed);
+            double dz = z - (cell.Z + cell.VelZ * elapsed);
+            double norm2 = (dx * dx + dz * dz) / (cell.Radius * cell.Radius);
+            p += cell.Strength * Math.Exp(-norm2);
+        }
+        return p;
+    }
 
     /// <summary>
     /// As <see cref="PressureAt(double,double,double)"/> but optionally excluding one cell index (used

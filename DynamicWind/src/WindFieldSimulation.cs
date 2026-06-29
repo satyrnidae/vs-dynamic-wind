@@ -25,6 +25,18 @@ public class WindFieldSimulation
     private const double MinStrength = 0.04;             // below this a cell has dispersed away
     private const double MaxRadius = 6000.0;
 
+    // Weather → pressure feedback: the weather map nudges each cell's strength. Clear skies push toward
+    // high (−), clouds toward low (+), storms strongly toward low. Cloud cover below this reads as "clear".
+    private const double ClearCloudThreshold = 0.4;
+    private const double StormForcingGain = 1.5; // extra low-ward push per unit of precipitation (storms)
+
+    // Pressure systems are scattered across a wide region centred on (and leaning west of) the
+    // population centre, so several systems span the visible map at once instead of a few tiny cells
+    // clustered far to the west. Cell radii are a fraction of this range so neighbours overlap into
+    // broad, merging blobs.
+    private const double SpawnRangeBlocks = 6000.0; // half-extent of the spawn scatter box
+    private const double SpawnWestLean = 0.3;       // fraction of the range the box is shifted west
+
     // Terrain thermal seeding: spawn mobile cells from terrain hotspots near players.
     private const double ThermalSeedRatePerDay = 14.0;   // seed attempts per game day (terrain reacts faster)
     private const double SeedScanRadius = 1500.0;        // sample box half-extent around population center
@@ -67,6 +79,7 @@ public class WindFieldSimulation
         if (dGameHours < 0) dGameHours = 0; // calendar reset safety
 
         Advect(now, dGameHours);
+        ApplyWeatherFeedback(now, dGameHours);
         Expire(now);
         MaybeSpawn(now, dGameHours);
         MaybeSeedThermal(now, dGameHours);
@@ -172,6 +185,45 @@ public class WindFieldSimulation
         Dirty = true;
     }
 
+    /// <summary>
+    /// Let the weather map feed back onto pressure: sample cloud cover + precipitation at each cell and
+    /// nudge its strength. Clear skies push toward high (− strength), clouds toward low (+), and storms
+    /// strongly toward low — so a cell's own weather reinforces it (lows that storm deepen; highs that
+    /// stay clear strengthen), bounded by the strength clamp + dispersal decay + finite cell lifetime.
+    /// Reads the live climate (which already carries the pressure→weather coupling), closing the loop.
+    /// </summary>
+    private void ApplyWeatherFeedback(double now, double dGameHours)
+    {
+        if (dGameHours <= 0 || config.WeatherPressureCoupling <= 0f) return;
+        int n = field.Cells.Count;
+        if (n == 0) return;
+
+        int y = sapi.World.SeaLevel;
+        double totalDays = sapi.World.Calendar.TotalDays;
+        double elapsed = now - field.AnchorHours;
+        var pos = new BlockPos(0, y, 0, 0);
+
+        for (int i = 0; i < n; i++)
+        {
+            PressureCell c = field.Cells[i];
+            pos.X = (int)(c.X + c.VelX * elapsed);
+            pos.Z = (int)(c.Z + c.VelZ * elapsed);
+            ClimateCondition cc = sapi.World.BlockAccessor.GetClimateAt(pos, EnumGetClimateMode.NowValues, totalDays);
+            if (cc == null) continue;
+
+            double cloud = GameMath.Clamp(cc.RainCloudOverlay, 0f, 1f);
+            double precip = GameMath.Clamp(cc.Rainfall, 0f, 1f);
+            // Clear (cloud below threshold) → negative (toward high); cloudy → positive (toward low);
+            // storms add a strong extra low-ward push.
+            double forcing = (cloud - ClearCloudThreshold) + StormForcingGain * precip;
+
+            c.Strength += (float)(config.WeatherPressureCoupling * forcing * dGameHours);
+            if (c.Strength > MaxStrength) c.Strength = (float)MaxStrength;
+            else if (c.Strength < -MaxStrength) c.Strength = -(float)MaxStrength;
+        }
+        Dirty = true;
+    }
+
     private void Expire(double now)
     {
         for (int i = field.Cells.Count - 1; i >= 0; i--)
@@ -212,10 +264,10 @@ public class WindFieldSimulation
     {
         if (!TryGetPopulationCenter(out double cx, out double cz)) return;
 
-        // Size cells to cover 25–75% of the loaded-chunk extent, so a few systems span what's loaded
-        // (instead of one cell blanketing everything → uniform pressure). Config radii act as safety clamps.
-        double lr = LoadedRadiusBlocks();
-        float radius = GameMath.Clamp((float)((0.25 + rand.NextDouble() * 0.5) * lr), config.CellRadiusMin, config.CellRadiusMax);
+        // Size cells to a fraction of the spawn range so neighbours overlap into broad blobs that span
+        // the visible map (the old loaded-chunk extent was only a few hundred blocks → tiny dots far
+        // apart). Config radii act as safety clamps.
+        float radius = GameMath.Clamp((float)((0.15 + rand.NextDouble() * 0.2) * SpawnRangeBlocks), config.CellRadiusMin, config.CellRadiusMax);
 
         // Jetstream advection speed in blocks/hour (eastbound), scaled by base strength.
         double advect = (300.0 + rand.NextDouble() * 300.0) * Math.Max(0.2, config.BaseJetstreamStrength);
@@ -225,10 +277,10 @@ public class WindFieldSimulation
         // Lifetime: lows are shorter-lived/sharper than highs.
         double durationHours = isLow ? (12 + rand.NextDouble() * 24) : (24 + rand.NextDouble() * 48);
 
-        // Spawn to the west so the system tracks east through the populated area over its lifetime.
-        double travel = velX * durationHours;
-        double startX = cx - travel * (0.4 + rand.NextDouble() * 0.3);
-        double startZ = cz + (rand.NextDouble() - 0.5) * radius * 2.0;
+        // Scatter across a wide box centred on the population centre but leaning west, so systems exist
+        // all across the map (and generally approach from the west) rather than all bunching far upwind.
+        double startX = cx - SpawnWestLean * SpawnRangeBlocks + (rand.NextDouble() - 0.5) * 2.0 * SpawnRangeBlocks;
+        double startZ = cz + (rand.NextDouble() - 0.5) * 2.0 * SpawnRangeBlocks;
 
         // Highs are spawned as strong as lows: a high starts far to the west and must travel (and slowly
         // decay) across the populated area before it can pair with a low into a front. Starting them weak
@@ -291,7 +343,7 @@ public class WindFieldSimulation
             if (dx * dx + dz * dz < SeedMinSeparation * SeedMinSeparation) return;
         }
 
-        float radius = GameMath.Clamp((float)(0.3 * LoadedRadiusBlocks()), config.CellRadiusMin, config.CellRadiusMax);
+        float radius = GameMath.Clamp((float)(0.12 * SpawnRangeBlocks), config.CellRadiusMin, config.CellRadiusMax);
         float strength = (float)Math.Max(-2.0, Math.Min(2.0, th * SeedGain));
         double jet = (300.0 + rand.NextDouble() * 300.0) * Math.Max(0.2, config.BaseJetstreamStrength);
         double durationHours = 8 + rand.NextDouble() * 16;
@@ -309,14 +361,6 @@ public class WindFieldSimulation
         });
         field.AnchorHours = now;
         Dirty = true;
-    }
-
-    /// <summary>Radius in blocks of the server's loaded-chunk area (MaxChunkRadius × chunk size).</summary>
-    private double LoadedRadiusBlocks()
-    {
-        int chunks = sapi.Server.Config?.MaxChunkRadius ?? 12;
-        if (chunks < 1) chunks = 1;
-        return chunks * 32.0; // GlobalConstants.ChunkSize
     }
 
     private bool TryGetPopulationCenter(out double x, out double z)

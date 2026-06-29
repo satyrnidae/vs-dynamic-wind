@@ -1,6 +1,7 @@
 {
     "setting-BaseJetstreamStrength": "Jetstream strength",
     "setting-JetstreamMeanderAmplitude": "Jetstream meander amplitude",
+    "setting-JetstreamMeanderFrequency": "Jetstream meander frequency",
     "setting-JetstreamNoiseAmplitude": "Jetstream jet-streak noise",
     "setting-PressureWindStrength": "Pressure-gradient wind strength",
     "setting-FrontWindStrength": "Front wind strength (added on top)",
@@ -12,8 +13,10 @@
     "setting-CellRadiusMin": "Pressure-cell radius min (blocks)",
     "setting-CellRadiusMax": "Pressure-cell radius max (blocks)",
     "setting-CyclonicInflowAngleDeg": "Cyclonic inflow angle (deg)",
+    "setting-CirculationStrength": "Circulation strength",
 
     "setting-StormCouplingStrength": "Storm coupling strength",
+    "setting-WeatherPressureCoupling": "Weather → pressure feedback",
     "setting-CloudsFollowWind": "Clouds follow wind",
 
     "setting-AltitudePressureDrop": "Altitude pressure drop (at ceiling)",

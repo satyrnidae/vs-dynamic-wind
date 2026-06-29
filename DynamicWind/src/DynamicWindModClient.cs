@@ -43,6 +43,10 @@ public class DynamicWindModClient : DynamicWindModCommon
 
         harmony = new Harmony("dynamicwind.client");
         CloudRendererPatch.Apply(harmony, api, Mod.Logger);
+        // Gate precipitation by pressure on the client too, so the Doppler radar (which reads the
+        // client's GetPrecipitation) matches the clouds/rain. Idempotent: in singleplayer the server
+        // already patched the shared base method; the static guard makes this a no-op there.
+        WeatherCoupling.Apply(harmony, Mod.Logger);
 
         // Wind-direction arrow overlay on the minimap + world map. Registered before the map manager
         // instantiates layers (OnLvlFinalize), so it is picked up automatically.
