@@ -69,6 +69,7 @@ public class DynamicWindConfig
     public bool CloudsFollowWind { get; set; } = true;
 
     // ── Nested feature blocks ───────────────────────────────────────────────
+    public PressureDynamicsConfig PressureDynamics { get; set; } = new();
     public OrographicConfig Orographic { get; set; } = new();
     public WindmillConfig Windmill { get; set; } = new();
     public SailboatConfig Sailboat { get; set; } = new();
@@ -87,9 +88,11 @@ public class DynamicWindConfig
         CyclonicInflowAngleDeg = Clamp(CyclonicInflowAngleDeg, 0f, 60f);
         StormCouplingStrength = Clamp(StormCouplingStrength, 0f, 2f);
 
+        PressureDynamics ??= new PressureDynamicsConfig();
         Orographic ??= new OrographicConfig();
         Windmill ??= new WindmillConfig();
         Sailboat ??= new SailboatConfig();
+        PressureDynamics.Validate();
         Orographic.Validate();
         Windmill.Validate();
         Sailboat.Validate();
@@ -114,6 +117,13 @@ public class DynamicWindConfig
         CyclonicInflowAngleDeg = o.CyclonicInflowAngleDeg;
         StormCouplingStrength = o.StormCouplingStrength;
         CloudsFollowWind = o.CloudsFollowWind;
+        PressureDynamics.AltitudePressureDrop = o.PressureDynamics.AltitudePressureDrop;
+        PressureDynamics.AdvectWithWind = o.PressureDynamics.AdvectWithWind;
+        PressureDynamics.AdvectionSpeed = o.PressureDynamics.AdvectionSpeed;
+        PressureDynamics.DispersalRate = o.PressureDynamics.DispersalRate;
+        PressureDynamics.BernoulliStrength = o.PressureDynamics.BernoulliStrength;
+        PressureDynamics.ThermalSeeding = o.PressureDynamics.ThermalSeeding;
+        PressureDynamics.ThermalStaticScale = o.PressureDynamics.ThermalStaticScale;
         Orographic.Enabled = o.Orographic.Enabled;
         Orographic.HeightThreshold = o.Orographic.HeightThreshold;
         Orographic.SlowdownFactor = o.Orographic.SlowdownFactor;
@@ -124,6 +134,52 @@ public class DynamicWindConfig
         Sailboat.Enabled = o.Sailboat.Enabled;
         Sailboat.TailwindMaxBoost = o.Sailboat.TailwindMaxBoost;
         Sailboat.HeadwindMaxPenalty = o.Sailboat.HeadwindMaxPenalty;
+    }
+}
+
+[ProtoContract(ImplicitFields = ImplicitFields.AllPublic)]
+public class PressureDynamicsConfig
+{
+    [Category("PressureDynamics")]
+    [Range(0.0, 1.0)]
+    [Description("Fractional pressure drop reached at the build ceiling (0.5 = −50%). Pressure falls with altitude toward 'low'; no effect at/below sea level.")]
+    public float AltitudePressureDrop { get; set; } = 0.5f;
+
+    [Category("PressureDynamics")]
+    [Description("Advect pressure cells along the local wind (so the pressure differential moves with the wind) instead of a fixed jetstream velocity.")]
+    public bool AdvectWithWind { get; set; } = true;
+
+    [Category("PressureDynamics")]
+    [Range(0.0, 2000.0)]
+    [Description("Cell drift speed in blocks per game-hour per unit of wind strength. Higher = pressure systems travel faster.")]
+    public float AdvectionSpeed { get; set; } = 400f;
+
+    [Category("PressureDynamics")]
+    [Range(0.0, 1.0)]
+    [Description("How fast cells spread out (radius grows) and fade (strength decays) over their life. 0 = no dispersal.")]
+    public float DispersalRate { get; set; } = 0.3f;
+
+    [Category("PressureDynamics")]
+    [Range(0.0, 1.0)]
+    [Description("Bernoulli coupling: faster-moving air lowers local pressure, stagnant air raises it. 0 disables speed→pressure feedback.")]
+    public float BernoulliStrength { get; set; } = 0.3f;
+
+    [Category("PressureDynamics")]
+    [Description("Spawn mobile, dispersing pressure cells from terrain thermal hotspots (hot dry land → low, deep water → high) so terrain influence drifts with the wind.")]
+    public bool ThermalSeeding { get; set; } = true;
+
+    [Category("PressureDynamics")]
+    [Range(0.0, 1.0)]
+    [Description("How much of the raw terrain thermal field stays as a static, terrain-pinned baseline (the rest is expressed as mobile seeded cells). 1 = fully static (old behaviour), 0 = fully mobile.")]
+    public float ThermalStaticScale { get; set; } = 0.35f;
+
+    public void Validate()
+    {
+        AltitudePressureDrop = DynamicWindConfig.Clamp(AltitudePressureDrop, 0f, 1f);
+        AdvectionSpeed = DynamicWindConfig.Clamp(AdvectionSpeed, 0f, 2000f);
+        DispersalRate = DynamicWindConfig.Clamp(DispersalRate, 0f, 1f);
+        BernoulliStrength = DynamicWindConfig.Clamp(BernoulliStrength, 0f, 1f);
+        ThermalStaticScale = DynamicWindConfig.Clamp(ThermalStaticScale, 0f, 1f);
     }
 }
 

@@ -34,7 +34,7 @@ internal static class DynamicWindCommands
         Vec2d w = field.WindAt(e.Pos.X, e.Pos.Z, th);
         double mag = w.Length();
         double bearing = Math.Atan2(w.Y, w.X) * GameMath.RAD2DEG; // 0 = East(+X), 90 = South(+Z)
-        double pressure = field.PressureAt(e.Pos.X, e.Pos.Z, th);
+        double pressure = field.PressureAt(e.Pos.X, e.Pos.Y, e.Pos.Z, th);
 
         var sb = new StringBuilder();
         sb.AppendLine($"Wind bearing: {bearing:0.0}° (0=E, 90=S, ±180=W, -90=N)");

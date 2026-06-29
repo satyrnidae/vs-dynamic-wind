@@ -47,7 +47,12 @@ public class DynamicWindModServer : DynamicWindModCommon
 
         sim = new WindFieldSimulation(api, Field, Config);
 
-        api.Event.SaveGameLoaded += () => sim.Load();
+        api.Event.SaveGameLoaded += () =>
+        {
+            Field.SeaLevel = api.World.SeaLevel;
+            Field.WorldHeight = api.WorldManager.MapSizeY;
+            sim.Load();
+        };
         api.Event.GameWorldSave += () => sim.Save();
         api.Event.PlayerJoin += OnPlayerJoin;
         api.Event.OnGetWindSpeed += OnGetWindSpeed;

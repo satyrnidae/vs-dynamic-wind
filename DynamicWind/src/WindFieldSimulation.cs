@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
+using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 using Vintagestory.API.Util;
 
@@ -15,6 +16,21 @@ namespace DynamicWind;
 public class WindFieldSimulation
 {
     private const string SaveKey = "dynamicwind:state";
+
+    // Dispersal: radius growth + strength decay per game-hour at DispersalRate = 1.
+    private const double DispersalSpreadPerHour = 120.0; // blocks/hour radius growth
+    private const double DispersalDecayPerHour = 0.15;   // strength e-folding rate
+    private const double BernoulliPerHour = 0.5;         // strength push per (speed−1) per hour at strength 1
+    private const double MaxStrength = 3.0;
+    private const double MinStrength = 0.04;             // below this a cell has dispersed away
+    private const double MaxRadius = 6000.0;
+
+    // Terrain thermal seeding: spawn mobile cells from terrain hotspots near players.
+    private const double ThermalSeedRatePerDay = 6.0;    // seed attempts per game day
+    private const double SeedScanRadius = 1500.0;        // sample box half-extent around population center
+    private const double SeedThreshold = 0.3;            // minimum |thermal| to seed a cell
+    private const double SeedGain = 1.2;                 // thermal magnitude → seeded cell strength
+    private const double SeedMinSeparation = 600.0;      // don't seed atop an existing cell
 
     private readonly ICoreServerAPI sapi;
     private readonly WindField field;
@@ -49,30 +65,90 @@ public class WindFieldSimulation
         lastGameHours = now;
         if (dGameHours < 0) dGameHours = 0; // calendar reset safety
 
-        Advect(now);
+        Advect(now, dGameHours);
         Expire(now);
         MaybeSpawn(now, dGameHours);
+        MaybeSeedThermal(now, dGameHours);
     }
 
-    /// <summary>Move each cell to its current position and re-anchor to <paramref name="now"/>.</summary>
-    private void Advect(double now)
+    /// <summary>
+    /// Advance every cell: drift along the local background wind (so the pressure differential moves
+    /// with the wind), spread out + fade (dispersal), and lower/raise pressure with wind speed
+    /// (Bernoulli). Velocities are stored so the client can extrapolate linearly between snapshots.
+    /// Sampled in two passes so cells mutated earlier in the loop don't perturb later samples.
+    /// </summary>
+    private void Advect(double now, double dGameHours)
     {
-        double elapsed = now - field.AnchorHours;
-        if (elapsed == 0) return;
-        foreach (PressureCell c in field.Cells)
+        int n = field.Cells.Count;
+        if (n == 0) return;
+
+        var pd = config.PressureDynamics;
+        double elapsed = now - field.AnchorHours; // effective-position extrapolation (≈ dGameHours)
+
+        var newX = new double[n];
+        var newZ = new double[n];
+        var newVX = new double[n];
+        var newVZ = new double[n];
+        var speed = new double[n];
+
+        // Pass 1: sample the background flow at each cell's current effective position.
+        for (int i = 0; i < n; i++)
         {
-            c.X += c.VelX * elapsed;
-            c.Z += c.VelZ * elapsed;
+            PressureCell c = field.Cells[i];
+            double ex = c.X + c.VelX * elapsed;
+            double ez = c.Z + c.VelZ * elapsed;
+            newX[i] = ex;
+            newZ[i] = ez;
+
+            if (pd.AdvectWithWind || pd.BernoulliStrength > 0f)
+            {
+                Vec2d w = field.WindAt(ex, ez, now, i); // background only (excludes this cell)
+                speed[i] = w.Length();
+                if (pd.AdvectWithWind)
+                {
+                    newVX[i] = w.X * pd.AdvectionSpeed;
+                    newVZ[i] = w.Y * pd.AdvectionSpeed;
+                }
+                else { newVX[i] = c.VelX; newVZ[i] = c.VelZ; }
+            }
+            else { newVX[i] = c.VelX; newVZ[i] = c.VelZ; speed[i] = 1.0; }
         }
+
+        // Pass 2: write positions/velocities and evolve strength + radius.
+        for (int i = 0; i < n; i++)
+        {
+            PressureCell c = field.Cells[i];
+            c.X = newX[i] + newVX[i] * dGameHours;
+            c.Z = newZ[i] + newVZ[i] * dGameHours;
+            c.VelX = newVX[i];
+            c.VelZ = newVZ[i];
+
+            if (pd.DispersalRate > 0f && dGameHours > 0)
+            {
+                c.Radius += (float)(pd.DispersalRate * DispersalSpreadPerHour * dGameHours);
+                if (c.Radius > MaxRadius) c.Radius = (float)MaxRadius;
+                c.Strength *= (float)Math.Exp(-pd.DispersalRate * DispersalDecayPerHour * dGameHours);
+            }
+
+            if (pd.BernoulliStrength > 0f && dGameHours > 0)
+            {
+                // Faster-than-nominal flow lowers pressure (toward low, +); stagnant air raises it.
+                c.Strength += (float)(pd.BernoulliStrength * BernoulliPerHour * (speed[i] - 1.0) * dGameHours);
+                if (c.Strength > MaxStrength) c.Strength = (float)MaxStrength;
+                else if (c.Strength < -MaxStrength) c.Strength = -(float)MaxStrength;
+            }
+        }
+
         field.AnchorHours = now;
-        if (field.Cells.Count > 0) Dirty = true;
+        Dirty = true;
     }
 
     private void Expire(double now)
     {
         for (int i = field.Cells.Count - 1; i >= 0; i--)
         {
-            if (now >= field.Cells[i].DiesTotalHours)
+            PressureCell c = field.Cells[i];
+            if (now >= c.DiesTotalHours || Math.Abs(c.Strength) < MinStrength)
             {
                 field.Cells.RemoveAt(i);
                 Dirty = true;
@@ -124,6 +200,53 @@ public class WindFieldSimulation
             DiesTotalHours = now + durationHours
         });
         // Re-anchor so the new cell's stored X/Z are valid at the shared anchor.
+        field.AnchorHours = now;
+        Dirty = true;
+    }
+
+    /// <summary>
+    /// Spawn a mobile, dispersing pressure cell from a terrain thermal hotspot (hot dry land → low,
+    /// deep water → high). These then advect with the wind, so terrain influence is no longer pinned
+    /// to the terrain — it drifts and spreads downwind. Rate-limited and kept clear of existing cells.
+    /// </summary>
+    private void MaybeSeedThermal(double now, double dGameHours)
+    {
+        if (dGameHours <= 0) return;
+        PressureDynamicsConfig pd = config.PressureDynamics;
+        if (!pd.ThermalSeeding || field.ThermalPressureFunc == null) return;
+        if (rand.NextDouble() >= ThermalSeedRatePerDay / 24.0 * dGameHours) return;
+        if (!TryGetPopulationCenter(out double cx, out double cz)) return;
+
+        double sx = cx + (rand.NextDouble() - 0.5) * 2.0 * SeedScanRadius;
+        double sz = cz + (rand.NextDouble() - 0.5) * 2.0 * SeedScanRadius;
+        double th = field.ThermalPressureFunc(sx, sz, now);
+        if (Math.Abs(th) < SeedThreshold) return;
+
+        // Don't pile a new cell on top of an existing one.
+        double elapsed = now - field.AnchorHours;
+        foreach (PressureCell c in field.Cells)
+        {
+            double dx = (c.X + c.VelX * elapsed) - sx;
+            double dz = (c.Z + c.VelZ * elapsed) - sz;
+            if (dx * dx + dz * dz < SeedMinSeparation * SeedMinSeparation) return;
+        }
+
+        float radius = config.CellRadiusMin * 0.6f;
+        float strength = (float)Math.Max(-2.0, Math.Min(2.0, th * SeedGain));
+        double jet = (300.0 + rand.NextDouble() * 300.0) * Math.Max(0.2, config.BaseJetstreamStrength);
+        double durationHours = 8 + rand.NextDouble() * 16;
+
+        field.Cells.Add(new PressureCell
+        {
+            X = sx,
+            Z = sz,
+            Strength = strength,
+            Radius = radius,
+            VelX = jet,                 // advection re-derives this next tick when enabled
+            VelZ = (rand.NextDouble() - 0.5) * jet * 0.3,
+            BornTotalHours = now,
+            DiesTotalHours = now + durationHours
+        });
         field.AnchorHours = now;
         Dirty = true;
     }

@@ -147,7 +147,7 @@ public class WindArrowMapLayer : MapLayer
                 cVScale[idx] = (float)vfrac;
 
                 // Pressure tint: low (+) → sky blue, high (−) → crimson, neutral → white.
-                double p = field?.PressureAt(wx, wz, th) ?? 0.0;
+                double p = field?.PressureAt(wx, playerY, wz, th) ?? 0.0;
                 float t = (float)Math.Min(1.0, Math.Abs(p));
                 cColor[idx] = LerpColor(White, p >= 0 ? LowColor : HighColor, t);
 

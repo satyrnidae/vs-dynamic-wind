@@ -69,6 +69,8 @@ public abstract class DynamicWindModCommon : ModSystem
         Field.OroSlowdown = Config.Orographic.SlowdownFactor;
         Field.OroDeflection = Config.Orographic.DeflectionStrength;
         Field.OroWake = Config.Orographic.WakeFactor;
+        Field.AltitudeMaxDrop = Config.PressureDynamics.AltitudePressureDrop;
+        Field.ThermalStaticScale = Config.PressureDynamics.ThermalStaticScale;
     }
 
     /// <summary>

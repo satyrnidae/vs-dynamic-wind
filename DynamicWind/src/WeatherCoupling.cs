@@ -47,7 +47,7 @@ internal static class WeatherCoupling
 
         double pressure;
         reentrant = true;
-        try { pressure = field.PressureAt(pos.X, pos.Z, sapi.World.Calendar.TotalHours); }
+        try { pressure = field.PressureAt(pos.X, pos.Y, pos.Z, sapi.World.Calendar.TotalHours); }
         finally { reentrant = false; }
         if (pressure > 1) pressure = 1;
         else if (pressure < -1) pressure = -1;

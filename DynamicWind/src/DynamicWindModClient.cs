@@ -23,6 +23,11 @@ public class DynamicWindModClient : DynamicWindModCommon
         capi = api;
         DynamicWindRuntime.ClientField = Field;
         DynamicWindRuntime.ClientConfig = Config;
+        api.Event.LevelFinalize += () =>
+        {
+            Field.SeaLevel = api.World.SeaLevel;
+            Field.WorldHeight = api.World.BlockAccessor.MapSizeY;
+        };
 
         var thermalCache = new ThermalCache((x, z, th) => TerrainThermal.PressureAt(api.World, x, z, th));
         Field.ThermalPressureFunc = thermalCache.Get;

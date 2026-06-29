@@ -78,6 +78,20 @@ public class WindField
     public double OroDeflection = 1.0; // how strongly flow curves around obstacles
     public double OroWake = 0.5;       // lee-side (downwind) speed loss in a hill's shadow (0..1)
 
+    // Altitude pressure lapse: real air pressure falls with height. Sampled in the Y-aware
+    // PressureAt overload only (a vertical-only term, so it adds no horizontal wind gradient).
+    public double SeaLevel = 110;
+    public double WorldHeight = 256;
+    /// <summary>Fractional pressure drop reached at the build ceiling (0.5 = −50%), toward LOW (+).</summary>
+    public double AltitudeMaxDrop = 0.5;
+
+    /// <summary>
+    /// How much of the raw terrain thermal field stays as a static (terrain-pinned) baseline in
+    /// <see cref="PressureAt"/>. The remainder is meant to be expressed as mobile, dispersing cells
+    /// seeded by the server sim, so the pressure differential moves with the wind. 1 = fully static.
+    /// </summary>
+    public double ThermalStaticScale = 1.0;
+
     private const double GradSampleDist = 48.0;
     private const double GradMaxWind = 1.5;
     private const double OroGradDist = 24.0;   // terrain gradient sample spacing
@@ -102,7 +116,14 @@ public class WindField
     /// Wind vector at a world position. X/Z components are East/South; the magnitude is the strength
     /// multiplier (≈1.0 in calm jetstream flow, higher near strong lows).
     /// </summary>
-    public Vec2d WindAt(double x, double z, double totalHours)
+    public Vec2d WindAt(double x, double z, double totalHours) => WindAt(x, z, totalHours, -1);
+
+    /// <summary>
+    /// As <see cref="WindAt(double,double,double)"/> but optionally excluding one cell index from both
+    /// the circulation sum and the pressure gradient. Used by the server sim to advect a cell on the
+    /// <em>background</em> flow (everything but its own contribution), avoiding self-advection.
+    /// </summary>
+    public Vec2d WindAt(double x, double z, double totalHours, int excludeCell)
     {
         // Base jetstream: due-East flow with a slow meandering bearing.
         double meander = MeanderAmplitude * Meander(x, z, totalHours);
@@ -115,6 +136,7 @@ public class WindField
 
         for (int i = 0; i < Cells.Count; i++)
         {
+            if (i == excludeCell) continue;
             PressureCell cell = Cells[i];
             double cellX = cell.X + cell.VelX * elapsed;
             double cellZ = cell.Z + cell.VelZ * elapsed;
@@ -145,8 +167,8 @@ public class WindField
         if (GradientWindScale > 0)
         {
             double d = GradSampleDist;
-            double gx = (PressureAt(x + d, z, totalHours) - PressureAt(x - d, z, totalHours)) / (2 * d);
-            double gz = (PressureAt(x, z + d, totalHours) - PressureAt(x, z - d, totalHours)) / (2 * d);
+            double gx = (PressureAt(x + d, z, totalHours, excludeCell) - PressureAt(x - d, z, totalHours, excludeCell)) / (2 * d);
+            double gz = (PressureAt(x, z + d, totalHours, excludeCell) - PressureAt(x, z - d, totalHours, excludeCell)) / (2 * d);
             double gwx = GradientWindScale * gx;
             double gwz = GradientWindScale * gz;
             double gm = Math.Sqrt(gwx * gwx + gwz * gwz);
@@ -215,12 +237,21 @@ public class WindField
     }
 
     /// <summary>Signed pressure at a position (sum of cell contributions). + = low, - = high.</summary>
-    public double PressureAt(double x, double z, double totalHours)
+    public double PressureAt(double x, double z, double totalHours) => PressureAt(x, z, totalHours, -1);
+
+    /// <summary>
+    /// As <see cref="PressureAt(double,double,double)"/> but optionally excluding one cell index (used
+    /// when advecting that cell on the background flow). The static terrain thermal baseline is scaled
+    /// by <see cref="ThermalStaticScale"/>; the rest of the terrain signal is carried by mobile cells
+    /// the server sim seeds from terrain hotspots.
+    /// </summary>
+    private double PressureAt(double x, double z, double totalHours, int excludeCell)
     {
         double p = 0;
         double elapsed = totalHours - AnchorHours;
         for (int i = 0; i < Cells.Count; i++)
         {
+            if (i == excludeCell) continue;
             PressureCell cell = Cells[i];
             double dx = x - (cell.X + cell.VelX * elapsed);
             double dz = z - (cell.Z + cell.VelZ * elapsed);
@@ -228,7 +259,28 @@ public class WindField
             double norm2 = dist2 / (cell.Radius * cell.Radius);
             p += cell.Strength * Math.Exp(-norm2);
         }
-        p += ThermalPressureFunc?.Invoke(x, z, totalHours) ?? 0.0;
+        if (ThermalStaticScale > 0)
+            p += ThermalStaticScale * (ThermalPressureFunc?.Invoke(x, z, totalHours) ?? 0.0);
         return p;
+    }
+
+    /// <summary>
+    /// Signed pressure including the vertical lapse: real air pressure falls with altitude, read here
+    /// as "more low" (+). Below sea level there is no change; at the build ceiling it reaches
+    /// +<see cref="AltitudeMaxDrop"/>. This term has no horizontal gradient, so it never alters wind —
+    /// only the displayed/weather-coupled pressure.
+    /// </summary>
+    public double PressureAt(double x, double y, double z, double totalHours)
+        => PressureAt(x, z, totalHours, -1) + AltitudeOffset(y);
+
+    /// <summary>Vertical pressure lapse contribution at height <paramref name="y"/> (0 at/below sea level, +AltitudeMaxDrop at ceiling).</summary>
+    public double AltitudeOffset(double y)
+    {
+        double span = WorldHeight - SeaLevel;
+        if (span <= 0) return 0;
+        double frac = (y - SeaLevel) / span;
+        if (frac <= 0) return 0;
+        if (frac > 1) frac = 1;
+        return AltitudeMaxDrop * frac; // + = low (lower real pressure aloft)
     }
 }

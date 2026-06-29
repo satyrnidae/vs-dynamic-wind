@@ -22,11 +22,29 @@ systems, and couples the rest of the world to it:
   terrain-driven baseline: warm, sun-exposed dry land → low (rising air), cool water → high (sinking air),
   modulated by time of day + temperature. Water high pressure scales with **depth** (sea level −
   `GetTerrainMapheightAt` seabed, full at `WaterFullDepth`≈20 blocks) so shallow coasts read near-neutral. Added into `WindField.PressureAt` via `ThermalPressureFunc` (set
-  per side: each samples its own world's surface height + `GetClimateAt`). This is what gives the minimap
-  spatial pressure variation (blue land / crimson water) instead of a uniform tint, and biases storms toward
+  per side: each samples its own world's surface height + `GetClimateAt`). Only a fraction
+  (`PressureDynamics.ThermalStaticScale`, default 0.35) stays as a static terrain-pinned baseline; the rest
+  of the terrain signal is expressed as **mobile seeded cells** (below) so the pressure differential drifts
+  with the wind instead of being glued to the ground. This is what gives the minimap
+  spatial pressure variation (blue land / crimson water), and biases storms toward
   hot low-pressure land. NOTE: `WeatherCoupling.OnGetClimate` calls `PressureAt` → thermal → `GetClimateAt`,
   so it uses a `[ThreadStatic]` reentrancy guard to avoid infinite recursion. (Thermal currently feeds
   pressure/weather/visualization only, not wind direction — sea-breeze wind coupling is possible future work.)
+- **Pressure dynamics** (`PressureDynamicsConfig`, evolved in `WindFieldSimulation`) — cells are a living
+  field, not static gaussians:
+  - **Advection** — each server tick a cell drifts along the *local background wind* (`WindAt(x,z,t,excludeCell)`,
+    self excluded), and its current velocity is stored so the client extrapolates linearly between snapshots.
+    `AdvectionSpeed` (blocks/game-hour per unit wind). Off → falls back to the fixed jetstream velocity.
+  - **Dispersal** — `DispersalRate` grows each cell's radius and decays its strength per hour; cells expire
+    once strength falls below `MinStrength` (or hit their lifetime backstop). So systems spread out and fade.
+  - **Bernoulli** — `BernoulliStrength`: faster-than-nominal flow lowers a cell's pressure (toward low, +),
+    stagnant air raises it. Sampled once per tick from the same background wind (no recursion).
+  - **Thermal seeding** — `ThermalSeeding` spawns small mobile cells from terrain thermal hotspots near
+    players (hot dry land → low, deep water → high), which then advect + disperse.
+  - **Altitude lapse** — `WindField.PressureAt(x,y,z,t)` adds a vertical term: real air pressure falls with
+    height, read as "more low" (+), reaching +`AltitudePressureDrop` (default 0.5 = −50%) at the build ceiling,
+    0 at/below sea level. Vertical-only, so it never alters wind — only the displayed/weather-coupled pressure
+    (map tint, `WeatherCoupling`, `/dynamicwind debug` all pass their Y). `SeaLevel`/`WorldHeight` set per side.
 - **Pressure-gradient wind** — wind bleeds down the pressure gradient (high → low), so the synoptic cells
   AND the terrain thermal contrast (water→land sea breeze) actually push the air. `WindField.WindAt` adds
   `PressureWindStrength · ∇P` (numeric gradient of `PressureAt`, clamped). Runs on both sides.
