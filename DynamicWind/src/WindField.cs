@@ -57,6 +57,10 @@ public class WindField
     /// <summary>Maximum N/S tilt of the base jetstream at peak summer/winter, in radians.</summary>
     public double SeasonalBiasMaxAngle;
 
+    /// <summary>Amplitude of the slow jet-streak speed noise. The jetstream baseline speed is multiplied
+    /// by 1 ± this, giving faster/slower jet streaks that wander over space and time. 0 = none.</summary>
+    public double JetNoiseAmplitude = 0.3;
+
     /// <summary>
     /// Calendar time (total hours) at which each cell's <see cref="PressureCell.X"/>/<c>Z</c> was the
     /// true position. Effective positions are advected by velocity from this anchor, so a single
@@ -109,6 +113,18 @@ public class WindField
     private const double OroWakeProbe = 48.0;  // how far upwind to look for a sheltering rise
     private const double OroWakeMinRise = 8.0; // upwind terrain must be this much higher to count
     private const double OroWakeScale = 40.0;  // rise over this → full wake
+
+    /// <summary>
+    /// Slow jet-streak multiplier in [1−<see cref="JetNoiseAmplitude"/>, 1+…]: a multiplied sinusoidal
+    /// layout (a slow X wave × a slow Z wave) that evolves slowly over time, giving the jetstream faster
+    /// and slower "streaks" on top of the seasonal drift and bearing meander. Mild and never zero.
+    /// </summary>
+    public double JetStreak(double x, double z, double totalHours)
+    {
+        double sx = Math.Sin(x * 0.0006 + totalHours * 0.008);
+        double sz = Math.Sin(z * 0.0006 + totalHours * 0.006);
+        return 1.0 + JetNoiseAmplitude * sx * sz;
+    }
 
     /// <summary>
     /// Slow, deterministic large-scale meander in [-1, 1]. A handful of incommensurate sines gives an

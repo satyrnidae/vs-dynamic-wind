@@ -65,6 +65,7 @@ public abstract class DynamicWindModCommon : ModSystem
         Field.MeanderAmplitude = Config.JetstreamMeanderAmplitude;
         Field.CyclonicInflowAngle = Config.CyclonicInflowAngleDeg * GameMath.DEG2RAD;
         Field.SeasonalBiasMaxAngle = Config.SeasonalBias ? Config.SeasonalBiasMaxAngleDeg * GameMath.DEG2RAD : 0.0;
+        Field.JetNoiseAmplitude = Config.JetstreamNoiseAmplitude;
         Field.GradientWindScale = Config.PressureWindStrength;
         Field.OrographicEnabled = Config.OrographicEnabled;
         Field.OroSlowdown = Config.OrographicSlowdownFactor;
@@ -87,15 +88,17 @@ public abstract class DynamicWindModCommon : ModSystem
     protected void OnGetWindSpeed(Vec3d pos, ref Vec3d windSpeed)
     {
         double vsSpeed = windSpeed.X; // vanilla's own wind-speed variation
-        Vec2d w = Field.WindAt(pos.X, pos.Z, Api.World.Calendar.TotalHours);
+        double th = Api.World.Calendar.TotalHours;
+        Vec2d w = Field.WindAt(pos.X, pos.Z, th);
 
         double mag = w.Length();
         if (mag < 1e-6) return; // degenerate field → leave vanilla value
 
-        // Front contribution: how far the field magnitude exceeds the calm baseline (cells, gradients).
+        // Baseline jetstream speed = vanilla's, modulated by a slow jet-streak noise (faster/slower
+        // segments, never zero). Pressure fronts then ADD wind on top of that.
         double frontExcess = mag - Field.BaseStrength;
         if (frontExcess < 0) frontExcess = 0;
-        double speed = vsSpeed + Config.FrontWindStrength * frontExcess;
+        double speed = vsSpeed * Field.JetStreak(pos.X, pos.Z, th) + Config.FrontWindStrength * frontExcess;
 
         windSpeed.X = speed * w.X / mag;
         windSpeed.Z = speed * w.Y / mag;

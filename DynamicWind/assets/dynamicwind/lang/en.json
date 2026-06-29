@@ -1,6 +1,7 @@
 {
     "setting-BaseJetstreamStrength": "Jetstream strength",
     "setting-JetstreamMeanderAmplitude": "Jetstream meander amplitude",
+    "setting-JetstreamNoiseAmplitude": "Jetstream jet-streak noise",
     "setting-PressureWindStrength": "Pressure-gradient wind strength",
     "setting-FrontWindStrength": "Front wind strength (added on top)",
     "setting-SeasonalBias": "Seasonal N/S bias",

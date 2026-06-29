@@ -31,6 +31,11 @@ public class DynamicWindConfig
     public float JetstreamMeanderAmplitude { get; set; } = 0.5f;
 
     [Category("Jetstream")]
+    [Range(0.0, 1.0)]
+    [Description("Amplitude of the slow jet-streak speed noise (jetstream baseline × 1 ± this). Gives faster/slower jet segments. 0 = constant.")]
+    public float JetstreamNoiseAmplitude { get; set; } = 0.3f;
+
+    [Category("Jetstream")]
     [Range(0.0, 500.0)]
     [Description("How strongly wind flows down the pressure gradient (high → low). 0 disables pressure-driven wind.")]
     public float PressureWindStrength { get; set; } = 150f;
@@ -175,6 +180,7 @@ public class DynamicWindConfig
     {
         BaseJetstreamStrength = Clamp(BaseJetstreamStrength, 0f, 3f);
         JetstreamMeanderAmplitude = Clamp(JetstreamMeanderAmplitude, 0f, 1.5f);
+        JetstreamNoiseAmplitude = Clamp(JetstreamNoiseAmplitude, 0f, 1f);
         PressureWindStrength = Clamp(PressureWindStrength, 0f, 500f);
         FrontWindStrength = Clamp(FrontWindStrength, 0f, 2f);
         SeasonalBiasMaxAngleDeg = Clamp(SeasonalBiasMaxAngleDeg, 0f, 80f);
@@ -214,6 +220,7 @@ public class DynamicWindConfig
         if (o == null) return;
         BaseJetstreamStrength = o.BaseJetstreamStrength;
         JetstreamMeanderAmplitude = o.JetstreamMeanderAmplitude;
+        JetstreamNoiseAmplitude = o.JetstreamNoiseAmplitude;
         PressureWindStrength = o.PressureWindStrength;
         FrontWindStrength = o.FrontWindStrength;
         SeasonalBias = o.SeasonalBias;

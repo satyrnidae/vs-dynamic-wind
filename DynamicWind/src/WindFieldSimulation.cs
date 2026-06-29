@@ -185,13 +185,27 @@ public class WindFieldSimulation
         }
     }
 
+    // Cap spawns/seeds per tick so a huge calendar jump (e.g. sleeping through several days) can't
+    // flood the world in one tick, while still letting evolution speed up with world time.
+    private const int MaxSpawnPerTick = 12;
+
     private void MaybeSpawn(double now, double dGameHours)
     {
         if (dGameHours <= 0) return;
-        double lowP = config.LowSpawnRatePerDay / 24.0 * dGameHours;
-        double highP = config.HighSpawnRatePerDay / 24.0 * dGameHours;
-        if (rand.NextDouble() < lowP) Spawn(now, isLow: true);
-        if (rand.NextDouble() < highP) Spawn(now, isLow: false);
+        // Expected count scales with elapsed GAME time, so pressure systems evolve on the world clock —
+        // and speed up while a player sleeps (the calendar fast-forwards → larger dGameHours per tick).
+        SpawnExpected(now, config.LowSpawnRatePerDay / 24.0 * dGameHours, isLow: true);
+        SpawnExpected(now, config.HighSpawnRatePerDay / 24.0 * dGameHours, isLow: false);
+    }
+
+    /// <summary>Spawn roughly <paramref name="expected"/> cells: the whole part plus a fractional chance.</summary>
+    private void SpawnExpected(double now, double expected, bool isLow)
+    {
+        if (expected <= 0) return;
+        int n = (int)expected;
+        if (n > MaxSpawnPerTick) n = MaxSpawnPerTick;
+        for (int i = 0; i < n; i++) Spawn(now, isLow);
+        if (rand.NextDouble() < expected - Math.Floor(expected)) Spawn(now, isLow);
     }
 
     private void Spawn(double now, bool isLow)
@@ -241,14 +255,24 @@ public class WindFieldSimulation
     private void MaybeSeedThermal(double now, double dGameHours)
     {
         if (dGameHours <= 0) return;
-        DynamicWindConfig pd = config; // settings are flat on the config now
-        if (!pd.ThermalSeeding || field.ThermalPressureFunc == null) return;
-        if (rand.NextDouble() >= ThermalSeedRatePerDay / 24.0 * dGameHours) return;
+        if (dGameHours <= 0) return;
+        if (!config.ThermalSeeding || field.ThermalPressureFunc == null) return;
+
+        // Expected seed attempts scale with elapsed game time (so seeding also speeds up during sleep).
+        double expected = ThermalSeedRatePerDay / 24.0 * dGameHours;
+        int attempts = (int)expected;
+        if (attempts > MaxSpawnPerTick) attempts = MaxSpawnPerTick;
+        if (rand.NextDouble() < expected - Math.Floor(expected)) attempts++;
+        for (int i = 0; i < attempts; i++) TrySeedOne(now);
+    }
+
+    private void TrySeedOne(double now)
+    {
         if (!TryGetPopulationCenter(out double cx, out double cz)) return;
 
         double sx = cx + (rand.NextDouble() - 0.5) * 2.0 * SeedScanRadius;
         double sz = cz + (rand.NextDouble() - 0.5) * 2.0 * SeedScanRadius;
-        double th = field.ThermalPressureFunc(sx, sz, now);
+        double th = field.ThermalPressureFunc!(sx, sz, now);
         if (Math.Abs(th) < SeedThreshold) return;
 
         // Don't pile a new cell on top of an existing one.
