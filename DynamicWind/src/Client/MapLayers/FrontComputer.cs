@@ -1,7 +1,8 @@
 using System;
 using System.Collections.Generic;
+using DynamicWind.WindSystem;
 
-namespace DynamicWind;
+namespace DynamicWind.Client.MapLayers;
 
 public enum FrontType { Cold, Warm, Stationary }
 

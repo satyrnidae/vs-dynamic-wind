@@ -1,7 +1,7 @@
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
 
-namespace DynamicWind;
+namespace DynamicWind.Blocks;
 
 /// <summary>
 /// Weathervane block. A weathervane needs something to stand on, so it may only be placed when the

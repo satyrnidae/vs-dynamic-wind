@@ -1,8 +1,9 @@
 using System;
+using DynamicWind.Blocks;
 using Vintagestory.API.Client;
 using Vintagestory.API.MathTools;
 
-namespace DynamicWind;
+namespace DynamicWind.Client.Render;
 
 /// <summary>
 /// Renders the rotating upper portion (the arrow) of a weathervane, easing its yaw each frame toward the

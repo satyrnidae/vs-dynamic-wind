@@ -1,4 +1,7 @@
 using System;
+using DynamicWind.Config;
+using DynamicWind.Network;
+using DynamicWind.WindSystem;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;

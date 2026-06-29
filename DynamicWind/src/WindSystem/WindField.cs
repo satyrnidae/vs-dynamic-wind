@@ -1,9 +1,10 @@
 using System;
 using System.Collections.Generic;
+using DynamicWind.Network;
 using ProtoBuf;
 using Vintagestory.API.MathTools;
 
-namespace DynamicWind;
+namespace DynamicWind.WindSystem;
 
 /// <summary>
 /// A moving pressure system. Positive <see cref="Strength"/> = low pressure (cyclonic, draws wind

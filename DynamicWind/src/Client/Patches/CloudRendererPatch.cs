@@ -1,12 +1,14 @@
 using System;
 using System.Reflection;
+using DynamicWind.Config;
+using DynamicWind.WindSystem;
 using HarmonyLib;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
 using Vintagestory.GameContent;
 
-namespace DynamicWind;
+namespace DynamicWind.Client.Patches;
 
 /// <summary>
 /// Client Harmony patch making clouds drift along the true wind direction. Vanilla

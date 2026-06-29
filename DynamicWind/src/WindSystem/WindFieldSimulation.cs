@@ -1,12 +1,13 @@
 using System;
-using System.Collections.Generic;
+using DynamicWind.Config;
+using DynamicWind.Network;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 using Vintagestory.API.Util;
 
-namespace DynamicWind;
+namespace DynamicWind.WindSystem;
 
 /// <summary>
 /// Server-authoritative pressure-system simulation. Spawns low/high cells to the west of players,

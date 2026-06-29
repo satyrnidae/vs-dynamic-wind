@@ -1,3 +1,10 @@
+using DynamicWind.Client;
+using DynamicWind.Client.MapLayers;
+using DynamicWind.Client.Patches;
+using DynamicWind.Config;
+using DynamicWind.Network;
+using DynamicWind.Patches;
+using DynamicWind.ThermalPressure;
 using HarmonyLib;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;

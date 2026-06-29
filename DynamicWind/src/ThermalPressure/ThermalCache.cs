@@ -1,7 +1,8 @@
 using System;
 using System.Collections.Generic;
+using DynamicWind.WindSystem;
 
-namespace DynamicWind;
+namespace DynamicWind.ThermalPressure;
 
 /// <summary>
 /// Coarse, time-bucketed cache around the (expensive) terrain-thermal pressure function. Thermal

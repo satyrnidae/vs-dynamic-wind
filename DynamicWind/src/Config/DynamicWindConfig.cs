@@ -1,9 +1,8 @@
-using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using ProtoBuf;
 
-namespace DynamicWind;
+namespace DynamicWind.Config;
 
 /// <summary>
 /// Server-authoritative configuration. The same object is the on-disk JSON (via

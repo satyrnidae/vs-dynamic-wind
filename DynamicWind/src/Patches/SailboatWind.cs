@@ -1,11 +1,13 @@
 using System;
 using System.Reflection;
+using DynamicWind.Config;
+using DynamicWind.WindSystem;
 using HarmonyLib;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
 using Vintagestory.GameContent;
 
-namespace DynamicWind;
+namespace DynamicWind.Patches;
 
 /// <summary>
 /// Harmony patch making sailboats respond to wind direction. Vanilla <see cref="EntityBoat"/>

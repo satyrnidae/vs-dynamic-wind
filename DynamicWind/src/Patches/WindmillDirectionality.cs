@@ -1,12 +1,14 @@
 using System;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using DynamicWind.Config;
+using DynamicWind.WindSystem;
 using HarmonyLib;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
 using Vintagestory.GameContent.Mechanics;
 
-namespace DynamicWind;
+namespace DynamicWind.Patches;
 
 /// <summary>
 /// Server Harmony patch giving windmills directional response. Vanilla

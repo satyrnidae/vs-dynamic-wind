@@ -1,6 +1,8 @@
+using DynamicWind.Config;
+using DynamicWind.WindSystem;
 using ProtoBuf;
 
-namespace DynamicWind;
+namespace DynamicWind.Network;
 
 /// <summary>
 /// Server→client broadcast of the authoritative wind field: the pressure-cell list plus the base

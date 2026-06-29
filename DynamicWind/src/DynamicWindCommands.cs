@@ -1,5 +1,7 @@
 using System;
 using System.Text;
+using DynamicWind.Config;
+using DynamicWind.WindSystem;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
 using Vintagestory.API.MathTools;

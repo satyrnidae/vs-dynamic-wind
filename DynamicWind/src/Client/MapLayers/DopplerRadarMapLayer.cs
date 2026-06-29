@@ -5,7 +5,7 @@ using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
 using Vintagestory.GameContent;
 
-namespace DynamicWind;
+namespace DynamicWind.Client.MapLayers;
 
 /// <summary>
 /// "Doppler radar" map overlay. Samples the precipitation noise field

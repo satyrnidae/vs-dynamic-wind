@@ -1,8 +1,9 @@
 using System;
 using ConfigLib;
+using DynamicWind.Config;
 using Vintagestory.API.Common;
 
-namespace DynamicWind;
+namespace DynamicWind.Client;
 
 /// <summary>
 /// Optional integration with the <c>configlib</c> mod, isolated here so the only code that touches

@@ -1,10 +1,11 @@
-using System;
 using System.Reflection;
+using DynamicWind.Config;
+using DynamicWind.WindSystem;
 using HarmonyLib;
 using Vintagestory.API.Common;
 using Vintagestory.GameContent;
 
-namespace DynamicWind;
+namespace DynamicWind.Patches;
 
 /// <summary>
 /// Couples the pressure field to REAL precipitation at the single chokepoint every consumer funnels

@@ -1,13 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using DynamicWind.WindSystem;
 using HarmonyLib;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
 using Vintagestory.GameContent;
 
-namespace DynamicWind;
+namespace DynamicWind.Client.MapLayers;
 
 /// <summary>
 /// Synoptic weather-front overlay (world map only, not the minimap). Draws the classic surface-analysis

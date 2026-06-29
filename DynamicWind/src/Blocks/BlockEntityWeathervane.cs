@@ -1,9 +1,10 @@
 using System;
+using DynamicWind.Client.Render;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
 
-namespace DynamicWind;
+namespace DynamicWind.Blocks;
 
 /// <summary>
 /// Weathervane block entity. The static post + compass letters (<c>stalk</c>, <c>nsbone</c>,

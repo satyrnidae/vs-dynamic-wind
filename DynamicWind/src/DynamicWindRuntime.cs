@@ -1,3 +1,5 @@
+using DynamicWind.Config;
+using DynamicWind.WindSystem;
 using Vintagestory.API.Common;
 
 namespace DynamicWind;

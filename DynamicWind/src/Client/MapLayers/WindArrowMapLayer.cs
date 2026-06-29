@@ -1,12 +1,13 @@
 using System;
 using System.Reflection;
+using DynamicWind.WindSystem;
 using HarmonyLib;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
 using Vintagestory.GameContent;
 
-namespace DynamicWind;
+namespace DynamicWind.Client.MapLayers;
 
 /// <summary>
 /// World-map overlay (full map only, NOT the minimap HUD) that draws wind direction as a fixed 24×24
@@ -31,9 +32,9 @@ public class WindArrowMapLayer : MapLayer
     private static readonly FieldInfo? fSnapToPlayer = AccessTools.Field(typeof(GuiElementMap), "snapToPlayer");
 
     // Pressure tint endpoints (arrow art is greyscale; rgbaIn multiplies it).
-    private static readonly Vec4f White = new(1f, 1f, 1f, 1f);
-    private static readonly Vec4f LowColor = new(0xFF / 255f, 0x4D / 255f, 0x35 / 255f, 1f);  // crimson #FF4D35
-    private static readonly Vec4f HighColor = new(0x66 / 255f, 0xC4 / 255f, 0xFF / 255f, 1f); // sky blue #66C4FF
+private static readonly Vec4f White = new(1f, 1f, 1f, 1f);
+    private static readonly Vec4f LowColor = new(0xFF / 255f, 0x10 / 255f, 0f, 1f);  // crimson #FF1000
+    private static readonly Vec4f HighColor = new(0x26 / 255f, 0x51 / 255f, 0xFF / 255f, 1f); // cobalt #2651FF
 
     // Per-cell cache (index = row*Grid + col).
     private readonly float[] cAngle = new float[Grid * Grid];
