@@ -64,6 +64,7 @@ public abstract class DynamicWindModCommon : ModSystem
         Field.BaseStrength = Config.BaseJetstreamStrength;
         Field.MeanderAmplitude = Config.JetstreamMeanderAmplitude;
         Field.CyclonicInflowAngle = Config.CyclonicInflowAngleDeg * GameMath.DEG2RAD;
+        Field.SeasonalBiasMaxAngle = Config.SeasonalBias ? Config.SeasonalBiasMaxAngleDeg * GameMath.DEG2RAD : 0.0;
         Field.GradientWindScale = Config.PressureWindStrength;
         Field.OrographicEnabled = Config.Orographic.Enabled;
         Field.OroSlowdown = Config.Orographic.SlowdownFactor;

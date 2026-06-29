@@ -14,6 +14,8 @@ public class WindFieldState
     public double BaseStrength;
     public double MeanderAmplitude;
     public double CyclonicInflowAngle;
+    /// <summary>Seasonal N/S jetstream bias factor in [−1, 1] (see <see cref="WindField.SeasonalBiasZ"/>).</summary>
+    public double SeasonalBiasZ;
     /// <summary>Server <c>Calendar.TotalHours</c> when this snapshot was sent.</summary>
     public double TotalHoursAnchor;
 }

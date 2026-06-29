@@ -53,6 +53,7 @@ public class WindFieldSimulation
     public void OnTick(float dt)
     {
         double now = sapi.World.Calendar.TotalHours;
+        UpdateSeasonalBias();
         if (!initialized)
         {
             lastGameHours = now;
@@ -69,6 +70,34 @@ public class WindFieldSimulation
         Expire(now);
         MaybeSpawn(now, dGameHours);
         MaybeSeedThermal(now, dGameHours);
+    }
+
+    // Centre of the "Summer" season band from GameCalendar.GetSeason: (0.4685 + 0.726) / 2.
+    private const double SummerPeakRel = 0.59725;
+
+    /// <summary>
+    /// Recompute the global seasonal N/S jetstream bias from the season + hemisphere at a reference
+    /// position: +1 (poleward) at peak summer, −1 (equatorward) at peak winter, with the hemisphere
+    /// sign so northern sections blow southwesterly in summer and southern sections northwesterly. The
+    /// result is globally uniform (the hemisphere flip and half-year season offset cancel), so a single
+    /// reference sample represents the whole world; it is synced to clients via <see cref="WindFieldState"/>.
+    /// </summary>
+    private void UpdateSeasonalBias()
+    {
+        if (field.SeasonalBiasMaxAngle <= 0) { field.SeasonalBiasZ = 0; return; }
+        try
+        {
+            var refPos = new BlockPos(sapi.WorldManager.MapSizeX / 2, sapi.World.SeaLevel, sapi.WorldManager.MapSizeZ / 2, 0);
+            float seasonRel = sapi.World.Calendar.GetSeasonRel(refPos);
+            EnumHemisphere hemi = sapi.World.Calendar.GetHemisphere(refPos);
+            double summerness = Math.Cos(2.0 * Math.PI * (seasonRel - SummerPeakRel)); // +1 midsummer, −1 midwinter
+            double polewardZdir = hemi == EnumHemisphere.South ? 1.0 : -1.0;            // N pole = −Z, S pole = +Z
+            field.SeasonalBiasZ = polewardZdir * summerness;
+        }
+        catch
+        {
+            field.SeasonalBiasZ = 0; // hemisphere/season not ready yet → no bias
+        }
     }
 
     /// <summary>
@@ -277,6 +306,7 @@ public class WindFieldSimulation
             BaseStrength = field.BaseStrength,
             MeanderAmplitude = field.MeanderAmplitude,
             CyclonicInflowAngle = field.CyclonicInflowAngle,
+            SeasonalBiasZ = field.SeasonalBiasZ,
             TotalHoursAnchor = field.AnchorHours
         };
     }

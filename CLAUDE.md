@@ -30,6 +30,15 @@ systems, and couples the rest of the world to it:
   hot low-pressure land. NOTE: `WeatherCoupling.OnGetClimate` calls `PressureAt` → thermal → `GetClimateAt`,
   so it uses a `[ThreadStatic]` reentrancy guard to avoid infinite recursion. (Thermal currently feeds
   pressure/weather/visualization only, not wind direction — sea-breeze wind coupling is possible future work.)
+- **Seasonal jetstream bias** — the westerly base flow tilts N/S with the seasons: poleward in summer,
+  equatorward in winter. So a northern-hemisphere section is southwesterly in summer / northwesterly in
+  winter, and a southern section is the mirror. Implemented as a single signed factor `WindField.SeasonalBiasZ`
+  ∈ [−1,1] added to the base jetstream angle (`SeasonalBiasMaxAngle`, config `SeasonalBiasMaxAngleDeg`,
+  default 45°). The server recomputes it each tick from `Calendar.GetSeasonRel` + `GetHemisphere` at a
+  reference position (`summerness = cos(2π·(seasonRel − 0.597))`, times the poleward Z sign: N pole = −Z,
+  S pole = +Z) and syncs it in `WindFieldState`. It is **globally uniform** because VS offsets southern-
+  hemisphere seasons by half a year (`GetSeasonRel` returns `(YearRel+0.5)%1` there), so the hemisphere flip
+  and the season offset cancel — one reference sample is correct everywhere. Shows in `/dynamicwind debug`.
 - **Pressure dynamics** (`PressureDynamicsConfig`, evolved in `WindFieldSimulation`) — cells are a living
   field, not static gaussians:
   - **Advection** — each server tick a cell drifts along the *local background wind* (`WindAt(x,z,t,excludeCell)`,

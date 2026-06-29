@@ -40,6 +40,8 @@ internal static class DynamicWindCommands
         sb.AppendLine($"Wind bearing: {bearing:0.0}° (0=E, 90=S, ±180=W, -90=N)");
         sb.AppendLine($"Strength multiplier: {mag:0.000}");
         sb.AppendLine($"Pressure: {pressure:0.000} ({(pressure > 0 ? "LOW/stormy" : pressure < 0 ? "HIGH/calm" : "neutral")})");
+        string biasDesc = field.SeasonalBiasZ < -0.05 ? "SW'ly (toward NE)" : field.SeasonalBiasZ > 0.05 ? "NW'ly (toward SE)" : "due W'ly";
+        sb.AppendLine($"Seasonal bias: {field.SeasonalBiasZ:0.00} ({biasDesc})");
         sb.Append($"Active cells: {field.Cells.Count}");
         return TextCommandResult.Success(sb.ToString());
     }

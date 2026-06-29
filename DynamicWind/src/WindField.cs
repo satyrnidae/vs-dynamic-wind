@@ -48,6 +48,16 @@ public class WindField
     public double CyclonicInflowAngle = 0.35;
 
     /// <summary>
+    /// Seasonal meridional (north/south) bias factor in [−1, 1] applied to the base jetstream:
+    /// &gt;0 tilts the westerly toward +Z (south), &lt;0 toward −Z (north). Computed server-side from
+    /// the season + hemisphere (poleward in summer, equatorward in winter) and synced to clients —
+    /// the value is globally uniform because the hemisphere flip and the half-year season offset cancel.
+    /// </summary>
+    public double SeasonalBiasZ;
+    /// <summary>Maximum N/S tilt of the base jetstream at peak summer/winter, in radians.</summary>
+    public double SeasonalBiasMaxAngle;
+
+    /// <summary>
     /// Calendar time (total hours) at which each cell's <see cref="PressureCell.X"/>/<c>Z</c> was the
     /// true position. Effective positions are advected by velocity from this anchor, so a single
     /// snapshot keeps server and client identical between updates.
@@ -125,10 +135,12 @@ public class WindField
     /// </summary>
     public Vec2d WindAt(double x, double z, double totalHours, int excludeCell)
     {
-        // Base jetstream: due-East flow with a slow meandering bearing.
+        // Base jetstream: due-East flow with a slow meandering bearing, tilted N/S by the season
+        // (poleward in summer → −Z, equatorward in winter → +Z; sign is in SeasonalBiasZ).
         double meander = MeanderAmplitude * Meander(x, z, totalHours);
-        double wx = BaseStrength * Math.Cos(meander);
-        double wz = BaseStrength * Math.Sin(meander);
+        double angle = meander + SeasonalBiasMaxAngle * SeasonalBiasZ;
+        double wx = BaseStrength * Math.Cos(angle);
+        double wz = BaseStrength * Math.Sin(angle);
 
         double cosIn = Math.Cos(CyclonicInflowAngle);
         double sinIn = Math.Sin(CyclonicInflowAngle);

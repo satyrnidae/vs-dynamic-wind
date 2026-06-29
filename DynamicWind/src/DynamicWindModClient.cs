@@ -73,6 +73,7 @@ public class DynamicWindModClient : DynamicWindModCommon
         Field.BaseStrength = s.BaseStrength;
         Field.MeanderAmplitude = s.MeanderAmplitude;
         Field.CyclonicInflowAngle = s.CyclonicInflowAngle;
+        Field.SeasonalBiasZ = s.SeasonalBiasZ;
         Field.AnchorHours = s.TotalHoursAnchor;
     }
 

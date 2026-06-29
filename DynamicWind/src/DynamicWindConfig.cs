@@ -31,6 +31,15 @@ public class DynamicWindConfig
     [Description("How strongly wind flows down the pressure gradient (high → low). 0 disables pressure-driven wind.")]
     public float PressureWindStrength { get; set; } = 150f;
 
+    [Category("Jetstream")]
+    [Description("Shift the westerly bias north/south with the seasons (poleward in summer → southwesterly, equatorward in winter → northwesterly; mirrored per hemisphere).")]
+    public bool SeasonalBias { get; set; } = true;
+
+    [Category("Jetstream")]
+    [Range(0.0, 80.0)]
+    [Description("Maximum north/south tilt of the westerly at peak summer/winter, in degrees (45 ≈ pure NW/SW at the extremes).")]
+    public float SeasonalBiasMaxAngleDeg { get; set; } = 45f;
+
     // ── Pressure systems ────────────────────────────────────────────────────
     [Category("PressureSystems")]
     [Range(0.0, 24.0)]
@@ -80,6 +89,7 @@ public class DynamicWindConfig
         BaseJetstreamStrength = Clamp(BaseJetstreamStrength, 0f, 3f);
         JetstreamMeanderAmplitude = Clamp(JetstreamMeanderAmplitude, 0f, 1.5f);
         PressureWindStrength = Clamp(PressureWindStrength, 0f, 500f);
+        SeasonalBiasMaxAngleDeg = Clamp(SeasonalBiasMaxAngleDeg, 0f, 80f);
         LowSpawnRatePerDay = Clamp(LowSpawnRatePerDay, 0f, 24f);
         HighSpawnRatePerDay = Clamp(HighSpawnRatePerDay, 0f, 24f);
         CellRadiusMin = Clamp(CellRadiusMin, 50f, 8000f);
@@ -110,6 +120,8 @@ public class DynamicWindConfig
         BaseJetstreamStrength = o.BaseJetstreamStrength;
         JetstreamMeanderAmplitude = o.JetstreamMeanderAmplitude;
         PressureWindStrength = o.PressureWindStrength;
+        SeasonalBias = o.SeasonalBias;
+        SeasonalBiasMaxAngleDeg = o.SeasonalBiasMaxAngleDeg;
         LowSpawnRatePerDay = o.LowSpawnRatePerDay;
         HighSpawnRatePerDay = o.HighSpawnRatePerDay;
         CellRadiusMin = o.CellRadiusMin;
