@@ -86,6 +86,12 @@ systems, and couples the rest of the world to it:
 `+X = East`, `+Z = South` (so North = −Z, West = −X). Jetstream base flow = +X. Bearing in
 `/dynamicwind debug` is `atan2(Z, X)` degrees: 0 = E, 90 = S, ±180 = W, −90 = N.
 
+Because the map is north-up with +Z pointing *down* (south), the screen-CCW tangent is `(rz, −rx)`, so
+lows circulate **counter-clockwise** and highs **clockwise** (NH convention). Pressure-cell radii are
+derived from the server's loaded-chunk extent (`MaxChunkRadius × 32`): each cell spans ~25–75% of it, so
+a few systems cover what's loaded rather than one cell blanketing everything. `CellRadiusMin/Max` are just
+safety clamps now.
+
 ## Architecture
 
 Three-class ModSystem split (modelled on `D:\satyrnidae\vs-balladeer-class`):

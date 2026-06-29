@@ -177,11 +177,13 @@ public class WindField
             double falloff = Math.Exp(-norm * norm); // gaussian
             if (falloff < 1e-4) continue;
 
-            // Radial unit (center → sample) and CCW tangent.
+            // Radial unit (center → sample) and tangent. With +X=East, +Z=South (north-up map view),
+            // (rz, -rx) is the COUNTER-clockwise tangent on screen — so a low (s>0) circulates CCW and a
+            // high (s<0) circulates CW, matching the (northern-hemisphere) real-world convention.
             double rx = dx / dist;
             double rz = dz / dist;
-            double tx = -rz;
-            double tz = rx;
+            double tx = rz;
+            double tz = -rx;
 
             // windCell = s * falloff * (cos(inflow)*tangent - sin(inflow)*radial)
             //   low  (s>0): CCW tangent + inflow toward center  (cyclonic)

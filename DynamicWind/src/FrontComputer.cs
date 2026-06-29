@@ -124,7 +124,7 @@ public static class FrontComputer
     /// <summary>Smooth, slowly-evolving curvature offset (blocks-scale, in [-~1.5, ~1.5]) along the front.</summary>
     public static double Curve(double u, double seed, double totalHours)
     {
-        return Math.Sin(u * 0.004 + seed + totalHours * 0.05)
-             + 0.5 * Math.Sin(u * 0.011 - seed * 1.3 + totalHours * 0.03);
+        return Math.Sin(u * 0.0025 + seed + totalHours * 0.05)
+             + 0.5 * Math.Sin(u * 0.006 - seed * 1.3 + totalHours * 0.03);
     }
 }

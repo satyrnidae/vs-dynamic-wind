@@ -67,13 +67,13 @@ public class DynamicWindConfig
 
     [Category("PressureSystems")]
     [Range(50.0, 8000.0)]
-    [Description("Minimum pressure-cell influence radius, in blocks.")]
-    public float CellRadiusMin { get; set; } = 400f;
+    [Description("Minimum pressure-cell influence radius, in blocks (safety clamp; cell size is derived from the loaded-chunk extent).")]
+    public float CellRadiusMin { get; set; } = 50f;
 
     [Category("PressureSystems")]
     [Range(50.0, 8000.0)]
-    [Description("Maximum pressure-cell influence radius, in blocks.")]
-    public float CellRadiusMax { get; set; } = 1200f;
+    [Description("Maximum pressure-cell influence radius, in blocks (safety clamp; cell size is derived from the loaded-chunk extent).")]
+    public float CellRadiusMax { get; set; } = 8000f;
 
     [Category("PressureSystems")]
     [Range(0.0, 60.0)]

@@ -212,7 +212,10 @@ public class WindFieldSimulation
     {
         if (!TryGetPopulationCenter(out double cx, out double cz)) return;
 
-        float radius = config.CellRadiusMin + (float)rand.NextDouble() * (config.CellRadiusMax - config.CellRadiusMin);
+        // Size cells to cover 25–75% of the loaded-chunk extent, so a few systems span what's loaded
+        // (instead of one cell blanketing everything → uniform pressure). Config radii act as safety clamps.
+        double lr = LoadedRadiusBlocks();
+        float radius = GameMath.Clamp((float)((0.25 + rand.NextDouble() * 0.5) * lr), config.CellRadiusMin, config.CellRadiusMax);
 
         // Jetstream advection speed in blocks/hour (eastbound), scaled by base strength.
         double advect = (300.0 + rand.NextDouble() * 300.0) * Math.Max(0.2, config.BaseJetstreamStrength);
@@ -284,7 +287,7 @@ public class WindFieldSimulation
             if (dx * dx + dz * dz < SeedMinSeparation * SeedMinSeparation) return;
         }
 
-        float radius = config.CellRadiusMin * 0.6f;
+        float radius = GameMath.Clamp((float)(0.3 * LoadedRadiusBlocks()), config.CellRadiusMin, config.CellRadiusMax);
         float strength = (float)Math.Max(-2.0, Math.Min(2.0, th * SeedGain));
         double jet = (300.0 + rand.NextDouble() * 300.0) * Math.Max(0.2, config.BaseJetstreamStrength);
         double durationHours = 8 + rand.NextDouble() * 16;
@@ -302,6 +305,14 @@ public class WindFieldSimulation
         });
         field.AnchorHours = now;
         Dirty = true;
+    }
+
+    /// <summary>Radius in blocks of the server's loaded-chunk area (MaxChunkRadius × chunk size).</summary>
+    private double LoadedRadiusBlocks()
+    {
+        int chunks = sapi.Server.Config?.MaxChunkRadius ?? 12;
+        if (chunks < 1) chunks = 1;
+        return chunks * 32.0; // GlobalConstants.ChunkSize
     }
 
     private bool TryGetPopulationCenter(out double x, out double z)
