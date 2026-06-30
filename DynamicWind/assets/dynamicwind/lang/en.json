@@ -14,9 +14,14 @@
     "setting-CellRadiusMax": "Pressure-cell radius max (blocks)",
     "setting-CyclonicInflowAngleDeg": "Cyclonic inflow angle (deg)",
     "setting-CirculationStrength": "Circulation strength",
+    "setting-MaxActiveCells": "Max active pressure systems",
 
     "setting-StormCouplingStrength": "Storm coupling strength",
     "setting-WeatherPressureCoupling": "Weather → pressure feedback",
+
+    "setting-FrontTemperatureMax": "Front temperature shift (max °C)",
+    "setting-ThermalTemperatureMax": "Terrain thermal temperature shift (max °C)",
+
     "setting-CloudsFollowWind": "Clouds follow wind",
 
     "setting-AltitudePressureDrop": "Altitude pressure drop (at ceiling)",
@@ -44,13 +49,43 @@
     "game:maplayer-dynamicwindradar": "Precipitation radar",
     "game:maplayer-dynamicwindfronts": "Weather fronts",
 
-    "block-weathervane-copper": "Copper Weathervane",
-    "block-weathervane-tinbronze": "Tin Bronze Weathervane",
-    "block-weathervane-bismuthbronze": "Bismuth Bronze Weathervane",
-    "block-weathervane-blackbronze": "Black Bronze Weathervane",
-    "block-weathervane-gold": "Gold Weathervane",
-    "block-weathervane-silver": "Silver Weathervane",
-    "block-weathervane-iron": "Iron Weathervane",
-    "block-weathervane-meteoriciron": "Meteoric Iron Weathervane",
-    "block-weathervane-steel": "Steel Weathervane"
+    "block-weathervane-copper": "Weathervane (Copper)",
+    "block-weathervane-tinbronze": "Weathervane (Tin bronze)",
+    "block-weathervane-bismuthbronze": "Weathervane (Bismuth bronze)",
+    "block-weathervane-blackbronze": "Weathervane (Black bronze)",
+    "block-weathervane-gold": "Weathervane (Gold)",
+    "block-weathervane-silver": "Weathervane (Silver)",
+    "block-weathervane-iron": "Weathervane (Iron)",
+    "block-weathervane-meteoriciron": "Weathervane (Meteoric iron)",
+    "block-weathervane-steel": "Weathervane (Steel)",
+
+    "item-weathervane-ornament-copper": "Weathervane ornament (Copper)",
+    "item-weathervane-ornament-tinbronze": "Weathervane ornament (Tin bronze)",
+    "item-weathervane-ornament-bismuthbronze": "Weathervane ornament (Bismuth bronze)",
+    "item-weathervane-ornament-blackbronze": "Weathervane ornament (Black bronze)",
+    "item-weathervane-ornament-gold": "Weathervane ornament (Gold)",
+    "item-weathervane-ornament-silver": "Weathervane ornament (Silver)",
+    "item-weathervane-ornament-iron": "Weathervane ornament (Iron)",
+    "item-weathervane-ornament-meteoriciron": "Weathervane ornament (Meteoric iron)",
+    "item-weathervane-ornament-steel": "Weathervane ornament (Steel)",
+
+    "item-weathervane-directional-northsouth-copper": "North-south directional (Copper)",
+    "item-weathervane-directional-northsouth-tinbronze": "North-south directional (Tin bronze)",
+    "item-weathervane-directional-northsouth-bismuthbronze": "North-south directional (Bismuth bronze)",
+    "item-weathervane-directional-northsouth-blackbronze": "North-south directional (Black bronze)",
+    "item-weathervane-directional-northsouth-gold": "North-south directional (Gold)",
+    "item-weathervane-directional-northsouth-silver": "North-south directional (Silver)",
+    "item-weathervane-directional-northsouth-iron": "North-south directional (Iron)",
+    "item-weathervane-directional-northsouth-meteoriciron": "North-south directional (Meteoric iron)",
+    "item-weathervane-directional-northsouth-steel": "North-south directional (Steel)",
+
+    "item-weathervane-directional-westeast-copper": "West-east directional (Copper)",
+    "item-weathervane-directional-westeast-tinbronze": "West-east directional (Tin bronze)",
+    "item-weathervane-directional-westeast-bismuthbronze": "West-east directional (Bismuth bronze)",
+    "item-weathervane-directional-westeast-blackbronze": "West-east directional (Black bronze)",
+    "item-weathervane-directional-westeast-gold": "West-east directional (Gold)",
+    "item-weathervane-directional-westeast-silver": "West-east directional (Silver)",
+    "item-weathervane-directional-westeast-iron": "West-east directional (Iron)",
+    "item-weathervane-directional-westeast-meteoriciron": "West-east directional (Meteoric iron)",
+    "item-weathervane-directional-westeast-steel": "West-east directional (Steel)"
 }

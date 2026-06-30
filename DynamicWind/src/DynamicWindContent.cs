@@ -11,7 +11,8 @@ public class DynamicWindContent : ModSystem
 {
     public override void Start(ICoreAPI api)
     {
-        api.RegisterBlockClass("Weathervane", typeof(BlockWeathervane));
-        api.RegisterBlockEntityClass("Weathervane", typeof(BlockEntityWeathervane));
+        api.RegisterBlockClass("BlockWeathervane", typeof(BlockWeathervane));
+        api.RegisterBlockEntityClass("BlockEntityWeathervane", typeof(BlockEntityWeathervane));
+        api.RegisterBlockClass("BlockMapleLeaves", typeof(BlockMapleLeaves));
     }
 }

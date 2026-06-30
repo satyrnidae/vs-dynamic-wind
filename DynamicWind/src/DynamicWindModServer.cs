@@ -61,6 +61,7 @@ public class DynamicWindModServer : DynamicWindModCommon
         api.Event.GameWorldSave += () => sim.Save();
         api.Event.PlayerJoin += OnPlayerJoin;
         api.Event.OnGetWindSpeed += OnGetWindSpeed;
+        api.Event.OnGetClimate += OnGetClimate;
 
         ServerChannel.SetMessageHandler<ConfigUpdateRequestPacket>(OnConfigUpdateRequest);
 
@@ -124,6 +125,7 @@ public class DynamicWindModServer : DynamicWindModCommon
         {
             sapi.Event.PlayerJoin -= OnPlayerJoin;
             sapi.Event.OnGetWindSpeed -= OnGetWindSpeed;
+            sapi.Event.OnGetClimate -= OnGetClimate;
             if (tickListenerId != 0) sapi.Event.UnregisterGameTickListener(tickListenerId);
         }
         harmony?.UnpatchAll("dynamicwind.server");

@@ -1,0 +1,42 @@
+[{
+  "ingredient": {
+    "type": "item",
+    "code": "game:ingot-*",
+    "name": "metal",
+    "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+  },
+  "pattern": [[
+    "#___#______#####",
+    "##__#______#____",
+    "#_#_############",
+    "#__##__________#",
+    "#___#______#####"
+  ]],
+  "name": "north to south directional",
+  "code": "weathervane-directional-northsouth-{metal}",
+  "output": {
+    "type": "item",
+    "code": "weathervane-directional-northsouth-{metal}"
+  }
+},
+{
+  "ingredient": {
+    "type": "item",
+    "code": "game:ingot-*",
+    "name": "metal",
+    "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+  },
+  "pattern": [[
+    "#___#______#####",
+    "#___#______#____",
+    "#_#_##########__",
+    "#####______#____",
+    "#___#______#####"
+  ]],
+  "name": "west to east directional",
+  "code": "weathervane-directional-westeast-{metal}",
+  "output": {
+    "type": "item",
+    "code": "weathervane-directional-westeast-{metal}"
+  }
+}]

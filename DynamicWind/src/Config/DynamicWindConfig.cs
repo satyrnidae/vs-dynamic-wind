@@ -72,12 +72,12 @@ public class DynamicWindConfig
     [Category("PressureSystems")]
     [Range(50.0, 8000.0)]
     [Description("Minimum pressure-cell influence radius, in blocks (safety clamp; cell size is derived from the loaded-chunk extent).")]
-    public float CellRadiusMin { get; set; } = 50f;
+    public float CellRadiusMin { get; set; } = 4000f;
 
     [Category("PressureSystems")]
-    [Range(50.0, 8000.0)]
+    [Range(50.0, 32000.0)]
     [Description("Maximum pressure-cell influence radius, in blocks (safety clamp; cell size is derived from the loaded-chunk extent).")]
-    public float CellRadiusMax { get; set; } = 8000f;
+    public float CellRadiusMax { get; set; } = 16000f;
 
     [Category("PressureSystems")]
     [Range(0.0, 60.0)]
@@ -89,6 +89,11 @@ public class DynamicWindConfig
     [Description("How strongly wind swirls around pressure systems (multiplier on each cell's circulation). Higher = stronger, more obvious rotation around lows/highs.")]
     public float CirculationStrength { get; set; } = 2.5f;
 
+    [Category("PressureSystems")]
+    [Range(0.0, 64.0)]
+    [Description("Maximum number of pressure systems active at once; new spawns and thermal seeds are skipped while at this cap (merges still reduce the count).")]
+    public int MaxActiveCells { get; set; } = 9;
+
     // ── Weather coupling ────────────────────────────────────────────────────
     [Category("Weather")]
     [Range(0.0, 2.0)]
@@ -99,6 +104,17 @@ public class DynamicWindConfig
     [Range(0.0, 2.0)]
     [Description("How strongly the weather feeds back onto pressure: clear skies lower a cell's pressure (toward high), clouds raise it (toward low), and storms raise it strongly (deep low). 0 disables the weather→pressure feedback.")]
     public float WeatherPressureCoupling { get; set; } = 0.3f;
+
+    // ── Temperature ─────────────────────────────────────────────────────────
+    [Category("Temperature")]
+    [Range(0.0, 15.0)]
+    [Description("Maximum °C a peak pressure system shifts local temperature: a deep low (+) warms, a strong high (−) cools. 0 disables front temperature.")]
+    public float FrontTemperatureMax { get; set; } = 3.0f;
+
+    [Category("Temperature")]
+    [Range(0.0, 5.0)]
+    [Description("Maximum °C the terrain-thermal field shifts local temperature (warm dry land warms, cool/deep water cools). 0 disables terrain temperature.")]
+    public float ThermalTemperatureMax { get; set; } = 1.0f;
 
     // ── Clouds ──────────────────────────────────────────────────────────────
     [Category("Clouds")]
@@ -201,13 +217,17 @@ public class DynamicWindConfig
         SeasonalBiasMaxAngleDeg = Clamp(SeasonalBiasMaxAngleDeg, 0f, 80f);
         LowSpawnRatePerDay = Clamp(LowSpawnRatePerDay, 0f, 24f);
         HighSpawnRatePerDay = Clamp(HighSpawnRatePerDay, 0f, 24f);
-        CellRadiusMin = Clamp(CellRadiusMin, 50f, 8000f);
-        CellRadiusMax = Clamp(CellRadiusMax, 50f, 8000f);
+        CellRadiusMin = Clamp(CellRadiusMin, 50f, 16000f);
+        CellRadiusMax = Clamp(CellRadiusMax, 50f, 32000f);
         if (CellRadiusMax < CellRadiusMin) CellRadiusMax = CellRadiusMin;
         CyclonicInflowAngleDeg = Clamp(CyclonicInflowAngleDeg, 0f, 60f);
         CirculationStrength = Clamp(CirculationStrength, 0f, 6f);
+        if (MaxActiveCells < 0) MaxActiveCells = 0;
+        else if (MaxActiveCells > 64) MaxActiveCells = 64;
         StormCouplingStrength = Clamp(StormCouplingStrength, 0f, 2f);
         WeatherPressureCoupling = Clamp(WeatherPressureCoupling, 0f, 2f);
+        FrontTemperatureMax = Clamp(FrontTemperatureMax, 0f, 15f);
+        ThermalTemperatureMax = Clamp(ThermalTemperatureMax, 0f, 5f);
 
         AltitudePressureDrop = Clamp(AltitudePressureDrop, 0f, 1f);
         AdvectionSpeed = Clamp(AdvectionSpeed, 0f, 2000f);
@@ -249,8 +269,11 @@ public class DynamicWindConfig
         CellRadiusMax = o.CellRadiusMax;
         CyclonicInflowAngleDeg = o.CyclonicInflowAngleDeg;
         CirculationStrength = o.CirculationStrength;
+        MaxActiveCells = o.MaxActiveCells;
         StormCouplingStrength = o.StormCouplingStrength;
         WeatherPressureCoupling = o.WeatherPressureCoupling;
+        FrontTemperatureMax = o.FrontTemperatureMax;
+        ThermalTemperatureMax = o.ThermalTemperatureMax;
         CloudsFollowWind = o.CloudsFollowWind;
         AltitudePressureDrop = o.AltitudePressureDrop;
         AdvectWithWind = o.AdvectWithWind;

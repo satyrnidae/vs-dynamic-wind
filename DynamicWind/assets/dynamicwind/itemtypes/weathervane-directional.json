@@ -1,0 +1,64 @@
+{
+  "code": "weathervane-directional",
+  "behaviorsByType":{
+    "*-northsouth-*": [{
+      "name": "GroundStorable",
+      "properties": {
+        "layout": "Stacking",
+        "upSolid": true,
+        "placeRemoveSound": "game:sounds/block/plate",
+        "stackingModel": "block/weathervane/directional-northsouth-pile",
+        "stackingTextures": {
+          "metal": "game:block/metal/plate/{metal}"
+        },
+        "collisionbox": { "x1": 0.125, "y1": 0, "z1": 0.125, "x2": 0.875, "y2": 0.0625, "z2": 0.875 },
+        "cbScaleYByLayer": 0.25,
+        "itemsPerModel": 2,
+        "cuboidsPerModel": 12,
+        "stackingCapacity": 8,
+        "transferQuantity": 1,
+        "bulkTransferQuantity": 4
+      }
+    }],
+    "*-westeast-*": [{
+      "name": "GroundStorable",
+      "properties": {
+        "layout": "Stacking",
+        "upSolid": true,
+        "placeRemoveSound": "game:sounds/block/plate",
+        "stackingModel": "block/weathervane/directional-westeast-pile",
+        "stackingTextures": {
+          "metal": "game:block/metal/plate/{metal}"
+        },
+        "collisionbox": { "x1": 0.125, "y1": 0, "z1": 0.125, "x2": 0.875, "y2": 0.0625, "z2": 0.875 },
+        "cbScaleYByLayer": 0.25,
+        "itemsPerModel": 2,
+        "cuboidsPerModel": 12,
+        "stackingCapacity": 8,
+        "transferQuantity": 1,
+        "bulkTransferQuantity": 4
+      }
+    }]
+  },
+  "variantgroups": [
+    { "code": "direction", "states": [ "northsouth", "westeast" ]},
+    { "code": "metal", "states": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"] }
+  ],
+  "shape": { "base": "item/weathervane-directional-{direction}" },
+  "textures": {
+    "metal": { "base": "game:block/metal/plate/{metal}" }
+  },
+  "maxStackSize": 8,
+  "storageFlags": 1,
+  "creativeInventory": { "general": ["*"], "items": ["*"] },
+  "tpHandTransform": {
+		"translation": { "x": -0.92, "y": -0.34, "z": -0.76 },
+		"rotation": { "x": 8, "y": -164, "z": -9 },
+		"scale": 0.6
+	},
+	"guiTransform": {
+		"translation": { "x": 33.3, "y": -5, "z": -0.2 },
+		"rotation": { "x": -103, "y": 2, "z": -56 },
+		"scale": 2.86
+	}
+}

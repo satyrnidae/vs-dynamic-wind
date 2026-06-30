@@ -1,0 +1,19 @@
+[
+	{
+		"file": "game:blocktypes/plant/leaves/branchy.json",
+		"op": "remove",
+		"path": "/class",
+		"enabled": false
+	},
+	{
+		"file": "game:blocktypes/plant/leaves/branchy.json",
+		"op": "add",
+		"path": "/classByType",
+		"value": {
+			"*-crimsonkingmaple": "BlockMapleLeaves",
+			"*-maple": "BlockMapleLeaves",
+			"*": "BlockLeaves"
+		},
+		"enabled": false
+	}
+]

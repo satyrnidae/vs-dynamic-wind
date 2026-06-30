@@ -44,6 +44,7 @@ public class DynamicWindModClient : DynamicWindModCommon
         Field.TerrainHeightFunc = (x, z) => heightCache.Get(x, z, 0);
 
         api.Event.OnGetWindSpeed += OnGetWindSpeed;
+        api.Event.OnGetClimate += OnGetClimate;
 
         ClientChannel.SetMessageHandler<DynamicWindConfig>(OnConfigReceived);
         ClientChannel.SetMessageHandler<WindFieldState>(OnStateReceived);
@@ -115,6 +116,7 @@ public class DynamicWindModClient : DynamicWindModCommon
         if (capi != null)
         {
             capi.Event.OnGetWindSpeed -= OnGetWindSpeed;
+            capi.Event.OnGetClimate -= OnGetClimate;
         }
         harmony?.UnpatchAll("dynamicwind.client");
         DynamicWindRuntime.ClientField = null;

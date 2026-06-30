@@ -1,11 +1,11 @@
 {
 	"code": "weathervane",
-	"class": "Weathervane",
-	"entityClass": "Weathervane",
+	"class": "BlockWeathervane",
+	"entityClass": "BlockEntityWeathervane",
 	"variantgroups": [
-		{ "code": "metal", "states": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "gold", "silver", "iron", "meteoriciron", "steel"] }
+		{ "code": "metal", "states": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"] }
 	],
-	"shape": { "base": "dynamicwind:blocks/weathervane" },
+	"shape": { "base": "dynamicwind:block/weathervane" },
 	"textures": {
 		"metal": { "base": "game:block/metal/plate/{metal}" }
 	},
@@ -21,5 +21,10 @@
 	"collisionbox": null,
 	"selectionbox": { "x1": 0.42, "y1": 0, "z1": 0.42, "x2": 0.58, "y2": 0.5, "z2": 0.58 },
 	"sidesolid": { "all": false },
-	"sideopaque": { "all": false }
+	"sideopaque": { "all": false },
+	"tpHandTransform": {
+		"translation": { "x": -1.5, "y": -0.6, "z": -0.8 },
+		"rotation": { "x": 122, "y": -24, "z": -92 },
+		"scale": 0.6
+	}
 }

@@ -24,7 +24,12 @@ public class WindFieldSimulation
     private const double BernoulliPerHour = 0.5;         // strength push per (speed−1) per hour at strength 1
     private const double MaxStrength = 3.0;
     private const double MinStrength = 0.04;             // below this a cell has dispersed away
-    private const double MaxRadius = 6000.0;
+    private const double MaxRadius = 32000.0;
+
+    // Merge / displace of overlapping cells.
+    private const double OverlapFactor = 0.5;        // overlap if centres are within this × (R_i + R_j)
+    private const double MergedMaxStrength = 4.0;    // merged same-type cells may exceed the normal cap, so they're genuinely stronger
+    private const double DisplacePush = 200.0;       // blocks a fully-overlapping high shoves a low per merge pass
 
     // Weather → pressure feedback: the weather map nudges each cell's strength. Clear skies push toward
     // high (−), clouds toward low (+), storms strongly toward low. Cloud cover below this reads as "clear".
@@ -52,6 +57,7 @@ public class WindFieldSimulation
 
     private double lastGameHours;
     private bool initialized;
+    private bool loadedPendingReanchor;
     public bool Dirty { get; private set; }
 
     public WindFieldSimulation(ICoreServerAPI sapi, WindField field, DynamicWindConfig config)
@@ -67,10 +73,24 @@ public class WindFieldSimulation
     {
         double now = sapi.World.Calendar.TotalHours;
         UpdateSeasonalBias();
+        if (loadedPendingReanchor)
+        {
+            // Cells were just restored from disk. The SAVED anchor (and even the load-time calendar) can
+            // lag the first live tick's clock; anchoring to that stale time would make this tick advect +
+            // disperse every cell by a huge dt — teleporting them thousands of blocks, ballooning radii to
+            // the cap, and slamming strengths to the clamp (exactly the "completely different systems on
+            // reload" symptom). Re-anchor to the authoritative current time instead: cells keep their saved
+            // positions, treated as current (nothing simulates while the world is unloaded).
+            field.AnchorHours = now;
+            lastGameHours = now;
+            initialized = true;
+            loadedPendingReanchor = false;
+            return;
+        }
         if (!initialized)
         {
             lastGameHours = now;
-            if (field.Cells.Count == 0) field.AnchorHours = now;
+            field.AnchorHours = now;
             initialized = true;
             return;
         }
@@ -80,6 +100,7 @@ public class WindFieldSimulation
         if (dGameHours < 0) dGameHours = 0; // calendar reset safety
 
         Advect(now, dGameHours);
+        MergeAndDisplace(now, dGameHours);
         ApplyWeatherFeedback(now, dGameHours);
         Expire(now);
         MaybeSpawn(now, dGameHours);
@@ -187,6 +208,95 @@ public class WindFieldSimulation
     }
 
     /// <summary>
+    /// Resolve overlapping cells. Two SAME-type cells (both low or both high) within
+    /// <see cref="OverlapFactor"/> of their summed radii merge into one deeper/stronger system (summed
+    /// strength, |strength|-weighted centre + velocity, combined radius), so colliding fronts reinforce.
+    /// A HIGH overlapping a LOW does NOT merge: the high shoves the low aside (a positional push away
+    /// from the high) WITHOUT draining the low's strength — the displaced low keeps its full intensity
+    /// and simply moves. Runs after <see cref="Advect"/>, where each cell's stored X/Z is its current
+    /// position (anchor == now), so centres compare directly.
+    /// </summary>
+    private void MergeAndDisplace(double now, double dGameHours)
+    {
+        int n = field.Cells.Count;
+        if (n < 2) return;
+
+        var consumed = new bool[n];
+        bool changed = false;
+
+        for (int i = 0; i < n; i++)
+        {
+            if (consumed[i]) continue;
+            for (int j = i + 1; j < n; j++)
+            {
+                if (consumed[j]) continue;
+                PressureCell a = field.Cells[i];
+                PressureCell b = field.Cells[j];
+
+                double dx = b.X - a.X;
+                double dz = b.Z - a.Z;
+                double dist = Math.Sqrt(dx * dx + dz * dz);
+                double threshold = OverlapFactor * (a.Radius + b.Radius);
+                if (threshold <= 0 || dist >= threshold) continue;
+
+                double overlapFrac = 1.0 - dist / threshold;
+                if (overlapFrac < 0) overlapFrac = 0; else if (overlapFrac > 1) overlapFrac = 1;
+
+                if (a.IsLow == b.IsLow)
+                {
+                    // MERGE into cell a; drop cell b.
+                    double wa = Math.Abs(a.Strength), wb = Math.Abs(b.Strength);
+                    double wsum = wa + wb;
+                    if (wsum < 1e-6) { wa = wb = 0.5; wsum = 1.0; }
+
+                    double merged = a.Strength + b.Strength;
+                    if (merged > MergedMaxStrength) merged = MergedMaxStrength;
+                    else if (merged < -MergedMaxStrength) merged = -MergedMaxStrength;
+
+                    a.X = (a.X * wa + b.X * wb) / wsum;
+                    a.Z = (a.Z * wa + b.Z * wb) / wsum;
+                    a.VelX = (a.VelX * wa + b.VelX * wb) / wsum;
+                    a.VelZ = (a.VelZ * wa + b.VelZ * wb) / wsum;
+                    a.Strength = (float)merged;
+                    a.Radius = (float)Math.Min(MaxRadius, Math.Sqrt((double)a.Radius * a.Radius + (double)b.Radius * b.Radius));
+                    a.BornTotalHours = Math.Min(a.BornTotalHours, b.BornTotalHours);
+                    a.DiesTotalHours = Math.Max(a.DiesTotalHours, b.DiesTotalHours);
+
+                    consumed[j] = true;
+                    changed = true;
+                }
+                else
+                {
+                    // DISPLACE: the high pushes the low away, strength untouched.
+                    PressureCell high = a.IsLow ? b : a;
+                    PressureCell low = a.IsLow ? a : b;
+                    double ux = low.X - high.X;
+                    double uz = low.Z - high.Z;
+                    double ul = Math.Sqrt(ux * ux + uz * uz);
+                    if (ul < 1e-6) { ux = 1; uz = 0; } else { ux /= ul; uz /= ul; }
+
+                    double push = DisplacePush * overlapFrac;
+                    low.X += ux * push;
+                    low.Z += uz * push;
+                    // Velocity nudge only persists when cells don't re-derive velocity from the wind
+                    // (AdvectWithWind off); harmless otherwise. The positional push is the real effect.
+                    low.VelX += ux * push;
+                    low.VelZ += uz * push;
+                    changed = true;
+                }
+            }
+        }
+
+        if (!changed) return;
+
+        for (int i = n - 1; i >= 0; i--)
+            if (consumed[i]) field.Cells.RemoveAt(i);
+
+        field.AnchorHours = now; // positions are current at 'now'
+        Dirty = true;
+    }
+
+    /// <summary>
     /// Let the weather map feed back onto pressure: sample cloud cover + precipitation at each cell and
     /// nudge its strength. Clear skies push toward high (− strength), clouds toward low (+), and storms
     /// strongly toward low — so a cell's own weather reinforces it (lows that storm deepen; highs that
@@ -245,6 +355,7 @@ public class WindFieldSimulation
     private void MaybeSpawn(double now, double dGameHours)
     {
         if (dGameHours <= 0) return;
+        if (field.Cells.Count >= config.MaxActiveCells) return;
         // Expected count scales with elapsed GAME time, so pressure systems evolve on the world clock —
         // and speed up while a player sleeps (the calendar fast-forwards → larger dGameHours per tick).
         SpawnExpected(now, config.LowSpawnRatePerDay / 24.0 * dGameHours, isLow: true);
@@ -263,7 +374,8 @@ public class WindFieldSimulation
 
     private void Spawn(double now, bool isLow)
     {
-        if (!TryGetPopulationCenter(out double cx, out double cz)) return;
+        if (field.Cells.Count >= config.MaxActiveCells) return;
+        if (!TryGetSpawnAnchor(out double cx, out double cz)) return;
 
         // Size cells to a fraction of the spawn range so neighbours overlap into broad blobs that span
         // the visible map (the old loaded-chunk extent was only a few hundred blocks → tiny dots far
@@ -324,8 +436,8 @@ public class WindFieldSimulation
     private void MaybeSeedThermal(double now, double dGameHours)
     {
         if (dGameHours <= 0) return;
-        if (dGameHours <= 0) return;
         if (!config.ThermalSeeding || field.ThermalPressureFunc == null) return;
+        if (field.Cells.Count >= config.MaxActiveCells) return;
 
         // Expected seed attempts scale with elapsed game time (so seeding also speeds up during sleep).
         double expected = ThermalSeedRatePerDay / 24.0 * dGameHours;
@@ -337,7 +449,8 @@ public class WindFieldSimulation
 
     private void TrySeedOne(double now)
     {
-        if (!TryGetPopulationCenter(out double cx, out double cz)) return;
+        if (field.Cells.Count >= config.MaxActiveCells) return;
+        if (!TryGetSpawnAnchor(out double cx, out double cz)) return;
 
         double sx = cx + (rand.NextDouble() - 0.5) * 2.0 * SeedScanRadius;
         double sz = cz + (rand.NextDouble() - 0.5) * 2.0 * SeedScanRadius;
@@ -373,21 +486,30 @@ public class WindFieldSimulation
         Dirty = true;
     }
 
-    private bool TryGetPopulationCenter(out double x, out double z)
+    /// <summary>
+    /// Pick a RANDOM online player's position as the anchor for one spawn/seed. Averaging all players
+    /// into a single centre would, in multiplayer, drop systems in the empty middle between distant
+    /// players; choosing a random player each call instead scatters systems around every player's area
+    /// over time (and is identical to "the player" in singleplayer).
+    /// </summary>
+    private bool TryGetSpawnAnchor(out double x, out double z)
     {
         x = 0; z = 0;
-        int n = 0;
+        int count = 0;
+        foreach (IServerPlayer plr in sapi.World.AllOnlinePlayers)
+            if (plr.Entity != null) count++;
+        if (count == 0) return false;
+
+        int pick = rand.Next(count);
+        int i = 0;
         foreach (IServerPlayer plr in sapi.World.AllOnlinePlayers)
         {
             Entity e = plr.Entity;
             if (e == null) continue;
-            x += e.Pos.X;
-            z += e.Pos.Z;
-            n++;
+            if (i == pick) { x = e.Pos.X; z = e.Pos.Z; return true; }
+            i++;
         }
-        if (n == 0) return false;
-        x /= n; z /= n;
-        return true;
+        return false;
     }
 
     public WindFieldState Snapshot()
@@ -408,7 +530,11 @@ public class WindFieldSimulation
     {
         try
         {
-            sapi.WorldManager.SaveGame.StoreData(SaveKey, SerializerUtil.Serialize(Snapshot()));
+            WindFieldState snap = Snapshot();
+            byte[] data = SerializerUtil.Serialize(snap);
+            sapi.WorldManager.SaveGame.StoreData(SaveKey, data);
+            sapi.Logger.Notification("[dynamicwind] Saved {0} pressure cells ({1} bytes, anchor {2:0.0}h).",
+                snap.Cells.Length, data.Length, snap.TotalHoursAnchor);
         }
         catch (Exception e)
         {
@@ -421,14 +547,23 @@ public class WindFieldSimulation
         try
         {
             byte[] data = sapi.WorldManager.SaveGame.GetData(SaveKey);
-            if (data == null) return;
+            if (data == null)
+            {
+                sapi.Logger.Notification("[dynamicwind] No saved wind field found under '{0}' — fresh start.", SaveKey);
+                return;
+            }
             WindFieldState s = SerializerUtil.Deserialize<WindFieldState>(data);
-            if (s?.Cells == null) return;
+            if (s?.Cells == null)
+            {
+                sapi.Logger.Warning("[dynamicwind] Saved wind field deserialized to null cells — fresh start.");
+                return;
+            }
             field.Cells.Clear();
             field.Cells.AddRange(s.Cells);
-            field.AnchorHours = s.TotalHoursAnchor;
-            lastGameHours = sapi.World.Calendar.TotalHours;
-            initialized = true;
+            field.AnchorHours = s.TotalHoursAnchor; // provisional; re-anchored to the live clock next tick
+            loadedPendingReanchor = true;           // defer time baseline to the first live tick (see OnTick)
+            sapi.Logger.Notification("[dynamicwind] Loaded {0} pressure cells (saved anchor {1:0.0}h); re-anchoring to live clock.",
+                field.Cells.Count, field.AnchorHours);
         }
         catch (Exception e)
         {

@@ -88,48 +88,71 @@ public class FrontMapLayer : MapLayer
         shader.Uniform("rgbaIn", White);
         shader.UniformMatrix("projectionMatrix", capi.Render.CurrentProjectionMatrix);
 
-        // Front loops: an enclosed contour of front-symbol tiles hugging the low-pressure blob. The
-        // radius varies with angle (FrontLine.Radii) so the loop follows the blob's true shape; the
-        // symbol at each tile is a warm front on the leading edge (in the system's travel direction),
-        // a cold front on the trailing edge, and stationary across the flanks. Symbols face OUTWARD
-        // (the triangle/semicircle points away from the low centre, the way the front advances).
+        // Fronts: a MOVING system draws a leading-/trailing-edge line of cold (low) or warm (high)
+        // symbols along the isobar; a near-STATIONARY system instead encircles itself with stationary
+        // symbols. The classification + geometry come from FrontComputer (deterministic, cells-only).
         for (int li = 0; li < lines.Count; li++)
         {
             FrontLine f = lines[li];
-            double[] radii = f.Radii;
-            if (radii == null || radii.Length == 0) continue;
 
-            // Mean radius drives the tile count + wobble scale.
-            double rMean = 0;
-            for (int k = 0; k < radii.Length; k++) rMean += radii[k];
-            rMean /= radii.Length;
-            double rPx = rMean * scaleX;
-            int nT = (int)Math.Max(8, Math.Min(240, Math.Round(2 * Math.PI * rPx / TilePx)));
-            double curveAmp = CurveAmpFactor * rMean;
+            if (f.Radii != null && f.Radii.Length > 0)
+            {
+                // STATIONARY: an enclosed contour of stationary-front tiles hugging the system. The
+                // radius varies with angle so the loop follows the blob's true shape; symbols face OUTWARD.
+                double[] radii = f.Radii;
+                double rMean = 0;
+                for (int k = 0; k < radii.Length; k++) rMean += radii[k];
+                rMean /= radii.Length;
+                double rPx = rMean * scaleX;
+                int nLoop = (int)Math.Max(8, Math.Min(240, Math.Round(2 * Math.PI * rPx / TilePx)));
+                double curveAmpL = CurveAmpFactor * rMean;
 
+                shader.BindTexture2D("tex2d", texStationary, 0);
+                for (int i = 0; i < nLoop; i++)
+                {
+                    double frac = (double)i / nLoop;
+                    double theta = frac * 2 * Math.PI;
+                    double ct = Math.Cos(theta), st = Math.Sin(theta);
+                    double u = frac * rMean * 2 * Math.PI;
+                    double rr = FrontComputer.RadiusAt(radii, theta) + curveAmpL * FrontComputer.Curve(u, f.Seed, th);
+                    double wx = f.CenterX + rr * ct;
+                    double wz = f.CenterZ + rr * st;
+                    if (!ToScreen(b, vb, wx, wz, out float sx, out float sy)) continue;
+
+                    float angle = (float)Math.Atan2(st, ct);
+                    float halfH = TilePx * 0.5f;
+                    float halfW = TilePx * 0.25f;
+                    mvMat.Set(capi.Render.CurrentModelviewMatrix)
+                        .Translate(sx, sy, 62f)
+                        .RotateZ(angle)
+                        .Scale(halfW, halfH, 0f);
+                    shader.UniformMatrix("modelViewMatrix", mvMat.Values);
+                    capi.Render.RenderMesh(quad);
+                }
+                continue;
+            }
+
+            // MOVING: a tiled line of cold (high) / warm (low) symbols along the active edge.
+            int tex = f.Type == FrontType.Warm ? texWarm : f.Type == FrontType.Cold ? texCold : texStationary;
+            double screenLen = f.Length * scaleX;
+            int nT = (int)Math.Max(1, Math.Round(screenLen / TilePx));
+            float lineAngle = (float)Math.Atan2(-f.DirX, f.DirZ); // align icon "up" (height) to the front line
+            double curveAmp = CurveAmpFactor * f.Length;
+
+            shader.BindTexture2D("tex2d", tex, 0);
             for (int i = 0; i < nT; i++)
             {
-                double frac = (double)i / nT;
-                double theta = frac * 2 * Math.PI;
-                double ct = Math.Cos(theta), st = Math.Sin(theta);
-                double u = frac * rMean * 2 * Math.PI;          // arc length → organic radius wobble
-                double rr = FrontComputer.RadiusAt(radii, theta) + curveAmp * FrontComputer.Curve(u, f.Seed, th);
-                double wx = f.CenterX + rr * ct;
-                double wz = f.CenterZ + rr * st;
+                double u = ((i + 0.5) / nT - 0.5) * f.Length;
+                double curve = curveAmp * FrontComputer.Curve(u, f.Seed, th);
+                double wx = f.MidX + f.DirX * u + f.AxisX * curve;
+                double wz = f.MidZ + f.DirZ * u + f.AxisZ * curve;
                 if (!ToScreen(b, vb, wx, wz, out float sx, out float sy)) continue;
 
-                // Leading edge (outward radial aligned with travel) = warm front; trailing = cold front.
-                double facing = ct * f.MoveX + st * f.MoveZ;
-                int tex = facing > 0.35 ? texWarm : facing < -0.35 ? texCold : texStationary;
-
-                // Icon "up" (height) runs tangent to the loop; the bump (icon width, +X) points outward.
-                float angle = (float)Math.Atan2(st, ct);
-                float halfH = TilePx * 0.5f;     // along the loop (icon height 32)
-                float halfW = TilePx * 0.25f;    // across (icon width 16) — points radially outward
-                shader.BindTexture2D("tex2d", tex, 0);
+                float halfH = TilePx * 0.5f;     // along the line (icon height 32)
+                float halfW = TilePx * 0.25f;    // across (icon width 16)
                 mvMat.Set(capi.Render.CurrentModelviewMatrix)
                     .Translate(sx, sy, 62f)
-                    .RotateZ(angle)
+                    .RotateZ(lineAngle)
                     .Scale(halfW, halfH, 0f);
                 shader.UniformMatrix("modelViewMatrix", mvMat.Values);
                 capi.Render.RenderMesh(quad);

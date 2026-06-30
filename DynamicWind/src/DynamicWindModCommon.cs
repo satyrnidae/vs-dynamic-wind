@@ -108,4 +108,56 @@ public abstract class DynamicWindModCommon : ModSystem
         windSpeed.X = speed * w.X / mag;
         windSpeed.Z = speed * w.Y / mag;
     }
+
+    // Re-entrancy guard: the terrain-thermal term below calls ThermalPressureFunc → TerrainThermal →
+    // GetClimateAt, which re-fires OnGetClimate. Without this we'd recurse until the stack blew. On a
+    // nested call we skip our shift entirely (the inner climate is only used to derive thermal
+    // pressure; it must not carry our temperature delta anyway).
+    [ThreadStatic] private static bool inClimateHandler;
+
+    /// <summary>
+    /// Pressure → air temperature. A low (signed pressure +) warms the air, a high (−) cools it, up to
+    /// <see cref="DynamicWindConfig.FrontTemperatureMax"/> °C at peak intensity; the terrain-thermal
+    /// field (warm dry land / cool deep water) adds a gentler shift up to
+    /// <see cref="DynamicWindConfig.ThermalTemperatureMax"/> °C. Both terms are read from the same
+    /// synced <see cref="WindField"/> used everywhere else, so server and client agree. Worldgen base
+    /// climate is left untouched — only live ("now"/dated) lookups shift.
+    /// </summary>
+    protected void OnGetClimate(ref ClimateCondition climate, BlockPos pos, EnumGetClimateMode mode, double totalDays)
+    {
+        if (climate == null || mode == EnumGetClimateMode.WorldGenValues) return;
+        if (inClimateHandler) return;
+        if (Config.FrontTemperatureMax <= 0f && Config.ThermalTemperatureMax <= 0f) return;
+
+        inClimateHandler = true;
+        try
+        {
+            double totalHours = totalDays * Api.World.Calendar.HoursPerDay;
+
+            // Front term: signed cell pressure (+ low / − high), normalised by the sim's strength cap.
+            double p = Field.CellPressureAt(pos.X, pos.Z, totalHours);
+            double frontDelta = Config.FrontTemperatureMax * Clamp1(p / TempPressureNorm);
+
+            // Terrain thermal term: + warm land / − cool water.
+            double thermalDelta = 0;
+            if (Config.ThermalTemperatureMax > 0f && Field.ThermalPressureFunc != null)
+            {
+                double thermal = Field.ThermalPressureFunc(pos.X, pos.Z, totalHours);
+                thermalDelta = Config.ThermalTemperatureMax * Clamp1(thermal / ThermalNorm);
+            }
+
+            climate.Temperature += (float)(frontDelta + thermalDelta);
+        }
+        finally
+        {
+            inClimateHandler = false;
+        }
+    }
+
+    // Normalisers: a peak system (|strength| == WindFieldSimulation.MaxStrength = 3) reaches the full
+    // FrontTemperatureMax; typical terrain thermals (|TerrainThermal| up to ~2.6) reach ~ThermalTemperatureMax.
+    private const double TempPressureNorm = 3.0;
+    private const double ThermalNorm = 2.0;
+
+    private static double Clamp1(double v) => v < -1 ? -1 : (v > 1 ? 1 : v);
 }

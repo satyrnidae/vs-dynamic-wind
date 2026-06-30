@@ -1,0 +1,38 @@
+[
+  {
+    "ingredientPattern": "_O_,WRN,_R_",
+    "ingredients": {
+      "R": {
+        "type": "item",
+        "code": "game:rod-*",
+        "name": "metal",
+        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+      },
+      "O": {
+        "type": "item",
+        "code": "weathervane-ornament-*",
+        "name": "metal",
+        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+      },
+      "W": {
+        "type": "item",
+        "code": "weathervane-directional-westeast-*",
+        "name": "metal",
+        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+      },
+      "N": {
+        "type": "item",
+        "code": "weathervane-directional-northsouth-*",
+        "name": "metal",
+        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+      }
+    },
+    "width": 3,
+    "height": 3,
+    "recipeGroup": 2,
+    "output": {
+      "type": "block",
+      "code": "dynamicwind:weathervane-{metal}"
+    }
+  }
+]
