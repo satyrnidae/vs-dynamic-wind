@@ -62,7 +62,7 @@ public class DopplerRadarMapLayer : MapLayer
         if (api.Side != EnumAppSide.Client) return;
         capi = (ICoreClientAPI)api;
         quad = capi.Render.UploadMesh(QuadMeshUtil.GetQuad());
-        whiteTexId = capi.Render.GetOrLoadTexture(new AssetLocation("dynamicwind", "textures/icons/whitecell.png"));
+        whiteTexId = capi.Render.GetOrLoadTexture(new AssetLocation("dynamicwind", "textures/icons/doppler-cell.png"));
         weather = capi.ModLoader.GetModSystem<WeatherSystemClient>();
         Active = false;
     }

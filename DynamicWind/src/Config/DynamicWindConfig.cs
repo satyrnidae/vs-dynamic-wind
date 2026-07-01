@@ -47,7 +47,7 @@ public class DynamicWindConfig
     [Category("Jetstream")]
     [Range(0.0, 2.0)]
     [Description("Extra wind speed added by pressure fronts on top of vanilla's wind (additive, so fronts blow even when vanilla wind is calm). 0 = fronts add no wind, wind is purely vanilla's speed in our direction.")]
-    public float FrontWindStrength { get; set; } = 0.67f;
+    public float FrontWindStrength { get; set; } = 0.4f;
 
     [Category("Jetstream")]
     [Description("Shift the westerly bias north/south with the seasons (poleward in summer → southwesterly, equatorward in winter → northwesterly; mirrored per hemisphere).")]

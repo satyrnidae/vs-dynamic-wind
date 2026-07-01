@@ -78,7 +78,7 @@ systems, and couples the rest of the world to it:
   its length by wind speed (~10% at 1% speed → 100% at full; hidden at 0%). The greyscale arrow art is tinted
   by pressure (from the synced field's `PressureAt`): low → crimson `#FF4D35`, high → sky blue `#66C4FF`,
   neutral → white. Fixed screen grid → zooming out makes each arrow cover more world distance. Registered via
-  `WorldMapManager.RegisterMapLayer`; arrow art at `assets/dynamicwind/textures/icons/winddir.png`.
+  `WorldMapManager.RegisterMapLayer`; arrow art at `assets/dynamicwind/textures/icons/wind-direction.png`.
   Resampled ~7×/s and cached for perf.
 
 ## Axis convention

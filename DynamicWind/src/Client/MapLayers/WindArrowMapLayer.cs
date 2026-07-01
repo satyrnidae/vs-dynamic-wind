@@ -56,8 +56,8 @@ private static readonly Vec4f White = new(1f, 1f, 1f, 1f);
         if (api.Side != EnumAppSide.Client) return;
         capi = (ICoreClientAPI)api;
         quadModel = capi.Render.UploadMesh(QuadMeshUtil.GetQuad());
-        arrowTexId = capi.Render.GetOrLoadTexture(new AssetLocation("dynamicwind", "textures/icons/winddir.png"));
-        Active = true; // shown by default; the map legend can still toggle it
+        arrowTexId = capi.Render.GetOrLoadTexture(new AssetLocation("dynamicwind", "textures/icons/wind-direction.png"));
+        Active = false; // hidden by default; the map legend can still toggle it
     }
 
     public override void Render(GuiElementMap mapElem, float dt)

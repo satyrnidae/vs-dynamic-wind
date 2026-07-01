@@ -59,7 +59,7 @@ internal static class DynamicWindCommands
         {
             double cx = c.X + c.VelX * elapsed;
             double cz = c.Z + c.VelZ * elapsed;
-            sb.AppendLine($"  {(c.IsLow ? "LOW " : "HIGH")} s={c.Strength:0.00} r={c.Radius:0} at ({cx:0},{cz:0}) dies in {Math.Max(0, c.DiesTotalHours - th):0.0}h");
+            sb.AppendLine($"  {(c.IsLow ? "WARM/LOW " : "COLD/HIGH")} s={c.Strength:0.00} r={c.Radius:0}/{c.RadiusMinor:0} at ({cx:0},{cz:0}) dies in {Math.Max(0, c.DiesTotalHours - th):0.0}h");
         }
         return TextCommandResult.Success(sb.ToString().TrimEnd());
     }

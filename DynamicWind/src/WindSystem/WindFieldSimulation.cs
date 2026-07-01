@@ -26,6 +26,15 @@ public class WindFieldSimulation
     private const double MinStrength = 0.04;             // below this a cell has dispersed away
     private const double MaxRadius = 32000.0;
 
+    // Ellipse shape: the along-stream (minor) axis grows slower than the cross-stream (major) one, so
+    // cells get more eccentric as they age, and starts already mildly elliptical at spawn rather than a
+    // perfect circle.
+    private const double MinorDispersalFactor = 0.4;  // minor-axis growth rate as a fraction of major's
+    private const double SpawnMinorRatioMin = 0.75;   // minor/major ratio at spawn: 85% ± 10%
+    private const double SpawnMinorRatioMax = 0.95;
+    private const double OrientationEaseRate = 0.4;   // per-hour exponential approach to the velocity bearing
+    private const double MinSpeedForOrientation = 10.0; // below this (blocks/hour), freeze orientation
+
     // Merge / displace of overlapping cells.
     private const double OverlapFactor = 0.5;        // overlap if centres are within this × (R_i + R_j)
     private const double MergedMaxStrength = 4.0;    // merged same-type cells may exceed the normal cap, so they're genuinely stronger
@@ -135,6 +144,22 @@ public class WindFieldSimulation
         }
     }
 
+    /// <summary>Shortest-path angle interpolation: eases <paramref name="from"/> toward <paramref name="to"/>
+    /// by fraction <paramref name="t"/>, wrapping through whichever direction is closer.</summary>
+    private static double AngleLerp(double from, double to, double t)
+    {
+        double diff = Math.Atan2(Math.Sin(to - from), Math.Cos(to - from));
+        return from + diff * t;
+    }
+
+    /// <summary>Weighted circular mean of two angles (vector-sum average, robust to wraparound).</summary>
+    private static double WeightedAngleMean(double a, double b, double wa, double wb)
+    {
+        double x = wa * Math.Cos(a) + wb * Math.Cos(b);
+        double z = wa * Math.Sin(a) + wb * Math.Sin(b);
+        return Math.Abs(x) < 1e-9 && Math.Abs(z) < 1e-9 ? a : Math.Atan2(z, x);
+    }
+
     /// <summary>
     /// Advance every cell: drift along the local background wind (so the pressure differential moves
     /// with the wind), spread out + fade (dispersal), and lower/raise pressure with wind speed
@@ -191,6 +216,11 @@ public class WindFieldSimulation
             {
                 c.Radius += (float)(pd.DispersalRate * DispersalSpreadPerHour * dGameHours);
                 if (c.Radius > MaxRadius) c.Radius = (float)MaxRadius;
+
+                float minor = c.RadiusMinor > 1e-3f ? c.RadiusMinor : c.Radius;
+                minor += (float)(pd.DispersalRate * DispersalSpreadPerHour * MinorDispersalFactor * dGameHours);
+                c.RadiusMinor = Math.Min(minor, c.Radius); // never overtake the major axis
+
                 c.Strength *= (float)Math.Exp(-pd.DispersalRate * DispersalDecayPerHour * dGameHours);
             }
 
@@ -200,6 +230,20 @@ public class WindFieldSimulation
                 c.Strength += (float)(pd.BernoulliStrength * BernoulliPerHour * (speed[i] - 1.0) * dGameHours);
                 if (c.Strength > MaxStrength) c.Strength = (float)MaxStrength;
                 else if (c.Strength < -MaxStrength) c.Strength = -(float)MaxStrength;
+            }
+
+            // Ease the ellipse's stored orientation toward the cell's own travel bearing, rather than
+            // snapping, so the shape rotates smoothly. Frozen (not chased) at near-zero own speed to avoid
+            // tracking a numerically noisy direction — common for slow/stalled systems, not a rare case.
+            if (dGameHours > 0)
+            {
+                double ownSpeed = Math.Sqrt(newVX[i] * newVX[i] + newVZ[i] * newVZ[i]);
+                if (ownSpeed > MinSpeedForOrientation)
+                {
+                    double target = Math.Atan2(newVZ[i], newVX[i]) + Math.PI / 2.0;
+                    double t = 1.0 - Math.Exp(-OrientationEaseRate * dGameHours);
+                    c.Orientation = (float)AngleLerp(c.Orientation, target, t);
+                }
             }
         }
 
@@ -236,7 +280,12 @@ public class WindFieldSimulation
                 double dx = b.X - a.X;
                 double dz = b.Z - a.Z;
                 double dist = Math.Sqrt(dx * dx + dz * dz);
-                double threshold = OverlapFactor * (a.Radius + b.Radius);
+                // Mean radius rather than the major axis alone: two elongated, jet-aligned cells most
+                // commonly approach along their travel axis (their *minor* extent), so a pure major-axis
+                // sum over-triggers in the common case.
+                double aMean = (a.Radius + (a.RadiusMinor > 1e-3f ? a.RadiusMinor : a.Radius)) / 2.0;
+                double bMean = (b.Radius + (b.RadiusMinor > 1e-3f ? b.RadiusMinor : b.Radius)) / 2.0;
+                double threshold = OverlapFactor * (aMean + bMean);
                 if (threshold <= 0 || dist >= threshold) continue;
 
                 double overlapFrac = 1.0 - dist / threshold;
@@ -259,6 +308,10 @@ public class WindFieldSimulation
                     a.VelZ = (a.VelZ * wa + b.VelZ * wb) / wsum;
                     a.Strength = (float)merged;
                     a.Radius = (float)Math.Min(MaxRadius, Math.Sqrt((double)a.Radius * a.Radius + (double)b.Radius * b.Radius));
+                    double aMinor = a.RadiusMinor > 1e-3f ? a.RadiusMinor : a.Radius;
+                    double bMinor = b.RadiusMinor > 1e-3f ? b.RadiusMinor : b.Radius;
+                    a.RadiusMinor = (float)Math.Min(a.Radius, Math.Sqrt(aMinor * aMinor + bMinor * bMinor));
+                    a.Orientation = (float)WeightedAngleMean(a.Orientation, b.Orientation, wa, wb);
                     a.BornTotalHours = Math.Min(a.BornTotalHours, b.BornTotalHours);
                     a.DiesTotalHours = Math.Max(a.DiesTotalHours, b.DiesTotalHours);
 
@@ -412,6 +465,8 @@ public class WindFieldSimulation
             ? (float)(0.6 + rand.NextDouble() * 1.0)
             : (float)-(0.6 + rand.NextDouble() * 1.0);
 
+        double minorRatio = SpawnMinorRatioMin + rand.NextDouble() * (SpawnMinorRatioMax - SpawnMinorRatioMin);
+
         field.Cells.Add(new PressureCell
         {
             X = startX,
@@ -421,7 +476,9 @@ public class WindFieldSimulation
             VelX = velX,
             VelZ = velZ,
             BornTotalHours = now,
-            DiesTotalHours = now + durationHours
+            DiesTotalHours = now + durationHours,
+            RadiusMinor = (float)(radius * minorRatio),
+            Orientation = (float)(Math.Atan2(velZ, velX) + Math.PI / 2.0)
         });
         // Re-anchor so the new cell's stored X/Z are valid at the shared anchor.
         field.AnchorHours = now;
@@ -470,6 +527,9 @@ public class WindFieldSimulation
         float strength = (float)Math.Max(-2.0, Math.Min(2.0, th * SeedGain));
         double jet = (300.0 + rand.NextDouble() * 300.0) * Math.Max(0.2, config.BaseJetstreamStrength);
         double durationHours = 8 + rand.NextDouble() * 16;
+        double velX = jet;                 // advection re-derives this next tick when enabled
+        double velZ = (rand.NextDouble() - 0.5) * jet * 0.3;
+        double minorRatio = SpawnMinorRatioMin + rand.NextDouble() * (SpawnMinorRatioMax - SpawnMinorRatioMin);
 
         field.Cells.Add(new PressureCell
         {
@@ -477,10 +537,12 @@ public class WindFieldSimulation
             Z = sz,
             Strength = strength,
             Radius = radius,
-            VelX = jet,                 // advection re-derives this next tick when enabled
-            VelZ = (rand.NextDouble() - 0.5) * jet * 0.3,
+            VelX = velX,
+            VelZ = velZ,
             BornTotalHours = now,
-            DiesTotalHours = now + durationHours
+            DiesTotalHours = now + durationHours,
+            RadiusMinor = (float)(radius * minorRatio),
+            Orientation = (float)(Math.Atan2(velZ, velX) + Math.PI / 2.0)
         });
         field.AnchorHours = now;
         Dirty = true;
@@ -560,6 +622,20 @@ public class WindFieldSimulation
             }
             field.Cells.Clear();
             field.Cells.AddRange(s.Cells);
+
+            // Migrate cells saved before RadiusMinor/Orientation existed: protobuf defaults a missing
+            // field to 0, and the per-tick dispersal growth in Advect ADDS to that rather than resetting
+            // it, so without this fixup an old-save cell would render as a near-needle-thin ellipse for
+            // its first several in-game hours. Reset to circular (rad1 = rad2) and orient along the
+            // current jetstream bearing (the same formula Spawn() uses) rather than the arbitrary default.
+            double jetOrientation = field.SeasonalBiasMaxAngle * field.SeasonalBiasZ + Math.PI / 2.0;
+            foreach (PressureCell c in field.Cells)
+            {
+                if (c.RadiusMinor > 1e-3f) continue;
+                c.RadiusMinor = c.Radius;
+                c.Orientation = (float)jetOrientation;
+            }
+
             field.AnchorHours = s.TotalHoursAnchor; // provisional; re-anchored to the live clock next tick
             loadedPendingReanchor = true;           // defer time baseline to the first live tick (see OnTick)
             sapi.Logger.Notification("[dynamicwind] Loaded {0} pressure cells (saved anchor {1:0.0}h); re-anchoring to live clock.",

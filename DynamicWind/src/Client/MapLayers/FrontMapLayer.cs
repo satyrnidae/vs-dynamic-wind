@@ -13,8 +13,10 @@ namespace DynamicWind.Client.MapLayers;
 /// <summary>
 /// Synoptic weather-front overlay (world map only, not the minimap). Draws the classic surface-analysis
 /// symbols derived from the synced pressure field by <see cref="FrontComputer"/>: an "H"/"L" letter at
-/// each pressure-system centre, and warm/cold/stationary front lines on the boundary between paired
-/// systems, tiled along a smoothly-curving, slowly-evolving line. Toggle via the map legend.
+/// each pressure-system centre, and a tiled contour of warm/cold/stationary front symbols traced
+/// around each system — the full loop for a near-stationary system, or just the leading half (the
+/// system's active edge) for a moving one, each tile individually rotated to the local contour
+/// tangent so the line reads as contiguous even where it curves. Toggle via the map legend.
 /// </summary>
 public class FrontMapLayer : MapLayer
 {
@@ -47,11 +49,11 @@ public class FrontMapLayer : MapLayer
         if (api.Side != EnumAppSide.Client) return;
         capi = (ICoreClientAPI)api;
         quad = capi.Render.UploadMesh(QuadMeshUtil.GetQuad());
-        texWarm = Tex("warmfront");
-        texCold = Tex("coldfront");
-        texStationary = Tex("stationaryfront");
-        texHigh = Tex("highpressuresystemcenterletter");
-        texLow = Tex("lowpressuresystemcenterletter");
+        texWarm = Tex("front-warm");
+        texCold = Tex("front-cold");
+        texStationary = Tex("front-stationary");
+        texHigh = Tex("pressure-system-high");
+        texLow = Tex("pressure-system-low");
         Active = false; // off by default; toggle in the map legend
     }
 
@@ -88,71 +90,105 @@ public class FrontMapLayer : MapLayer
         shader.Uniform("rgbaIn", White);
         shader.UniformMatrix("projectionMatrix", capi.Render.CurrentProjectionMatrix);
 
-        // Fronts: a MOVING system draws a leading-/trailing-edge line of cold (low) or warm (high)
-        // symbols along the isobar; a near-STATIONARY system instead encircles itself with stationary
-        // symbols. The classification + geometry come from FrontComputer (deterministic, cells-only).
+        // Fronts: a near-STATIONARY system encircles itself with a full closed loop of stationary
+        // symbols (facing outward); a MOVING system instead renders only the leading half of that
+        // same contour — its active edge, where precipitation forms — as a tiled arc of cold (high) /
+        // warm (low) symbols following the local tangent. Geometry comes from FrontComputer
+        // (deterministic, cells-only); both cases share the same march-to-contour Radii.
         for (int li = 0; li < lines.Count; li++)
         {
             FrontLine f = lines[li];
+            if (f.Radii == null || f.Radii.Length == 0) continue;
+            double[] radii = f.Radii;
+            bool stationary = f.Type == FrontType.Stationary;
 
-            if (f.Radii != null && f.Radii.Length > 0)
+            double rMean = 0;
+            for (int k = 0; k < radii.Length; k++) rMean += radii[k];
+            rMean /= radii.Length;
+            double rPx = rMean * scaleX;
+            double curveAmpL = CurveAmpFactor * rMean;
+
+            double thetaStart, thetaSpan;
+            if (stationary)
             {
-                // STATIONARY: an enclosed contour of stationary-front tiles hugging the system. The
-                // radius varies with angle so the loop follows the blob's true shape; symbols face OUTWARD.
-                double[] radii = f.Radii;
-                double rMean = 0;
-                for (int k = 0; k < radii.Length; k++) rMean += radii[k];
-                rMean /= radii.Length;
-                double rPx = rMean * scaleX;
-                int nLoop = (int)Math.Max(8, Math.Min(240, Math.Round(2 * Math.PI * rPx / TilePx)));
-                double curveAmpL = CurveAmpFactor * rMean;
-
-                shader.BindTexture2D("tex2d", texStationary, 0);
-                for (int i = 0; i < nLoop; i++)
-                {
-                    double frac = (double)i / nLoop;
-                    double theta = frac * 2 * Math.PI;
-                    double ct = Math.Cos(theta), st = Math.Sin(theta);
-                    double u = frac * rMean * 2 * Math.PI;
-                    double rr = FrontComputer.RadiusAt(radii, theta) + curveAmpL * FrontComputer.Curve(u, f.Seed, th);
-                    double wx = f.CenterX + rr * ct;
-                    double wz = f.CenterZ + rr * st;
-                    if (!ToScreen(b, vb, wx, wz, out float sx, out float sy)) continue;
-
-                    float angle = (float)Math.Atan2(st, ct);
-                    float halfH = TilePx * 0.5f;
-                    float halfW = TilePx * 0.25f;
-                    mvMat.Set(capi.Render.CurrentModelviewMatrix)
-                        .Translate(sx, sy, 62f)
-                        .RotateZ(angle)
-                        .Scale(halfW, halfH, 0f);
-                    shader.UniformMatrix("modelViewMatrix", mvMat.Values);
-                    capi.Render.RenderMesh(quad);
-                }
-                continue;
+                thetaStart = 0;
+                thetaSpan = 2 * Math.PI;
+            }
+            else
+            {
+                thetaStart = f.LeadAngle - Math.PI / 2.0;
+                thetaSpan = Math.PI; // leading half only
             }
 
-            // MOVING: a tiled line of cold (high) / warm (low) symbols along the active edge.
-            int tex = f.Type == FrontType.Warm ? texWarm : f.Type == FrontType.Cold ? texCold : texStationary;
-            double screenLen = f.Length * scaleX;
-            int nT = (int)Math.Max(1, Math.Round(screenLen / TilePx));
-            float lineAngle = (float)Math.Atan2(-f.DirX, f.DirZ); // align icon "up" (height) to the front line
-            double curveAmp = CurveAmpFactor * f.Length;
+            // Walk the contour finely (world space -> screen space) and tile it by ACTUAL on-screen
+            // arc length, not by uniform angle steps. A uniform-theta split under/over-spaces tiles
+            // wherever the traced contour bulges away from the mean radius (elongated systems, the
+            // Curve() wobble) — real arc length is what has to stay tiled with no gaps, regardless of
+            // zoom or how stretched the front is.
+            double roughLenPx = rPx * thetaSpan; // cheap estimate, just to size the fine sampling
+            int nFine = (int)Math.Clamp(Math.Ceiling(roughLenPx / (TilePx * 0.5)), 32, 3000);
 
+            float[] sxs = new float[nFine + 1];
+            float[] sys = new float[nFine + 1];
+            double[] cum = new double[nFine + 1];
+            for (int j = 0; j <= nFine; j++)
+            {
+                double theta = thetaStart + (double)j / nFine * thetaSpan;
+                ArcPoint(f, radii, curveAmpL, theta, (theta - thetaStart) * rMean, th, out double wx, out double wz);
+                ToScreen(b, vb, wx, wz, out sxs[j], out sys[j]); // ignore visibility flag; still valid off-screen coords
+                if (j > 0)
+                {
+                    double dx = sxs[j] - sxs[j - 1], dy = sys[j] - sys[j - 1];
+                    cum[j] = cum[j - 1] + Math.Sqrt(dx * dx + dy * dy);
+                }
+            }
+            double totalLenPx = cum[nFine];
+            if (totalLenPx < 1e-3) continue;
+
+            int minTiles = stationary ? 8 : 4;
+            int nT = (int)Math.Clamp(Math.Ceiling(totalLenPx / TilePx), minTiles, 3000);
+            double step = totalLenPx / nT;
+
+            int tex = stationary ? texStationary : f.Type == FrontType.Warm ? texWarm : texCold;
             shader.BindTexture2D("tex2d", tex, 0);
+
+            float halfH = TilePx * 0.5f;
+            float halfW = TilePx * 0.25f;
+            int seg = 0;
             for (int i = 0; i < nT; i++)
             {
-                double u = ((i + 0.5) / nT - 0.5) * f.Length;
-                double curve = curveAmp * FrontComputer.Curve(u, f.Seed, th);
-                double wx = f.MidX + f.DirX * u + f.AxisX * curve;
-                double wz = f.MidZ + f.DirZ * u + f.AxisZ * curve;
-                if (!ToScreen(b, vb, wx, wz, out float sx, out float sy)) continue;
+                double targetDist = (i + 0.5) * step;
+                while (seg < nFine - 1 && cum[seg + 1] < targetDist) seg++;
+                double segLen = cum[seg + 1] - cum[seg];
+                double t = segLen > 1e-9 ? (targetDist - cum[seg]) / segLen : 0;
+                float sx = (float)(sxs[seg] + (sxs[seg + 1] - sxs[seg]) * t);
+                float sy = (float)(sys[seg] + (sys[seg + 1] - sys[seg]) * t);
 
-                float halfH = TilePx * 0.5f;     // along the line (icon height 32)
-                float halfW = TilePx * 0.25f;    // across (icon width 16)
+                // Cull tiles well outside the visible map element (same tolerance as ToScreen used).
+                float fx = (float)((sx - b.renderX) / b.InnerWidth);
+                float fy = (float)((sy - b.renderY) / b.InnerHeight);
+                if (fx < -0.05f || fx > 1.05f || fy < -0.05f || fy > 1.05f) continue;
+
+                float dsx = sxs[seg + 1] - sxs[seg];
+                float dsy = sys[seg + 1] - sys[seg];
+
+                float angle;
+                if (stationary)
+                {
+                    // Symbols face outward, radially.
+                    double theta = thetaStart + (seg + t) / nFine * thetaSpan;
+                    angle = (float)Math.Atan2(Math.Sin(theta), Math.Cos(theta));
+                }
+                else
+                {
+                    // Symbols follow the contour's local (screen-space) tangent, so the icon
+                    // orientation reads as a contiguous line even where it curves.
+                    angle = (float)Math.Atan2(-dsx, dsy);
+                }
+
                 mvMat.Set(capi.Render.CurrentModelviewMatrix)
                     .Translate(sx, sy, 62f)
-                    .RotateZ(lineAngle)
+                    .RotateZ(angle)
                     .Scale(halfW, halfH, 0f);
                 shader.UniformMatrix("modelViewMatrix", mvMat.Values);
                 capi.Render.RenderMesh(quad);
@@ -172,6 +208,16 @@ public class FrontMapLayer : MapLayer
             shader.UniformMatrix("modelViewMatrix", mvMat.Values);
             capi.Render.RenderMesh(quad);
         }
+    }
+
+    /// <summary>A point on a front's contour at angle theta (world space), with the slow per-tile
+    /// curvature wobble (<see cref="FrontComputer.Curve"/>) added on top of the traced radius.</summary>
+    private static void ArcPoint(FrontLine f, double[] radii, double curveAmpL, double theta, double u, double th, out double wx, out double wz)
+    {
+        double ct = Math.Cos(theta), st = Math.Sin(theta);
+        double rr = FrontComputer.RadiusAt(radii, theta) + curveAmpL * FrontComputer.Curve(u, f.Seed, th);
+        wx = f.CenterX + rr * ct;
+        wz = f.CenterZ + rr * st;
     }
 
     /// <summary>World (x,z) → screen px within the map element; false if outside the visible bounds.</summary>

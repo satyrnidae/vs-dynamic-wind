@@ -25,6 +25,21 @@ public class PressureCell
     public double BornTotalHours;
     public double DiesTotalHours;
 
+    // Appended fields (see WindFieldSimulation/Load): ImplicitFields.AllPublic tags fields by declaration
+    // order and this struct is both network-synced and save-persisted, so new fields MUST be added at the
+    // end — inserting one earlier would shift the tag numbers of everything after it and corrupt old saves.
+
+    /// <summary>Influence radius along the cell's direction of travel (the along-stream/minor semi-axis),
+    /// always &lt;= <see cref="Radius"/> (the cross-stream/major semi-axis). Real fronts are elongated
+    /// perpendicular to the flow rather than circular, so this starts close to but below <see cref="Radius"/>
+    /// and grows slower as the cell ages, increasing eccentricity over its lifetime.</summary>
+    public float RadiusMinor;
+
+    /// <summary>World-space angle (radians) of the major/cross-stream axis. Stored and eased toward the
+    /// cell's velocity bearing rather than derived live, so the ellipse rotates smoothly instead of
+    /// snapping when velocity changes (see WindFieldSimulation.Advect).</summary>
+    public float Orientation;
+
     // Computed; excluded from protobuf (ImplicitFields.AllPublic would otherwise try to deserialize
     // into this read-only property and throw).
     [ProtoIgnore]
@@ -122,6 +137,47 @@ public class WindField
     private const double OroWakeScale = 40.0;  // rise over this → full wake
 
     /// <summary>
+    /// Elliptical-gaussian normalized squared distance from a cell's centre to a (dx, dz) offset (already
+    /// relative to the cell's advected position): 1.0 sits on the 1/e falloff contour. <c>(dx,dz)</c> is
+    /// projected onto the cell's along-stream (<see cref="PressureCell.RadiusMinor"/>) and cross-stream
+    /// (<see cref="PressureCell.Radius"/>) axes, derived from <see cref="PressureCell.Orientation"/>.
+    /// Reduces to the familiar circular <c>dist²/Radius²</c> when <c>RadiusMinor == Radius</c>.
+    /// </summary>
+    private static double EllipseNorm2(PressureCell cell, double dx, double dz)
+    {
+        double crossX = Math.Cos(cell.Orientation), crossZ = Math.Sin(cell.Orientation);
+        double alongX = -crossZ, alongZ = crossX;
+        double along = dx * alongX + dz * alongZ;
+        double cross = dx * crossX + dz * crossZ;
+        double rMinor = cell.RadiusMinor > 1e-3f ? cell.RadiusMinor : cell.Radius;
+        double rMajor = cell.Radius;
+        double au = along / rMinor;
+        double cu = cross / rMajor;
+        return au * au + cu * cu;
+    }
+
+    /// <summary>
+    /// Outward "radial" unit direction at a (dx, dz) offset from a cell's centre, generalized to the
+    /// cell's elliptical footprint: the normalized gradient of <see cref="EllipseNorm2"/>'s squared norm.
+    /// Reduces exactly to the circular radial direction <c>(dx,dz)/dist</c> when <c>RadiusMinor == Radius</c>,
+    /// so swirl direction follows the ellipse's edge instead of a plain circle once a cell has elongated.
+    /// </summary>
+    private static void EllipseRadial(PressureCell cell, double dx, double dz, out double nx, out double nz)
+    {
+        double crossX = Math.Cos(cell.Orientation), crossZ = Math.Sin(cell.Orientation);
+        double alongX = -crossZ, alongZ = crossX;
+        double along = dx * alongX + dz * alongZ;
+        double cross = dx * crossX + dz * crossZ;
+        double rMinor = cell.RadiusMinor > 1e-3f ? cell.RadiusMinor : cell.Radius;
+        double rMajor = cell.Radius;
+        double gx = along / (rMinor * rMinor) * alongX + cross / (rMajor * rMajor) * crossX;
+        double gz = along / (rMinor * rMinor) * alongZ + cross / (rMajor * rMajor) * crossZ;
+        double glen = Math.Sqrt(gx * gx + gz * gz);
+        if (glen < 1e-9) { nx = crossX; nz = crossZ; }
+        else { nx = gx / glen; nz = gz / glen; }
+    }
+
+    /// <summary>
     /// Slow jet-streak multiplier in [1−<see cref="JetNoiseAmplitude"/>, 1+…]: a multiplied sinusoidal
     /// layout (a slow X wave × a slow Z wave) that evolves slowly over time, giving the jetstream faster
     /// and slower "streaks" on top of the seasonal drift and bearing meander. Mild and never zero.
@@ -191,18 +247,16 @@ public class WindField
             double cellZ = cell.Z + cell.VelZ * elapsed;
             double dx = x - cellX;
             double dz = z - cellZ;
-            double dist = Math.Sqrt(dx * dx + dz * dz);
-            if (dist < 1e-3) dist = 1e-3;
 
-            double norm = dist / cell.Radius;
-            double falloff = Math.Exp(-norm * norm); // gaussian
+            double norm2 = EllipseNorm2(cell, dx, dz);
+            double falloff = Math.Exp(-norm2); // elliptical gaussian
             if (falloff < 1e-4) continue;
 
-            // Radial unit (center → sample) and tangent. With +X=East, +Z=South (north-up map view),
-            // (rz, -rx) is the COUNTER-clockwise tangent on screen — so a low (s>0) circulates CCW and a
-            // high (s<0) circulates CW, matching the (northern-hemisphere) real-world convention.
-            double rx = dx / dist;
-            double rz = dz / dist;
+            // Radial unit (center → sample, generalized to the cell's elliptical footprint) and tangent.
+            // With +X=East, +Z=South (north-up map view), (rz, -rx) is the COUNTER-clockwise tangent on
+            // screen — so a low (s>0) circulates CCW and a high (s<0) circulates CW, matching the
+            // (northern-hemisphere) real-world convention.
+            EllipseRadial(cell, dx, dz, out double rx, out double rz);
             double tx = rz;
             double tz = -rx;
 
@@ -305,7 +359,7 @@ public class WindField
             PressureCell cell = Cells[i];
             double dx = x - (cell.X + cell.VelX * elapsed);
             double dz = z - (cell.Z + cell.VelZ * elapsed);
-            double norm2 = (dx * dx + dz * dz) / (cell.Radius * cell.Radius);
+            double norm2 = EllipseNorm2(cell, dx, dz);
             p += cell.Strength * Math.Exp(-norm2);
         }
         return p;
@@ -327,8 +381,7 @@ public class WindField
             PressureCell cell = Cells[i];
             double dx = x - (cell.X + cell.VelX * elapsed);
             double dz = z - (cell.Z + cell.VelZ * elapsed);
-            double dist2 = dx * dx + dz * dz;
-            double norm2 = dist2 / (cell.Radius * cell.Radius);
+            double norm2 = EllipseNorm2(cell, dx, dz);
             p += cell.Strength * Math.Exp(-norm2);
         }
         if (ThermalStaticScale > 0)
