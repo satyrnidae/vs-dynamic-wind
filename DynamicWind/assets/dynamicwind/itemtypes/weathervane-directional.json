@@ -40,6 +40,14 @@
       }
     }]
   },
+  "attributes": {
+		"onTongTransform": {
+			"translation": { "x": -1.25, "y": -0.153, "z": -0.679 },
+			"rotation": { "x": -91, "y": 0, "z": -97 },
+			"origin": { "x": 0.5, "y": 0, "z": 0.5 },
+			"scale": 0.81
+			}
+  },
   "variantgroups": [
     { "code": "direction", "states": [ "northsouth", "westeast" ]},
     { "code": "metal", "states": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"] }
@@ -52,9 +60,10 @@
   "storageFlags": 1,
   "creativeInventory": { "general": ["*"], "items": ["*"] },
   "tpHandTransform": {
-		"translation": { "x": -0.92, "y": -0.34, "z": -0.76 },
-		"rotation": { "x": 8, "y": -164, "z": -9 },
-		"scale": 0.6
+    "translation": { "x": -0.759, "y": -0.031, "z": -0.704 },
+    "rotation": { "x": 8, "y": -164, "z": -9 },
+    "origin": { "x": 0.5, "y": -0, "z": 0.5 },
+    "scale": 0.72
 	},
 	"guiTransform": {
 		"translation": { "x": 2, "y": 0, "z": 0 },
