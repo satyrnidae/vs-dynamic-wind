@@ -22,8 +22,9 @@ systems, and couples the rest of the world to it:
   wind and rotor axle). Head-on = full, perpendicular = stalled, from-behind = negative → spins backwards.
 - **Sailboats** — Harmony postfix on `EntityBoat.SeatsToMotion`: tailwind +50%, crosswind base,
   headwind −10% (piecewise by heading-vs-wind alignment). Tacking is out of scope.
-- **Weather** — `OnGetClimate` hook raises rainfall inside lows (storms form in low pressure) and lowers
-  it in highs. Lows also add circulation, so storms = stronger, swirlier wind.
+- **Weather** — `WeatherCoupling` (Harmony postfix on `WeatherSystemBase.GetRainCloudness`) raises
+  cloudness/rain inside highs (cold fronts ride the highs) and lowers it in lows — storms form in high
+  pressure, not low, in this mod's model. Highs also add circulation, so storms = stronger, swirlier wind.
 - **Terrain thermal pressure** (`TerrainThermal`) — beyond the moving synoptic cells, pressure has a
   terrain-driven baseline: warm, sun-exposed dry land → low (rising air), cool water → high (sinking air),
   modulated by time of day + temperature. Water high pressure scales with **depth** (sea level −

@@ -351,8 +351,8 @@ public class WindFieldSimulation
 
     /// <summary>
     /// Let the weather map feed back onto pressure: sample cloud cover + precipitation at each cell and
-    /// nudge its strength. Clear skies push toward high (− strength), clouds toward low (+), and storms
-    /// strongly toward low — so a cell's own weather reinforces it (lows that storm deepen; highs that
+    /// nudge its strength. Clear skies push toward low (+ strength), clouds toward high (−), and storms
+    /// strongly toward high — so a cell's own weather reinforces it (highs that storm deepen; lows that
     /// stay clear strengthen), bounded by the strength clamp + dispersal decay + finite cell lifetime.
     /// Reads the live climate (which already carries the pressure→weather coupling), closing the loop.
     /// </summary>
@@ -377,11 +377,11 @@ public class WindFieldSimulation
 
             double cloud = GameMath.Clamp(cc.RainCloudOverlay, 0f, 1f);
             double precip = GameMath.Clamp(cc.Rainfall, 0f, 1f);
-            // Clear (cloud below threshold) → negative (toward high); cloudy → positive (toward low);
-            // storms add a strong extra low-ward push.
+            // Clear (cloud below threshold) → positive (toward low); cloudy → negative (toward high);
+            // storms add a strong extra high-ward push (cold fronts ride the highs).
             double forcing = (cloud - ClearCloudThreshold) + StormForcingGain * precip;
 
-            c.Strength += (float)(config.WeatherPressureCoupling * forcing * dGameHours);
+            c.Strength -= (float)(config.WeatherPressureCoupling * forcing * dGameHours);
             if (c.Strength > MaxStrength) c.Strength = (float)MaxStrength;
             else if (c.Strength < -MaxStrength) c.Strength = -(float)MaxStrength;
         }

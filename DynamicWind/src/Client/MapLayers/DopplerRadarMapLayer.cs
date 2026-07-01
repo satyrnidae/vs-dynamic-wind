@@ -13,8 +13,8 @@ namespace DynamicWind.Client.MapLayers;
 /// WORLD coordinates (a fixed block step, not a fixed screen grid like the wind arrows), within a radar
 /// range around the player — so rain cells sit on their true world location and scale with map zoom.
 /// The vanilla precipitation noise provides the organic TEXTURE, but the PRESSURE DIFFERENTIAL drives it:
-/// the noise is gated by the local pressure from the synced wind field, so storms appear inside lows and
-/// the sky clears under highs (the radar is client-side, so it reads the client pressure field directly —
+/// the noise is gated by the local pressure from the synced wind field, so storms appear inside highs and
+/// the sky clears under lows (the radar is client-side, so it reads the client pressure field directly —
 /// the server-side rainfall coupling never reaches a client-side GetPrecipitation query).
 /// Colours ramp green → yellow → orange → red with a CONCAVE-UP (power) response: light rain and the
 /// outer fringe of a storm stay green, and only the high-precip storm core ramps through yellow/orange to

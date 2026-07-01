@@ -10,8 +10,8 @@ namespace DynamicWind.Patches;
 /// <summary>
 /// Couples the pressure field to REAL precipitation at the single chokepoint every consumer funnels
 /// through: <see cref="WeatherSystemBase.GetRainCloudness"/>. A postfix shifts the cloudness by the
-/// local cell pressure (+ = low → wetter, − = high → clearer), so the same gated value drives the
-/// actual falling rain, the climate's Rainfall/RainCloudOverlay (clouds) via the engine's own
+/// local cell pressure (+ = low → clearer, − = high → wetter; cold fronts ride the highs), so the same
+/// gated value drives the actual falling rain, the climate's Rainfall/RainCloudOverlay (clouds) via the engine's own
 /// <c>Event_OnGetClimate</c>, AND the Doppler radar (which reads <c>GetPrecipitation</c>). They can no
 /// longer disagree — radar, clouds, and rain are one field. Precipitation moves with the wind because
 /// the gating pressure cells advect.
@@ -58,8 +58,8 @@ internal static class WeatherCoupling
         if (p > PressureClamp) p = PressureClamp;
         else if (p < -PressureClamp) p = -PressureClamp;
 
-        // + pressure (low) raises cloudness past the 0.5 precip threshold; − (high) pushes it below.
-        __result += (float)(config.StormCouplingStrength * p * PrecipShift);
+        // − pressure (high, cold-front side) raises cloudness past the 0.5 precip threshold; + (low) pushes it below.
+        __result -= (float)(config.StormCouplingStrength * p * PrecipShift);
         if (__result < 0f) __result = 0f;
     }
 }
