@@ -1,0 +1,39 @@
+{
+  "code": "weathervane-rotor",
+  "behaviors":[{
+    "name": "GroundStorable",
+    "properties": {
+      "layout": "Quadrants",
+      "ctrlKey": true,
+      "selectionBox": { "x1": 0, "y1": 0, "z1": 0, "x2": 1, "y2": 0.0625, "z2": 1 },
+      "collisionbox": { "x1": 0, "y1": 0, "z1": 0, "x2": 0, "y2": 0, "z2": 0 }
+    }
+  }],
+  "variantgroups": [
+    { "code": "metal", "states": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"] }
+  ],
+  "shape": { "base": "item/rotor" },
+  "textures": {
+    "metal": { "base": "game:block/metal/plate/{metal}" }
+  },
+  "maxStackSize": 16,
+  "storageFlags": 1,
+  "creativeInventory": { "general": ["*"], "items": ["*"] },
+	"tpHandTransform": {
+		"translation": { "x": -0.8, "y": -0.44, "z": -0.86 },
+		"rotation": { "x": 1, "y": -167, "z": -31 },
+		"scale": 0.6
+	},
+	"guiTransform": {
+		"translation": { "x": 2, "y": 1.5, "z": 0 },
+		"rotation": { "x": -103, "y": 2, "z": 36 },
+		"origin": { "x": 0.5, "y": 0, "z": 0.5 },
+		"scale": 4.56
+	},
+  "groundTransform": {
+		"translation": { "x": 0, "y": 0.1, "z": 0 },
+		"rotation": { "x": 0, "y": 0, "z": 0 },
+		"origin": { "x": 0.5, "y": 0, "z": 0.5 },
+		"scale": 5
+	}
+}

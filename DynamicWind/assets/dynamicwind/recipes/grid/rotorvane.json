@@ -1,0 +1,111 @@
+[
+  {
+    "ingredientPattern": "_OT,WRN,_R_",
+    "ingredients": {
+      "R": {
+        "type": "item",
+        "code": "game:rod-*",
+        "name": "metal",
+        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+      },
+      "O": {
+        "type": "item",
+        "code": "weathervane-ornament-*",
+        "name": "metal",
+        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+      },
+      "W": {
+        "type": "item",
+        "code": "weathervane-directional-westeast-*",
+        "name": "metal",
+        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+      },
+      "N": {
+        "type": "item",
+        "code": "weathervane-directional-northsouth-*",
+        "name": "metal",
+        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+      },
+      "T": {
+        "type": "item",
+        "code": "weathervane-rotor-*",
+        "name": "metal",
+        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+      }
+    },
+    "width": 3,
+    "height": 3,
+    "recipeGroup": 2,
+    "output": {
+      "type": "block",
+      "code": "dynamicwind:rotorvane-{metal}"
+    }
+  },
+  {
+    "ingredientPattern": "_OT,NRW,_R_",
+    "ingredients": {
+      "R": {
+        "type": "item",
+        "code": "game:rod-*",
+        "name": "metal",
+        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+      },
+      "O": {
+        "type": "item",
+        "code": "weathervane-ornament-*",
+        "name": "metal",
+        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+      },
+      "W": {
+        "type": "item",
+        "code": "weathervane-directional-westeast-*",
+        "name": "metal",
+        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+      },
+      "N": {
+        "type": "item",
+        "code": "weathervane-directional-northsouth-*",
+        "name": "metal",
+        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+      },
+      "T": {
+        "type": "item",
+        "code": "weathervane-rotor-*",
+        "name": "metal",
+        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+      }
+    },
+    "width": 3,
+    "height": 3,
+    "recipeGroup": 2,
+    "output": {
+      "type": "block",
+      "code": "dynamicwind:rotorvane-{metal}"
+    }
+  },
+  {
+    "ingredientPattern": "VR",
+    "ingredients": {
+      "V": {
+        "type": "block",
+        "code": "weathervane-*",
+        "name": "metal",
+        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+      },
+      "R": {
+        "type": "item",
+        "code": "weathervane-rotor-*",
+        "name": "metal",
+        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+      }
+    },
+    "width": 2,
+    "height": 1,
+    "shapeless": true,
+    "recipeGroup": 2,
+    "output": {
+      "type": "block",
+      "code": "dynamicwind:rotorvane-{metal}"
+    }
+  }
+]

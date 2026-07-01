@@ -4,7 +4,7 @@
     "name": "GroundStorable",
     "properties": {
       "layout": "Stacking",
-      "upSolid": true,
+      "upSolid": false,
       "placeRemoveSound": "game:sounds/block/plate",
       "stackingModel": "block/weathervane/ornament-pile",
       "stackingTextures": {
@@ -22,7 +22,7 @@
   "variantgroups": [
     { "code": "metal", "states": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"] }
   ],
-  "shape": { "base": "item/weathervane-ornament" },
+  "shape": { "base": "item/ornament" },
   "textures": {
     "metal": { "base": "game:block/metal/plate/{metal}" }
   },
@@ -34,9 +34,16 @@
 		"rotation": { "x": -5, "y": -92, "z": -147 },
 		"scale": 0.6
 	},
-	"guiTransform": {
-		"translation": { "x": 33.3, "y": -5, "z": -0.2 },
-		"rotation": { "x": -103, "y": 2, "z": -56 },
-		"scale": 2.86
+  "guiTransform": {
+		"translation": { "x": 4, "y": 1.5, "z": -0 },
+		"rotation": { "x": -103, "y": 0, "z": -56 },
+		"origin": { "x": 0.5, "y": 0, "z": 0.5 },
+		"scale": 2.8599
+	},
+  "groundTransform": {
+		"translation": { "x": 0, "y": 0, "z": 0 },
+		"rotation": { "x": 0, "y": 0, "z": 0 },
+		"origin": { "x": 0.5, "y": 0, "z": 0.5 },
+		"scale": 5
 	}
 }

@@ -13,6 +13,7 @@ public class DynamicWindContent : ModSystem
     {
         api.RegisterBlockClass("BlockWeathervane", typeof(BlockWeathervane));
         api.RegisterBlockEntityClass("BlockEntityWeathervane", typeof(BlockEntityWeathervane));
+        api.RegisterBlockEntityClass("BlockEntityRotorvane", typeof(BlockEntityRotorvane));
         api.RegisterBlockClass("BlockMapleLeaves", typeof(BlockMapleLeaves));
     }
 }

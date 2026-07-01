@@ -59,6 +59,16 @@
     "block-weathervane-meteoriciron": "Weathervane (Meteoric iron)",
     "block-weathervane-steel": "Weathervane (Steel)",
 
+    "block-rotorvane-copper": "Rotorvane (Copper)",
+    "block-rotorvane-tinbronze": "Rotorvane (Tin bronze)",
+    "block-rotorvane-bismuthbronze": "Rotorvane (Bismuth bronze)",
+    "block-rotorvane-blackbronze": "Rotorvane (Black bronze)",
+    "block-rotorvane-gold": "Rotorvane (Gold)",
+    "block-rotorvane-silver": "Rotorvane (Silver)",
+    "block-rotorvane-iron": "Rotorvane (Iron)",
+    "block-rotorvane-meteoriciron": "Rotorvane (Meteoric iron)",
+    "block-rotorvane-steel": "Rotorvane (Steel)",
+
     "item-weathervane-ornament-copper": "Weathervane ornament (Copper)",
     "item-weathervane-ornament-tinbronze": "Weathervane ornament (Tin bronze)",
     "item-weathervane-ornament-bismuthbronze": "Weathervane ornament (Bismuth bronze)",
@@ -87,5 +97,15 @@
     "item-weathervane-directional-westeast-silver": "West-east directional (Silver)",
     "item-weathervane-directional-westeast-iron": "West-east directional (Iron)",
     "item-weathervane-directional-westeast-meteoriciron": "West-east directional (Meteoric iron)",
-    "item-weathervane-directional-westeast-steel": "West-east directional (Steel)"
+    "item-weathervane-directional-westeast-steel": "West-east directional (Steel)",
+
+    "item-weathervane-rotor-copper": "Weathervane rotor (Copper)",
+    "item-weathervane-rotor-tinbronze": "Weathervane rotor (Tin bronze)",
+    "item-weathervane-rotor-bismuthbronze": "Weathervane rotor (Bismuth bronze)",
+    "item-weathervane-rotor-blackbronze": "Weathervane rotor (Black bronze)",
+    "item-weathervane-rotor-gold": "Weathervane rotor (Gold)",
+    "item-weathervane-rotor-silver": "Weathervane rotor (Silver)",
+    "item-weathervane-rotor-iron": "Weathervane rotor (Iron)",
+    "item-weathervane-rotor-meteoriciron": "Weathervane rotor (Meteoric iron)",
+    "item-weathervane-rotor-steel": "Weathervane rotor (Steel)"
 }
