@@ -15,8 +15,8 @@ namespace DynamicWind.Client.MapLayers;
 /// WORLD coordinates (a fixed block step, not a fixed screen grid like the wind arrows), within a radar
 /// range around the player — so rain cells sit on their true world location and scale with map zoom.
 /// The vanilla precipitation noise provides the organic TEXTURE, but the PRESSURE DIFFERENTIAL drives it:
-/// the noise is gated by the local pressure from the synced wind field, so storms appear inside highs and
-/// the sky clears under lows (the radar is client-side, so it reads the client pressure field directly —
+/// the noise is gated by the local pressure from the synced wind field, so storms appear inside lows and
+/// the sky clears under highs (the radar is client-side, so it reads the client pressure field directly —
 /// the server-side rainfall coupling never reaches a client-side GetPrecipitation query).
 /// Colours ramp green → yellow → orange → red with a CONCAVE-UP (power) response: light rain and the
 /// outer fringe of a storm stay green, and only the high-precip storm core ramps through yellow/orange to
@@ -25,12 +25,11 @@ namespace DynamicWind.Client.MapLayers;
 /// turning entire cloud areas red — which is why this is a power curve, not a log.) Renders on world map +
 /// minimap; toggle in the map legend.
 /// </summary>
-public class DopplerRadarMapLayer : MapLayer
+public class DopplerRadarMapLayer : DynamicWindWorldMapLayerBase
 {
     private const double WorldStep = 48.0;      // base world size of a radar cell, blocks
     private const double RadarRange = 1200.0;   // blocks around the player to scan
     private const int MaxCells = 1600;
-    private const double RecomputeInterval = 0.5; // seconds between resamples (2 fps, matches wind arrows/fronts)
     private const float MinPrecip = 0.04f;
     private const double RampFullPrecip = 0.9;  // precip level mapped to the red (storm-core) end
     private const double RampExponent = 2.0;    // >1 keeps light/edge rain green; only intense precip → red
@@ -50,8 +49,6 @@ public class DopplerRadarMapLayer : MapLayer
     private struct Cell { public double X, Z; public Vec4f Color; }
     private readonly List<Cell> cells = new();
     private double cellStep = WorldStep;
-    private double accum;
-    private bool haveCache;
 
     public DopplerRadarMapLayer(ICoreAPI api, IWorldMapManager mapSink) : base(api, mapSink) { }
 
@@ -75,13 +72,7 @@ public class DopplerRadarMapLayer : MapLayer
     {
         if (!Active || capi == null || quad == null || weather == null) return;
 
-        accum += dt;
-        if (!haveCache || accum >= RecomputeInterval)
-        {
-            accum = 0;
-            Resample(mapElem);
-            haveCache = true;
-        }
+        TickResample(dt, mapElem);
         if (cells.Count == 0) return;
 
         ElementBounds b = mapElem.Bounds;
@@ -92,12 +83,7 @@ public class DopplerRadarMapLayer : MapLayer
         float halfW = (float)(cellStep * 0.5 * scaleX);
         float halfH = (float)(cellStep * 0.5 * scaleZ);
 
-        IShaderProgram shader = capi.Render.GetEngineShader((EnumShaderProgram)17);
-        shader.Uniform("extraGlow", 0);
-        shader.Uniform("applyColor", 0);
-        shader.Uniform("noTexture", 0f);
-        shader.BindTexture2D("tex2d", whiteTexId, 0);
-        shader.UniformMatrix("projectionMatrix", capi.Render.CurrentProjectionMatrix);
+        IShaderProgram shader = BindStandardShader(capi, whiteTexId);
 
         for (int i = 0; i < cells.Count; i++)
         {
@@ -112,7 +98,7 @@ public class DopplerRadarMapLayer : MapLayer
         }
     }
 
-    private void Resample(GuiElementMap mapElem)
+    protected override void Resample(GuiElementMap mapElem)
     {
         cells.Clear();
         Cuboidd vb = mapElem.CurrentBlockViewBounds;
@@ -159,15 +145,6 @@ public class DopplerRadarMapLayer : MapLayer
         }
     }
 
-    private static bool ToScreen(ElementBounds b, Cuboidd vb, double wx, double wz, out float sx, out float sy)
-    {
-        double fx = (wx - vb.X1) / (vb.X2 - vb.X1);
-        double fz = (wz - vb.Z1) / (vb.Z2 - vb.Z1);
-        sx = (float)(b.renderX + fx * b.InnerWidth);
-        sy = (float)(b.renderY + fz * b.InnerHeight);
-        return fx >= -0.05 && fx <= 1.05 && fz >= -0.05 && fz <= 1.05;
-    }
-
     private static Vec4f RampColor(float t, float alpha)
     {
         Vec4f c;
@@ -178,8 +155,6 @@ public class DopplerRadarMapLayer : MapLayer
     }
 
     private static Vec4f Rgb(int r, int g, int b) => new(r / 255f, g / 255f, b / 255f, 1f);
-    private static Vec4f Lerp(Vec4f a, Vec4f b, float t)
-        => new(a.R + (b.R - a.R) * t, a.G + (b.G - a.G) * t, a.B + (b.B - a.B) * t, 1f);
 
     public override void Dispose()
     {

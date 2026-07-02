@@ -1,5 +1,7 @@
+using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Reflection;
 using ProtoBuf;
 
 namespace DynamicWind.Config;
@@ -222,51 +224,34 @@ public class DynamicWindConfig
 
     #endregion
 
-    /// <summary>Clamp every value into its valid range. Mutates in place; safe to call repeatedly.</summary>
+    /// <summary>
+    /// Clamp every value into its valid range. Mutates in place; safe to call repeatedly. Bounds are
+    /// read reflectively from each property's <see cref="RangeAttribute"/> so the clamp can never drift
+    /// from the range ConfigLib's GUI slider advertises.
+    /// </summary>
     public void Validate()
     {
-        BaseJetstreamStrength = Clamp(BaseJetstreamStrength, 0f, 3f);
-        JetstreamMeanderAmplitude = Clamp(JetstreamMeanderAmplitude, 0f, 1.5f);
-        JetstreamMeanderFrequency = Clamp(JetstreamMeanderFrequency, 0.1f, 4f);
-        JetstreamNoiseAmplitude = Clamp(JetstreamNoiseAmplitude, 0f, 1f);
-        PressureWindStrength = Clamp(PressureWindStrength, 0f, 500f);
-        FrontWindStrength = Clamp(FrontWindStrength, 0f, 1f);
-        SeasonalBiasMaxAngleDeg = Clamp(SeasonalBiasMaxAngleDeg, 0f, 80f);
-        LowSpawnRatePerDay = Clamp(LowSpawnRatePerDay, 0f, 24f);
-        HighSpawnRatePerDay = Clamp(HighSpawnRatePerDay, 0f, 24f);
-        CellRadiusMin = Clamp(CellRadiusMin, 50f, 16000f);
-        CellRadiusMax = Clamp(CellRadiusMax, 50f, 32000f);
+        foreach (PropertyInfo prop in typeof(DynamicWindConfig).GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        {
+            RangeAttribute? range = prop.GetCustomAttribute<RangeAttribute>();
+            if (range == null || !prop.CanRead || !prop.CanWrite) continue;
+
+            if (prop.PropertyType == typeof(float))
+            {
+                float min = Convert.ToSingle(range.Minimum);
+                float max = Convert.ToSingle(range.Maximum);
+                prop.SetValue(this, Clamp((float)prop.GetValue(this)!, min, max));
+            }
+            else if (prop.PropertyType == typeof(int))
+            {
+                int min = Convert.ToInt32(range.Minimum);
+                int max = Convert.ToInt32(range.Maximum);
+                int v = (int)prop.GetValue(this)!;
+                prop.SetValue(this, v < min ? min : (v > max ? max : v));
+            }
+        }
+
         if (CellRadiusMax < CellRadiusMin) CellRadiusMax = CellRadiusMin;
-        CyclonicInflowAngleDeg = Clamp(CyclonicInflowAngleDeg, 0f, 60f);
-        CirculationStrength = Clamp(CirculationStrength, 0f, 6f);
-        if (MaxActiveCells < 0) MaxActiveCells = 0;
-        else if (MaxActiveCells > 64) MaxActiveCells = 64;
-        StormCouplingStrength = Clamp(StormCouplingStrength, 0f, 2f);
-        WeatherPressureCoupling = Clamp(WeatherPressureCoupling, 0f, 2f);
-        FrontTemperatureMax = Clamp(FrontTemperatureMax, 0f, 15f);
-        ThermalTemperatureMax = Clamp(ThermalTemperatureMax, 0f, 5f);
-
-        AltitudePressureDrop = Clamp(AltitudePressureDrop, 0f, 1f);
-        AdvectionSpeed = Clamp(AdvectionSpeed, 0f, 2000f);
-        DispersalRate = Clamp(DispersalRate, 0f, 1f);
-        BernoulliStrength = Clamp(BernoulliStrength, 0f, 1f);
-        ThermalStaticScale = Clamp(ThermalStaticScale, 0f, 1f);
-
-        OrographicHeightThreshold = Clamp(OrographicHeightThreshold, 0f, 255f);
-        OrographicSlowdownFactor = Clamp(OrographicSlowdownFactor, 0f, 1f);
-        OrographicDeflectionStrength = Clamp(OrographicDeflectionStrength, 0f, 3f);
-        OrographicWakeFactor = Clamp(OrographicWakeFactor, 0f, 1f);
-
-        OcclusionLightThreshold = Clamp(OcclusionLightThreshold, 1f, 24f);
-        OcclusionSharpness = Clamp(OcclusionSharpness, 1f, 6f);
-        OcclusionMinFactor = Clamp(OcclusionMinFactor, 0f, 1f);
-
-        WindmillMinEfficiency = Clamp(WindmillMinEfficiency, 0f, 1f);
-
-        SailboatTailwindMaxBoost = Clamp(SailboatTailwindMaxBoost, 0f, 2f);
-        SailboatHeadwindMaxPenalty = Clamp(SailboatHeadwindMaxPenalty, 0f, 1f);
-
-        RotorvaneSpeedMult = Clamp(RotorvaneSpeedMult, 1f, 24f);
     }
 
     internal static float Clamp(float v, float min, float max) => v < min ? min : (v > max ? max : v);

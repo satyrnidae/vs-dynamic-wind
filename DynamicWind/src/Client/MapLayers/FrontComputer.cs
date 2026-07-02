@@ -40,6 +40,9 @@ public struct FrontLine
 
     // Warm/Cold only: open marched polyline, world-space, ordered outward from the low's centre.
     public Vec2d[]? Points;
+    // Warm/Cold only: cumulative arc-length along Points (CumulativeLength[0] == 0, CumulativeLength[^1] == total length),
+    // precomputed once alongside Points so SampleAt doesn't rebuild it on every call.
+    public double[]? CumulativeLength;
     // Warm/Cold only: the low's own (unit) direction of travel — matches the real convention that a
     // front's pip/triangle symbols point in the direction the front is advancing, not a purely geographic
     // direction. Using this (rather than the poleward/equatorward direction the curve itself is biased
@@ -201,6 +204,7 @@ public static class FrontComputer
                 Seed = c.BornTotalHours,
                 Strength = strength,
                 Points = warmPts,
+                CumulativeLength = BuildCumulative(warmPts),
                 RefX = refX,
                 RefZ = refZ
             });
@@ -210,10 +214,24 @@ public static class FrontComputer
                 Seed = c.BornTotalHours,
                 Strength = strength,
                 Points = coldPts,
+                CumulativeLength = BuildCumulative(coldPts),
                 RefX = refX,
                 RefZ = refZ
             });
         }
+    }
+
+    /// <summary>Precomputes cumulative arc-length along an open curve's points, for O(1) reuse by
+    /// <see cref="SampleAt"/> instead of rebuilding it on every sample.</summary>
+    private static double[] BuildCumulative(Vec2d[] pts)
+    {
+        var cumLen = new double[pts.Length];
+        for (int i = 1; i < pts.Length; i++)
+        {
+            double dx = pts[i].X - pts[i - 1].X, dz = pts[i].Y - pts[i - 1].Y;
+            cumLen[i] = cumLen[i - 1] + Math.Sqrt(dx * dx + dz * dz);
+        }
+        return cumLen;
     }
 
     /// <summary>Finds the nearest OTHER candidate low strictly on the (<paramref name="dirX"/>,
@@ -434,17 +452,12 @@ public static class FrontComputer
                 return;
             }
 
-            var cum = new double[pts.Length];
-            for (int i = 1; i < pts.Length; i++)
-            {
-                double dx = pts[i].X - pts[i - 1].X, dz = pts[i].Y - pts[i - 1].Y;
-                cum[i] = cum[i - 1] + Math.Sqrt(dx * dx + dz * dz);
-            }
-            double target = t * cum[pts.Length - 1];
+            double[] cumLen = f.CumulativeLength ?? BuildCumulative(pts);
+            double target = t * cumLen[pts.Length - 1];
             int seg = 0;
-            while (seg < pts.Length - 2 && cum[seg + 1] < target) seg++;
-            double segLen = cum[seg + 1] - cum[seg];
-            double frac = segLen > 1e-9 ? (target - cum[seg]) / segLen : 0;
+            while (seg < pts.Length - 2 && cumLen[seg + 1] < target) seg++;
+            double segLen = cumLen[seg + 1] - cumLen[seg];
+            double frac = segLen > 1e-9 ? (target - cumLen[seg]) / segLen : 0;
 
             double tanX = pts[seg + 1].X - pts[seg].X, tanZ = pts[seg + 1].Y - pts[seg].Y;
             double tanLen = Math.Sqrt(tanX * tanX + tanZ * tanZ);

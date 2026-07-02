@@ -175,14 +175,6 @@ public class WindFieldSimulation
         }
     }
 
-    /// <summary>Shortest-path angle interpolation: eases <paramref name="from"/> toward <paramref name="to"/>
-    /// by fraction <paramref name="t"/>, wrapping through whichever direction is closer.</summary>
-    private static double AngleLerp(double from, double to, double t)
-    {
-        double diff = Math.Atan2(Math.Sin(to - from), Math.Cos(to - from));
-        return from + diff * t;
-    }
-
     /// <summary>Weighted circular mean of two angles (vector-sum average, robust to wraparound).</summary>
     private static double WeightedAngleMean(double a, double b, double wa, double wb)
     {
@@ -286,7 +278,7 @@ public class WindFieldSimulation
                 {
                     double target = Math.Atan2(newVZ[i], newVX[i]) + Math.PI / 2.0;
                     double t = 1.0 - Math.Exp(-OrientationEaseRate * dGameHours);
-                    c.Orientation = (float)AngleLerp(c.Orientation, target, t);
+                    c.Orientation = (float)AngleMath.AngleLerp(c.Orientation, target, t);
                 }
             }
         }

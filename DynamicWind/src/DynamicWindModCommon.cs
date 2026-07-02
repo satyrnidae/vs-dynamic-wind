@@ -1,6 +1,7 @@
 using System;
 using DynamicWind.Config;
 using DynamicWind.Network;
+using DynamicWind.ThermalPressure;
 using DynamicWind.WindSystem;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
@@ -65,6 +66,13 @@ public abstract class DynamicWindModCommon : ModSystem
         catch (Exception e) { Mod.Logger.Warning("[dynamicwind] Failed to store config: {0}", e); }
     }
 
+    /// <summary>Wires <see cref="WindField.ThermalPressureFunc"/> to a cached lookup of <see cref="TerrainThermal.PressureAt"/>. Shared by both sides; terrain-height caching still differs per side and is set up separately.</summary>
+    protected void SetupThermalPressureFunc(ICoreAPI api)
+    {
+        var thermalCache = new ThermalCache((x, z, th) => TerrainThermal.PressureAt(api.World, x, z, th));
+        Field.ThermalPressureFunc = thermalCache.Get;
+    }
+
     /// <summary>Copy the scalar field parameters from the config into the shared WindField. Cells untouched.</summary>
     public void ApplyConfigToField()
     {
@@ -77,6 +85,7 @@ public abstract class DynamicWindModCommon : ModSystem
         Field.JetNoiseAmplitude = Config.JetstreamNoiseAmplitude;
         Field.GradientWindScale = Config.PressureWindStrength;
         Field.OrographicEnabled = Config.OrographicEnabled;
+        Field.OroHeightThreshold = Config.OrographicHeightThreshold;
         Field.OroSlowdown = Config.OrographicSlowdownFactor;
         Field.OroDeflection = Config.OrographicDeflectionStrength;
         Field.OroWake = Config.OrographicWakeFactor;

@@ -38,8 +38,7 @@ public class DynamicWindModClient : DynamicWindModCommon
             Field.MapCenterZ = api.World.BlockAccessor.MapSizeZ / 2.0;
         };
 
-        var thermalCache = new ThermalCache((x, z, th) => TerrainThermal.PressureAt(api.World, x, z, th));
-        Field.ThermalPressureFunc = thermalCache.Get;
+        SetupThermalPressureFunc(api);
         // Client has no terrain sampler; use the rain-map height (loaded chunks) so the minimap shows
         // orographic curving around terrain near the player.
         var heightCache = new ThermalCache((x, z, _) => api.World.BlockAccessor.GetRainMapHeightAt((int)x, (int)z), tile: 8.0, bucketHours: 1e9);
@@ -59,7 +58,7 @@ public class DynamicWindModClient : DynamicWindModCommon
         WeatherCoupling.Apply(harmony, Mod.Logger);
 
         // Optional: fix the locally-installed HUD Clock mod's wind readout (it reads vanilla's raw
-        // scalar wind, bypassing our directional hook) and add a 16-point cardinal direction.
+        // scalar wind, bypassing our directional hook) and add an 8-point cardinal direction.
         if (api.ModLoader.IsModEnabled(HudClockWindPatch.HudClockModId))
         {
             HudClockWindPatch.Apply(harmony, api, Mod.Logger);

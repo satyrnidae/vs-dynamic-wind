@@ -1,4 +1,3 @@
-using System;
 using System.Text;
 using DynamicWind.Client.Render;
 using DynamicWind.WindSystem;
@@ -58,16 +57,10 @@ public class BlockEntityWeathervane : BlockEntity
         // Like windmill rotors (BEBehaviorWindmillRotor.CheckWindSpeed): a weathervane buried in a cave or
         // otherwise not sky-exposed catches no wind, so it holds still. Gate on sun light level (< 5),
         // honouring the same `undergroundWindmills` world-config escape hatch windmills use.
-        if (Api.World.BlockAccessor.GetLightLevel(Pos, EnumLightLevelType.OnlySunLight) < 5
-            && Api.World.Config.GetString("undergroundWindmills", "false") != "true")
-            return float.NaN;
+        if (VaneWind.IsOccluded(Api, Pos)) return float.NaN;
 
         Vec3d w = Api.World.BlockAccessor.GetWindSpeedAt(Pos.ToVec3d());
-        if (w.X * w.X + w.Z * w.Z < 1e-8) return float.NaN; // calm
-        // Arrow points downwind (away from the source). The +π/2 corrects the model arrow's actual
-        // rendered orientation so it lands on the true downwind bearing (−π/2 was 90° off the other way
-        // and pointed into the wind; +π/2 is the correct quarter-turn).
-        return (float)(Math.Atan2(w.X, w.Z) + Math.PI / 2.0);
+        return VaneWind.TargetYawFor(w);
     }
 
     /// <summary>True directional wind magnitude at this block (0 when calm or occluded); drives how fast
@@ -76,13 +69,10 @@ public class BlockEntityWeathervane : BlockEntity
     /// <see cref="GetTargetYaw"/>.</summary>
     public double GetWindSpeed()
     {
-        if (Api == null) return 0.0;
-        if (Api.World.BlockAccessor.GetLightLevel(Pos, EnumLightLevelType.OnlySunLight) < 5
-            && Api.World.Config.GetString("undergroundWindmills", "false") != "true")
-            return 0.0;
+        if (Api == null || VaneWind.IsOccluded(Api, Pos)) return 0.0;
 
         Vec3d w = Api.World.BlockAccessor.GetWindSpeedAt(Pos.ToVec3d());
-        return Math.Sqrt(w.X * w.X + w.Z * w.Z);
+        return VaneWind.SpeedOf(w);
     }
 
     public override void GetBlockInfo(IPlayer forPlayer, StringBuilder dsc)

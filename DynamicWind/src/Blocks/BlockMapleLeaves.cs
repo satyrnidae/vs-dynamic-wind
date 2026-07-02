@@ -24,7 +24,7 @@ namespace DynamicWind.Blocks;
 /// </summary>
 public class BlockMapleLeaves : BlockLeaves
 {
-    private const double DropChancePerTick = 0.1;
+    private const double DropChancePerTick = 0.0001;
     private const double CooldownHours = 1.0;
     private const double MinWindSpeed = 0.1;
 
@@ -67,7 +67,7 @@ public class BlockMapleLeaves : BlockLeaves
         return baseWants;
     }
 
-    public override void OnServerGameTick(IWorldAccessor world, BlockPos pos, object extra = null)
+    public override void OnServerGameTick(IWorldAccessor world, BlockPos pos, object? extra = null)
     {
         if (ReferenceEquals(extra, MapleDropMarker))
         {
@@ -96,7 +96,7 @@ public class BlockMapleLeaves : BlockLeaves
         lastDropHour[key] = now;
         PruneCooldowns(now);
 
-        Item seed = world.GetItem(seedCode);
+        Item? seed = world.GetItem(seedCode);
         if (seed == null) return;
         // Spawn just below the leaf; the low-density samara then drifts on the wind via vanilla EntityItem.
         world.SpawnItemEntity(new ItemStack(seed), pos.ToVec3d().Add(0.5, 0.0, 0.5));

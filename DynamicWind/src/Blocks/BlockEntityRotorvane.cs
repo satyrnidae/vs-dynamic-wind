@@ -119,8 +119,7 @@ public class BlockEntityRotorvane : BlockEntity
         if (IsOccluded()) return float.NaN;
 
         Vec3d w = Api.World.BlockAccessor.GetWindSpeedAt(Pos.ToVec3d());
-        if (w.X * w.X + w.Z * w.Z < 1e-8) return float.NaN; // calm
-        return (float)(Math.Atan2(w.X, w.Z) + Math.PI / 2.0);
+        return VaneWind.TargetYawFor(w);
     }
 
     /// <summary>Angular speed (radians/s) the spinner should turn at: wind strength scaled by how well the
@@ -154,15 +153,11 @@ public class BlockEntityRotorvane : BlockEntity
     {
         if (Api == null || IsOccluded()) return 0.0;
         Vec3d w = Api.World.BlockAccessor.GetWindSpeedAt(Pos.ToVec3d());
-        return Math.Sqrt(w.X * w.X + w.Z * w.Z);
+        return VaneWind.SpeedOf(w);
     }
 
     /// <summary>Same cave/undergroundWindmills gate windmill rotors and the plain weathervane arrow use.</summary>
-    private bool IsOccluded()
-    {
-        return Api!.World.BlockAccessor.GetLightLevel(Pos, EnumLightLevelType.OnlySunLight) < 5
-            && Api.World.Config.GetString("undergroundWindmills", "false") != "true";
-    }
+    private bool IsOccluded() => VaneWind.IsOccluded(Api!, Pos);
 
     public override void GetBlockInfo(IPlayer forPlayer, StringBuilder dsc)
     {

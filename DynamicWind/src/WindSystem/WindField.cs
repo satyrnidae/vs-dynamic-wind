@@ -152,6 +152,7 @@ public class WindField
     public double OroSlowdown = 0.5;   // windward speed loss climbing into terrain (0..1)
     public double OroDeflection = 1.0; // how strongly flow curves around obstacles
     public double OroWake = 0.5;       // lee-side (downwind) speed loss in a hill's shadow (0..1)
+    public double OroHeightThreshold = 130; // terrain height (blocks) below which orographic effects don't apply
 
     // Altitude pressure lapse: real air pressure falls with height. Sampled in the Y-aware
     // PressureAt overload only (a vertical-only term, so it adds no horizontal wind gradient).
@@ -374,6 +375,7 @@ public class WindField
         Func<double, double, double> H = TerrainHeightFunc!;
         double d = OroGradDist;
         double h = H(x, z);
+        if (h < OroHeightThreshold) return;
         double hx = (H(x + d, z) - H(x - d, z)) / (2 * d);
         double hz = (H(x, z + d) - H(x, z - d)) / (2 * d);
         double gmag = Math.Sqrt(hx * hx + hz * hz);

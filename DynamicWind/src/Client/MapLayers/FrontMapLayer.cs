@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Reflection;
 using DynamicWind.Config;
 using DynamicWind.WindSystem;
-using HarmonyLib;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
@@ -16,13 +14,13 @@ namespace DynamicWind.Client.MapLayers;
 /// Synoptic weather-front overlay (world map only, not the minimap). Draws the classic surface-analysis
 /// symbols derived from the synced pressure field by <see cref="FrontComputer"/>: an "H"/"L" letter at
 /// each pressure-system centre, and a tiled contour of warm/cold/stationary front symbols traced
-/// around each system — the full loop for a near-stationary system, or just the leading half (the
-/// system's active edge) for a moving one, each tile individually rotated to the local contour
-/// tangent so the line reads as contiguous even where it curves. Toggle via the map legend.
+/// around each system — the full loop for a near-stationary/occluded system, or two open curves
+/// (warm on the poleward side, cold on the equatorward side) marched outward from a moving system's
+/// centre, each tile individually rotated to the local contour tangent so the line reads as
+/// contiguous even where it curves. Toggle via the map legend.
 /// </summary>
-public class FrontMapLayer : MapLayer
+public class FrontMapLayer : DynamicWindWorldMapLayerBase
 {
-    private const double RecomputeInterval = 0.5; // seconds between resamples (2 fps, matches wind arrows/Doppler)
     private const float TilePx = 32f;     // on-screen length of one front segment tile
     private const float MarkerPx = 48f;   // on-screen size of an H/L letter
     private const double CurveAmpFactor = 0.06; // × front length, curvature amplitude
@@ -32,13 +30,28 @@ public class FrontMapLayer : MapLayer
     private MeshRef? quad;
     private int texWarm, texCold, texStationary, texOccluded, texHigh, texLow;
     private readonly Matrixf mvMat = new();
-    private static readonly FieldInfo? fSnapToPlayer = AccessTools.Field(typeof(GuiElementMap), "snapToPlayer");
     private static readonly Vec4f White = new(1f, 1f, 1f, 1f);
 
     private readonly List<FrontMarker> markers = new();
     private readonly List<FrontLine> lines = new();
-    private double accum;
-    private bool haveCache;
+    private readonly List<LineScratch> scratch = new();
+
+    private sealed class LineScratch
+    {
+        public float[] Sxs = Array.Empty<float>();
+        public float[] Sys = Array.Empty<float>();
+        public float[] Fas = Array.Empty<float>();
+        public double[] CumulativePx = Array.Empty<double>();
+
+        public void EnsureCapacity(int n)
+        {
+            if (Sxs.Length >= n) return;
+            Sxs = new float[n];
+            Sys = new float[n];
+            Fas = new float[n];
+            CumulativePx = new double[n];
+        }
+    }
 
     public FrontMapLayer(ICoreAPI api, IWorldMapManager mapSink) : base(api, mapSink) { }
 
@@ -67,18 +80,12 @@ public class FrontMapLayer : MapLayer
     public override void Render(GuiElementMap mapElem, float dt)
     {
         if (!Active || capi == null || quad == null) return;
-        if (fSnapToPlayer?.GetValue(mapElem) is bool snap && snap) return; // world map only
+        if (IsMinimap(mapElem)) return; // world map only
 
         WindField? field = DynamicWindRuntime.ClientField;
         if (field == null) return;
 
-        accum += dt;
-        if (!haveCache || accum >= RecomputeInterval)
-        {
-            accum = 0;
-            FrontComputer.Compute(field, capi.World.Calendar.TotalHours, markers, lines);
-            haveCache = true;
-        }
+        TickResample(dt, mapElem);
 
         ElementBounds b = mapElem.Bounds;
         Cuboidd vb = mapElem.CurrentBlockViewBounds;
@@ -88,12 +95,8 @@ public class FrontMapLayer : MapLayer
         double scaleZ = b.InnerHeight / spanZ;
         double th = capi.World.Calendar.TotalHours;
 
-        IShaderProgram shader = capi.Render.GetEngineShader((EnumShaderProgram)17);
-        shader.Uniform("extraGlow", 0);
-        shader.Uniform("applyColor", 0);
-        shader.Uniform("noTexture", 0f);
+        IShaderProgram shader = BindStandardShader(capi, texWarm);
         shader.Uniform("rgbaIn", White);
-        shader.UniformMatrix("projectionMatrix", capi.Render.CurrentProjectionMatrix);
 
         // Fronts: a near-STATIONARY or OCCLUDED low encircles itself with a full closed loop; a MOVING,
         // open-wave low instead renders an open curve marched outward from the low — warm on the
@@ -120,10 +123,11 @@ public class FrontMapLayer : MapLayer
             // how stretched the front is.
             int nFine = (int)Math.Clamp(Math.Ceiling(lenPx / (TilePx * 0.5)), 32, 3000);
 
-            float[] sxs = new float[nFine + 1];
-            float[] sys = new float[nFine + 1];
-            float[] fas = new float[nFine + 1];
-            double[] cum = new double[nFine + 1];
+            while (scratch.Count <= li) scratch.Add(new LineScratch());
+            LineScratch sc = scratch[li];
+            sc.EnsureCapacity(nFine + 1);
+            float[] sxs = sc.Sxs, sys = sc.Sys, fas = sc.Fas;
+            double[] cumPx = sc.CumulativePx;
             for (int j = 0; j <= nFine; j++)
             {
                 double t = (double)j / nFine;
@@ -133,10 +137,10 @@ public class FrontMapLayer : MapLayer
                 if (j > 0)
                 {
                     double dx = sxs[j] - sxs[j - 1], dy = sys[j] - sys[j - 1];
-                    cum[j] = cum[j - 1] + Math.Sqrt(dx * dx + dy * dy);
+                    cumPx[j] = cumPx[j - 1] + Math.Sqrt(dx * dx + dy * dy);
                 }
             }
-            double totalLenPx = cum[nFine];
+            double totalLenPx = cumPx[nFine];
             if (totalLenPx < 1e-3) continue;
 
             int minTiles = fullLoop ? 8 : 4;
@@ -158,9 +162,9 @@ public class FrontMapLayer : MapLayer
             for (int i = 0; i < nT; i++)
             {
                 double targetDist = (i + 0.5) * step;
-                while (seg < nFine - 1 && cum[seg + 1] < targetDist) seg++;
-                double segLen = cum[seg + 1] - cum[seg];
-                double segT = segLen > 1e-9 ? (targetDist - cum[seg]) / segLen : 0;
+                while (seg < nFine - 1 && cumPx[seg + 1] < targetDist) seg++;
+                double segLen = cumPx[seg + 1] - cumPx[seg];
+                double segT = segLen > 1e-9 ? (targetDist - cumPx[seg]) / segLen : 0;
                 float sx = (float)(sxs[seg] + (sxs[seg + 1] - sxs[seg]) * segT);
                 float sy = (float)(sys[seg] + (sys[seg + 1] - sys[seg]) * segT);
 
@@ -172,7 +176,7 @@ public class FrontMapLayer : MapLayer
                 // Symbols face outward, radially, for a full loop; for a Warm/Cold open curve they face
                 // whichever tangent-perpendicular best matches the low's own direction of travel (see
                 // FrontComputer.ChooseFacing) — stays correct even where a JOIN curve bends sharply.
-                float angle = AngleLerp(fas[seg], fas[seg + 1], (float)segT);
+                float angle = AngleMath.AngleLerp(fas[seg], fas[seg + 1], (float)segT);
 
                 mvMat.Set(capi.Render.CurrentModelviewMatrix)
                     .Translate(sx, sy, 62f)
@@ -198,22 +202,11 @@ public class FrontMapLayer : MapLayer
         }
     }
 
-    /// <summary>Shortest-path angle interpolation, wrapping through whichever direction is closer —
-    /// avoids a ±π discontinuity glitch when lerping a tile's facing angle between two curve samples.</summary>
-    private static float AngleLerp(float from, float to, float t)
+    protected override void Resample(GuiElementMap mapElem)
     {
-        float diff = (float)Math.Atan2(Math.Sin(to - from), Math.Cos(to - from));
-        return from + diff * t;
-    }
-
-    /// <summary>World (x,z) → screen px within the map element; false if outside the visible bounds.</summary>
-    private static bool ToScreen(ElementBounds b, Cuboidd vb, double wx, double wz, out float sx, out float sy)
-    {
-        double fx = (wx - vb.X1) / (vb.X2 - vb.X1);
-        double fz = (wz - vb.Z1) / (vb.Z2 - vb.Z1);
-        sx = (float)(b.renderX + fx * b.InnerWidth);
-        sy = (float)(b.renderY + fz * b.InnerHeight);
-        return fx >= -0.05 && fx <= 1.05 && fz >= -0.05 && fz <= 1.05;
+        WindField? field = DynamicWindRuntime.ClientField;
+        if (field == null || capi == null) return;
+        FrontComputer.Compute(field, capi.World.Calendar.TotalHours, markers, lines);
     }
 
     public override void Dispose()

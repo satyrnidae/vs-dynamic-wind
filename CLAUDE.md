@@ -17,7 +17,8 @@ systems, and couples the rest of the world to it:
   pressure cells/gradients push the field above its calm baseline). So a calm vanilla pattern can't zero
   the wind globally, fronts still blow when vanilla is calm, and an area with no pressure differential
   falls back to vanilla's (possibly near-zero) speed — local calm is fine, global night-death is not.
-- **Clouds** — Harmony postfix on `CloudRenderer.CloudTick` rotates the cloud-drift vector to the wind bearing.
+- **Clouds** — Harmony postfix on both `CloudRenderer.CloudTick` and `FluffyClouds.CloudRendererMap.CloudTick`
+  (whichever is active for the player's cloud-quality setting) rotates the cloud-drift vector to the wind bearing.
 - **Windmills** — Harmony postfix on `BEBehaviorWindmillRotor.CheckWindSpeed`: power × cos(angle between
   wind and rotor axle). Head-on = full, perpendicular = stalled, from-behind = negative → spins backwards.
 - **Sailboats** — Harmony postfix on `EntityBoat.SeatsToMotion`: tailwind +50%, crosswind base,
@@ -41,13 +42,22 @@ systems, and couples the rest of the world to it:
   advect/extend faster — so the two sides visibly move/expand at different rates instead of one symmetric
   contour. `FrontComputer.ApplyFrontReach` scales the traced contour per angle bucket by whichever side
   it falls on before rendering.
-- **Occlusion** — intrinsic to a single low's own lifecycle, not a two-cell collision: once a low's
+- **Front occlusion** — intrinsic to a single low's own lifecycle, not a two-cell collision: once a low's
   `ColdFrontReach` has outgrown its `WarmFrontReach` by `OcclusionReachRatio` (1.5×) — i.e. the cold front
   has literally caught the warm one — `WindFieldSimulation.ApplyOcclusion` fires: storm likelihood drops
   hard, it renders as the occluded symbol (full closed loop, not split warm/cold halves) for
   `OccludedVisualHours`, and its remaining lifetime is cut to `OcclusionDeathSpeedup` (40%) — occluded
   lows die out faster, like real decaying cyclones. `PressureCell.OccludedUntilTotalHours` doubles as a
-  one-shot latch so a cell only occludes once.
+  one-shot latch so a cell only occludes once. (Unrelated to the indoor/underground "Occlusion" wind
+  shielding below, besides sharing the name.)
+- **Indoor/underground occlusion** — a wholly separate mechanic from front occlusion above: config
+  `OcclusionEnabled` gates `DynamicWindModCommon.ComputeWindSpeed` multiplying wind speed by
+  `OcclusionFactor(pos)`, which reduces or zeroes wind for enclosed/underground positions. If
+  `OcclusionRoomsZeroWind` and the position is inside a room per the room registry, wind is zeroed
+  outright; otherwise the factor is derived from sun-exposure light level scaled against
+  `OcclusionLightThreshold` and shaped by `OcclusionSharpness` (>1 keeps near-open spots closer to full
+  wind), floored at `OcclusionMinFactor` so fully enclosed spaces never reach exactly zero via this path.
+  Skipped for ambient/UI wind queries (`IsAmbientPlayerQuery`).
 - **Air-mass temperature** — each `PressureCell` carries an intrinsic `AirMassTemp` in [−1, 1] (cold to
   warm) independent of whether it's a low or a high, set once at spawn from birth latitude (colder toward
   the map's N/S edges), birth-position season (`Calendar.GetSeasonRel`, already hemisphere-aware), and
@@ -111,7 +121,7 @@ systems, and couples the rest of the world to it:
   with wind speed so low speeds stay legible.
   Each samples `GetWindSpeedAt` at its cell's world midpoint (player Y), rotates to the bearing, and scales
   its length by wind speed (~10% at 1% speed → 100% at full; hidden at 0%). The greyscale arrow art is tinted
-  by pressure (from the synced field's `PressureAt`): low → crimson `#FF4D35`, high → sky blue `#66C4FF`,
+  by pressure (from the synced field's `PressureAt`): low → crimson `#FF1000`, high → cobalt `#2651FF`,
   neutral → white. Fixed screen grid → zooming out makes each arrow cover more world distance. Registered via
   `WorldMapManager.RegisterMapLayer`; arrow art at `assets/dynamicwind/textures/icons/wind-direction.png`.
   Resampled ~7×/s and cached for perf.
@@ -174,7 +184,9 @@ Cell positions are advected from a single anchor time, so one snapshot stays cor
 
 ## Harmony patch targets (all guarded)
 
-- `Vintagestory.GameContent.CloudRenderer.CloudTick` (client) — fields `cloudSpeedX/cloudSpeedZ`.
+- `Vintagestory.GameContent.CloudRenderer.CloudTick` and `FluffyClouds.CloudRendererMap.CloudTick` (client) —
+  fields `cloudSpeedX/cloudSpeedZ` (+ `targetCloudSpeedX/Z` where present), patched independently so either
+  cloud-quality setting still follows the wind.
 - `Vintagestory.GameContent.Mechanics.BEBehaviorWindmillRotor.CheckWindSpeed` (server) — field `windSpeed`,
   `ownFacing` on base `BEBehaviorMPRotor`. Sets `windSpeed` to the |alignment| magnitude and records the
   alignment sign per rotor.

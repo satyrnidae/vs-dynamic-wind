@@ -75,10 +75,11 @@ internal static class CloudRendererPatch
         if (cfg == null || field == null || !cfg.CloudsFollowWind) return;
         if (!FieldsByType.TryGetValue(__instance.GetType(), out FieldSet fields)) return;
 
-        var plr = capi.World?.Player?.Entity;
-        if (plr == null) return;
+        IClientWorldAccessor? world = capi.World;
+        var plr = world?.Player?.Entity;
+        if (world == null || plr == null) return;
 
-        Vec2d w = field.WindAt(plr.Pos.X, plr.Pos.Z, capi.World.Calendar.TotalHours);
+        Vec2d w = field.WindAt(plr.Pos.X, plr.Pos.Z, world.Calendar.TotalHours);
         if (w.Length() < 1e-6) return;
 
         // Drive the cloud speed straight from the wind vector (magnitude ∝ wind strength). Set the live

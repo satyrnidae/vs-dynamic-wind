@@ -1,8 +1,6 @@
 using System;
-using System.Reflection;
 using DynamicWind.Config;
 using DynamicWind.WindSystem;
-using HarmonyLib;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
@@ -26,11 +24,10 @@ namespace DynamicWind.Client.MapLayers;
 /// legible (base footprint = half a grid cell); cells with no wind are hidden. Samples are recomputed a
 /// few times per second and cached, so the per-frame cost stays low.
 /// </summary>
-public class WindArrowMapLayer : MapLayer
+public class WindArrowMapLayer : DynamicWindWorldMapLayerBase
 {
     public const int Grid = 24;
     private const double RefSpeed = 1.0;       // wind speed treated as "100%"
-    private const double RecomputeInterval = 0.5; // seconds between resamples (2 fps, matches Doppler/fronts)
 
     private DynamicWindConfig? cfg;
     private ICoreClientAPI? capi;
@@ -38,7 +35,6 @@ public class WindArrowMapLayer : MapLayer
     private MeshRef? quadModel;
     private int arrowTexId;
     private readonly Matrixf mvMat = new();
-    private static readonly FieldInfo? fSnapToPlayer = AccessTools.Field(typeof(GuiElementMap), "snapToPlayer");
 
     // Pressure tint endpoints (arrow art is greyscale; rgbaIn multiplies it).
     private static readonly Vec4f White = new(1f, 1f, 1f, 1f);
@@ -54,8 +50,6 @@ public class WindArrowMapLayer : MapLayer
     private readonly Vec4f[] cColor = new Vec4f[Grid * Grid];
     private readonly bool[] cVisible = new bool[Grid * Grid];
     private Cuboidd cachedVb = new();
-    private double accum;
-    private bool haveCache;
 
     public WindArrowMapLayer(ICoreAPI api, IWorldMapManager mapSink) : base(api, mapSink) { }
 
@@ -80,15 +74,9 @@ public class WindArrowMapLayer : MapLayer
         if (!Active || capi == null || quadModel == null) return;
 
         // Only on the full world map, not the minimap HUD (which snaps to the player).
-        if (fSnapToPlayer?.GetValue(mapElem) is bool snap && snap) return;
+        if (IsMinimap(mapElem)) return;
 
-        accum += dt;
-        if (!haveCache || accum >= RecomputeInterval)
-        {
-            accum = 0;
-            Resample(mapElem);
-            haveCache = true;
-        }
+        TickResample(dt, mapElem);
 
         ElementBounds b = mapElem.Bounds;
         double cellW = b.InnerWidth / Grid;
@@ -98,12 +86,7 @@ public class WindArrowMapLayer : MapLayer
         float renderX = (float)b.renderX;
         float renderY = (float)b.renderY;
 
-        IShaderProgram shader = capi.Render.GetEngineShader((EnumShaderProgram)17);
-        shader.Uniform("extraGlow", 0);
-        shader.Uniform("applyColor", 0);
-        shader.Uniform("noTexture", 0f);
-        shader.BindTexture2D("tex2d", arrowTexId, 0);
-        shader.UniformMatrix("projectionMatrix", capi.Render.CurrentProjectionMatrix);
+        IShaderProgram shader = BindStandardShader(capi, arrowTexId);
 
         Cuboidd vb = mapElem.CurrentBlockViewBounds;
         double cvbSpanX = cachedVb.X2 - cachedVb.X1, cvbSpanZ = cachedVb.Z2 - cachedVb.Z1;
@@ -152,7 +135,7 @@ public class WindArrowMapLayer : MapLayer
 
     /// <summary>Resample wind at each cell's world midpoint (player Y) and cache angle + length scale.
     /// Exactly one wind-speed sample per arrow.</summary>
-    private void Resample(GuiElementMap mapElem)
+    protected override void Resample(GuiElementMap mapElem)
     {
         Cuboidd vb = mapElem.CurrentBlockViewBounds;
         WindField? field = DynamicWindRuntime.ClientField;
@@ -197,15 +180,12 @@ public class WindArrowMapLayer : MapLayer
                 // a per-Y effect — adding it here just washes every tile by a constant playerY offset).
                 double p = field?.PressureAt(wx, wz, th) ?? 0.0;
                 float t = (float)Math.Min(1.0, Math.Abs(p));
-                cColor[idx] = LerpColor(White, p >= 0 ? LowColor : HighColor, t);
+                cColor[idx] = Lerp(White, p >= 0 ? LowColor : HighColor, t);
 
                 cVisible[idx] = true;
             }
         }
     }
-
-    private static Vec4f LerpColor(Vec4f a, Vec4f b, float t)
-        => new(a.R + (b.R - a.R) * t, a.G + (b.G - a.G) * t, a.B + (b.B - a.B) * t, 1f);
 
     public override void Dispose()
     {

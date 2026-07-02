@@ -41,8 +41,7 @@ public class DynamicWindModServer : DynamicWindModCommon
             Mod.Logger.Error("[dynamicwind] Algernons Terrain Sampler not found — orographic effects disabled. (It is a required dependency.)");
         }
 
-        var thermalCache = new ThermalCache((x, z, th) => TerrainThermal.PressureAt(api.World, x, z, th));
-        Field.ThermalPressureFunc = thermalCache.Get;
+        SetupThermalPressureFunc(api);
         if (sampler != null)
         {
             // Algernons Terrain Sampler gives terrain height at any coordinate without chunk gen.
