@@ -95,17 +95,18 @@ public class FrontMapLayer : MapLayer
         shader.Uniform("rgbaIn", White);
         shader.UniformMatrix("projectionMatrix", capi.Render.CurrentProjectionMatrix);
 
-        // Fronts: a near-STATIONARY system encircles itself with a full closed loop of stationary
-        // symbols (facing outward); a MOVING system instead renders only the leading half of that
-        // same contour — its active edge, where precipitation forms — as a tiled arc of cold (high) /
-        // warm (low) symbols following the local tangent. Geometry comes from FrontComputer
-        // (deterministic, cells-only); both cases share the same march-to-contour Radii.
+        // Fronts: a near-STATIONARY or OCCLUDED low encircles itself with a full closed loop; a MOVING,
+        // open-wave low instead renders two half-arcs of the same contour — cold on the poleward half,
+        // warm on the equatorward half (real geography, not direction of travel — see FrontComputer).
+        // All symbols face outward, radially, so cold points poleward and warm points equatorward.
+        // Geometry comes from FrontComputer (deterministic, cells-only).
         for (int li = 0; li < lines.Count; li++)
         {
             FrontLine f = lines[li];
             if (f.Radii == null || f.Radii.Length == 0) continue;
             double[] radii = f.Radii;
-            bool stationary = f.Type == FrontType.Stationary;
+            // Stationary and occluded lows render the full closed loop; Warm/Cold render only their half.
+            bool fullLoop = f.Type == FrontType.Stationary || f.Type == FrontType.Occluded;
 
             double rMean = 0;
             for (int k = 0; k < radii.Length; k++) rMean += radii[k];
@@ -114,7 +115,7 @@ public class FrontMapLayer : MapLayer
             double curveAmpL = CurveAmpFactor * rMean;
 
             double thetaStart, thetaSpan;
-            if (stationary)
+            if (fullLoop)
             {
                 thetaStart = 0;
                 thetaSpan = 2 * Math.PI;
@@ -150,14 +151,17 @@ public class FrontMapLayer : MapLayer
             double totalLenPx = cum[nFine];
             if (totalLenPx < 1e-3) continue;
 
-            int minTiles = stationary ? 8 : 4;
+            int minTiles = fullLoop ? 8 : 4;
             int nT = (int)Math.Clamp(Math.Ceiling(totalLenPx / TilePx), minTiles, 3000);
             double step = totalLenPx / nT;
 
-            int tex = stationary ? texStationary
-                : f.Type == FrontType.Warm ? texWarm
-                : f.Type == FrontType.Occluded ? texOccluded
-                : texCold;
+            int tex = f.Type switch
+            {
+                FrontType.Stationary => texStationary,
+                FrontType.Occluded => texOccluded,
+                FrontType.Warm => texWarm,
+                _ => texCold
+            };
             shader.BindTexture2D("tex2d", tex, 0);
 
             float halfH = TilePx * 0.5f;
@@ -177,22 +181,12 @@ public class FrontMapLayer : MapLayer
                 float fy = (float)((sy - b.renderY) / b.InnerHeight);
                 if (fx < -0.05f || fx > 1.05f || fy < -0.05f || fy > 1.05f) continue;
 
-                float dsx = sxs[seg + 1] - sxs[seg];
-                float dsy = sys[seg + 1] - sys[seg];
-
-                float angle;
-                if (stationary)
-                {
-                    // Symbols face outward, radially.
-                    double theta = thetaStart + (seg + t) / nFine * thetaSpan;
-                    angle = (float)Math.Atan2(Math.Sin(theta), Math.Cos(theta));
-                }
-                else
-                {
-                    // Symbols follow the contour's local (screen-space) tangent, so the icon
-                    // orientation reads as a contiguous line even where it curves.
-                    angle = (float)Math.Atan2(-dsx, dsy);
-                }
+                // Symbols always face outward, radially — for a full loop that's simply "away from
+                // centre"; for a Warm/Cold half-arc it means pointing equatorward/poleward respectively
+                // (the geography the split itself is based on), which reads correctly with no extra
+                // per-type flip needed.
+                double theta = thetaStart + (seg + t) / nFine * thetaSpan;
+                float angle = (float)Math.Atan2(Math.Sin(theta), Math.Cos(theta));
 
                 mvMat.Set(capi.Render.CurrentModelviewMatrix)
                     .Translate(sx, sy, 62f)

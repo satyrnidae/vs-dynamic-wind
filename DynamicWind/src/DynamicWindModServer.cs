@@ -56,6 +56,7 @@ public class DynamicWindModServer : DynamicWindModCommon
         {
             Field.SeaLevel = api.World.SeaLevel;
             Field.WorldHeight = api.WorldManager.MapSizeY;
+            Field.MapCenterZ = api.WorldManager.MapSizeZ / 2.0;
             sim.Load();
         };
         api.Event.GameWorldSave += () => sim.Save();

@@ -198,9 +198,12 @@ public abstract class DynamicWindModCommon : ModSystem
     [ThreadStatic] private static bool inClimateHandler;
 
     /// <summary>
-    /// Pressure → air temperature. A low (signed pressure +) warms the air, a high (−) cools it, up to
-    /// <see cref="DynamicWindConfig.FrontTemperatureMax"/> °C at peak intensity; the terrain-thermal
-    /// field (warm dry land / cool deep water) adds a gentler shift up to
+    /// Pressure-cell air mass → air temperature. Each system carries its own intrinsic warm/cold
+    /// character (<see cref="PressureCell.AirMassTemp"/>, set at spawn from birth latitude + season +
+    /// jitter) independent of whether it's a low or a high — a cold low and a warm high can both exist,
+    /// same as a polar low or a subtropical high in reality. Shifts local temperature up to
+    /// <see cref="DynamicWindConfig.FrontTemperatureMax"/> °C toward that air mass's character; the
+    /// terrain-thermal field (warm dry land / cool deep water) adds a gentler shift up to
     /// <see cref="DynamicWindConfig.ThermalTemperatureMax"/> °C. Both terms are read from the same
     /// synced <see cref="WindField"/> used everywhere else, so server and client agree. Worldgen base
     /// climate is left untouched — only live ("now"/dated) lookups shift.
@@ -216,9 +219,9 @@ public abstract class DynamicWindModCommon : ModSystem
         {
             double totalHours = totalDays * Api.World.Calendar.HoursPerDay;
 
-            // Front term: signed cell pressure (+ low / − high), normalised by the sim's strength cap.
-            double p = Field.CellPressureAt(pos.X, pos.Z, totalHours);
-            double frontDelta = Config.FrontTemperatureMax * Clamp1(p / TempPressureNorm);
+            // Front term: blended air-mass character in [-1, 1] (independent of pressure sign).
+            double t = Field.CellTemperatureAt(pos.X, pos.Z, totalHours);
+            double frontDelta = Config.FrontTemperatureMax * Clamp1(t);
 
             // Terrain thermal term: + warm land / − cool water.
             double thermalDelta = 0;
@@ -236,9 +239,7 @@ public abstract class DynamicWindModCommon : ModSystem
         }
     }
 
-    // Normalisers: a peak system (|strength| == WindFieldSimulation.MaxStrength = 3) reaches the full
-    // FrontTemperatureMax; typical terrain thermals (|TerrainThermal| up to ~2.6) reach ~ThermalTemperatureMax.
-    private const double TempPressureNorm = 3.0;
+    // Normaliser: typical terrain thermals (|TerrainThermal| up to ~2.6) reach ~ThermalTemperatureMax.
     private const double ThermalNorm = 2.0;
 
     private static double Clamp1(double v) => v < -1 ? -1 : (v > 1 ? 1 : v);

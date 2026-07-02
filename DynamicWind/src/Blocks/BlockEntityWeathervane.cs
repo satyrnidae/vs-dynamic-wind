@@ -70,6 +70,21 @@ public class BlockEntityWeathervane : BlockEntity
         return (float)(Math.Atan2(w.X, w.Z) + Math.PI / 2.0);
     }
 
+    /// <summary>True directional wind magnitude at this block (0 when calm or occluded); drives how fast
+    /// <see cref="WeathervaneRenderer"/> eases the arrow toward its target yaw (see
+    /// <see cref="Client.Render.VaneTurnRate"/>) — same cave/undergroundWindmills gate as
+    /// <see cref="GetTargetYaw"/>.</summary>
+    public double GetWindSpeed()
+    {
+        if (Api == null) return 0.0;
+        if (Api.World.BlockAccessor.GetLightLevel(Pos, EnumLightLevelType.OnlySunLight) < 5
+            && Api.World.Config.GetString("undergroundWindmills", "false") != "true")
+            return 0.0;
+
+        Vec3d w = Api.World.BlockAccessor.GetWindSpeedAt(Pos.ToVec3d());
+        return Math.Sqrt(w.X * w.X + w.Z * w.Z);
+    }
+
     public override void GetBlockInfo(IPlayer forPlayer, StringBuilder dsc)
     {
         base.GetBlockInfo(forPlayer, dsc);

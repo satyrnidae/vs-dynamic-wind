@@ -26,6 +26,7 @@ public class WindFieldSimulation
     private const double MaxStrength = 3.0;
     private const double MinStrength = 0.04;             // below this a cell has dispersed away
     private const double MaxRadius = 32000.0;
+    private const double MaxDistanceFromPlayer = 72000.0; // a cell farther than this from EVERY online player despawns
 
     // Ellipse shape: the along-stream (minor) axis grows slower than the cross-stream (major) one, so
     // cells get more eccentric as they age, and starts already mildly elliptical at spawn rather than a
@@ -36,26 +37,43 @@ public class WindFieldSimulation
     private const double OrientationEaseRate = 0.4;   // per-hour exponential approach to the velocity bearing
     private const double MinSpeedForOrientation = 10.0; // below this (blocks/hour), freeze orientation
 
-    // Merge / displace of overlapping cells.
+    // Merge / displace of overlapping cells (same-type only — a low and a high overlapping isn't a
+    // meaningful event on its own; real fronts/occlusion are intrinsic to a single low, see ApplyOcclusion).
     private const double OverlapFactor = 0.5;        // overlap if centres are within this × (R_i + R_j)
     private const double MergedMaxStrength = 4.0;    // merged same-type cells may exceed the normal cap, so they're genuinely stronger
 
-    // Cold (high) fronts advect faster than warm (low) fronts, so they can catch up to and occlude one.
-    private const double ColdFrontSpeedFactor = 1.3;
-
-    // Storm likelihood: builds slowly over a front's life, ramps further while overlapping an opposite-
-    // type front, and spikes/drops around an occlusion (see MergeAndDisplace).
+    // Storm likelihood: builds slowly over a low's life (its fronts sharpen as the system matures), then
+    // spikes/drops around occlusion (see ApplyOcclusion) as the storm winds down.
     private const double StormLikelihoodGrowthPerHour = 0.04;
-    private const double StormInteractionBoostPerHour = 0.5; // × overlap coverage
-    private const double OcclusionCoverageThreshold = 0.75;  // cold front covering this much of the warm front's disc → occlude
-    private const double MinOcclusionRemainderFrac = 0.08;   // below this, the leftover warm sliver isn't worth splitting off
-    private const double OccludedVisualHours = 8.0;          // how long the surviving cold front renders as "occluded"
-    private const float OcclusionAftermathStormLikelihood = 0.1f; // storms drop hard during/after an occlusion
+
+    // Front reach: each low's cold (poleward) and warm (equatorward) front sides carry an independent
+    // radial reach multiplier (PressureCell.ColdFrontReach/WarmFrontReach) that grows every hour — cold
+    // faster than warm, since real cold fronts advect/extend faster — so the two sides visibly move and
+    // expand at different rates instead of a single symmetric contour.
+    private const double ColdReachGrowthPerHour = 0.08;
+    private const double WarmReachGrowthPerHour = 0.02;
+    private const double MaxFrontReach = 3.0;
+
+    // Occlusion: intrinsic to a single low's own lifecycle — its (faster) cold front catches its
+    // (slower) warm front as the cyclone matures, lifting the warm sector and starting the storm's
+    // decay. Triggered once ColdFrontReach has outgrown WarmFrontReach by OcclusionReachRatio — a
+    // sim-driven event (the cold front has literally caught the warm one), not a fixed age timer or a
+    // two-cell collision, since real occlusion isn't triggered by a separate high.
+    private const double OcclusionReachRatio = 1.5;      // cold/warm reach ratio that triggers occlusion
+    private const double OccludedVisualHours = 8.0;      // how long it renders as the occluded symbol
+    private const double OcclusionDeathSpeedup = 0.4;    // remaining lifetime is cut to this fraction — occluded lows die out faster
+    private const float OcclusionAftermathStormLikelihood = 0.1f; // storms drop hard once occluded
 
     // Weather → pressure feedback: the weather map nudges each cell's strength. Clear skies push toward
     // high (−), clouds toward low (+), storms strongly toward low. Cloud cover below this reads as "clear".
     private const double ClearCloudThreshold = 0.4;
     private const double StormForcingGain = 1.5; // extra low-ward push per unit of precipitation (storms)
+
+    // Air-mass temperature: each cell's intrinsic warm/cold character (independent of low/high pressure),
+    // set once at spawn from birth latitude + season + random jitter — see ComputeAirMassTemp.
+    private const double AirMassLatitudeWeight = 0.6; // poleward (map-edge) birth → colder
+    private const double AirMassSeasonWeight = 0.4;   // birth-hemisphere summer → warmer, winter → colder
+    private const double AirMassJitter = 0.3;         // ± random spread on top of the above
 
     // Pressure systems are scattered across a wide region centred on (and leaning west of) the
     // population centre, so several systems span the visible map at once instead of a few tiny cells
@@ -122,6 +140,7 @@ public class WindFieldSimulation
 
         Advect(now, dGameHours);
         MergeAndDisplace(now, dGameHours);
+        ApplyOcclusion(now, dGameHours);
         ApplyWeatherFeedback(now, dGameHours);
         Expire(now);
         MaybeSpawn(now, dGameHours);
@@ -207,9 +226,8 @@ public class WindFieldSimulation
                 speed[i] = w.Length();
                 if (pd.AdvectWithWind)
                 {
-                    double speedBias = c.IsLow ? 1.0 : ColdFrontSpeedFactor;
-                    newVX[i] = w.X * pd.AdvectionSpeed * speedBias;
-                    newVZ[i] = w.Y * pd.AdvectionSpeed * speedBias;
+                    newVX[i] = w.X * pd.AdvectionSpeed;
+                    newVZ[i] = w.Y * pd.AdvectionSpeed;
                 }
                 else { newVX[i] = c.VelX; newVZ[i] = c.VelZ; }
             }
@@ -250,6 +268,14 @@ public class WindFieldSimulation
                 c.StormLikelihood = Math.Min(1f, c.StormLikelihood + (float)(StormLikelihoodGrowthPerHour * dGameHours));
             }
 
+            // Cold (poleward) front reach grows faster than warm (equatorward) — the two sides move and
+            // expand at different rates; see ApplyOcclusion for the sim-driven trigger this feeds.
+            if (c.IsLow && dGameHours > 0)
+            {
+                c.ColdFrontReach = (float)Math.Min(MaxFrontReach, c.ColdFrontReach + ColdReachGrowthPerHour * dGameHours);
+                c.WarmFrontReach = (float)Math.Min(MaxFrontReach, c.WarmFrontReach + WarmReachGrowthPerHour * dGameHours);
+            }
+
             // Ease the ellipse's stored orientation toward the cell's own travel bearing, rather than
             // snapping, so the shape rotates smoothly. Frozen (not chased) at near-zero own speed to avoid
             // tracking a numerically noisy direction — common for slow/stalled systems, not a rare case.
@@ -270,18 +296,13 @@ public class WindFieldSimulation
     }
 
     /// <summary>
-    /// Resolve overlapping cells. Two SAME-type cells (both low or both high) within
-    /// <see cref="OverlapFactor"/> of their summed radii merge into one deeper/stronger system (summed
-    /// strength, |strength|-weighted centre + velocity, combined radius), so colliding fronts reinforce.
-    /// A HIGH overlapping a LOW does NOT merge: since cold (high) fronts advect faster than warm (low)
-    /// ones (<see cref="ColdFrontSpeedFactor"/>), a cold front can catch up to and progressively cover a
-    /// warm one. As their footprints overlap, both fronts' <see cref="PressureCell.StormLikelihood"/>
-    /// ramps up — storms along the interacting edge — and once the cold front's disc covers at least
-    /// <see cref="OcclusionCoverageThreshold"/> of the warm front's, the warm front OCCLUDES: it is
-    /// killed (any un-covered remainder splits off as a smaller, weaker cell), the surviving cold front
-    /// is tagged to render as the occluded symbol for a while, and storm likelihood drops hard on both
-    /// the cold front and any split remainder. Runs after <see cref="Advect"/>, where each cell's stored
-    /// X/Z is its current position (anchor == now), so centres compare directly.
+    /// Merge overlapping SAME-type cells (both low or both high) within <see cref="OverlapFactor"/> of
+    /// their summed radii into one deeper/stronger system (summed strength, |strength|-weighted centre +
+    /// velocity, combined radius) — colliding same-type systems reinforce each other. A low overlapping a
+    /// high is NOT a merge or a special event: real occlusion is intrinsic to a single low's own
+    /// lifecycle (see <see cref="ApplyOcclusion"/>), not triggered by a passing high. Runs after
+    /// <see cref="Advect"/>, where each cell's stored X/Z is its current position (anchor == now), so
+    /// centres compare directly.
     /// </summary>
     private void MergeAndDisplace(double now, double dGameHours)
     {
@@ -289,7 +310,6 @@ public class WindFieldSimulation
         if (n < 2) return;
 
         var consumed = new bool[n];
-        var toAdd = new List<PressureCell>();
         bool changed = false;
 
         for (int i = 0; i < n; i++)
@@ -297,10 +317,10 @@ public class WindFieldSimulation
             if (consumed[i]) continue;
             for (int j = i + 1; j < n; j++)
             {
-                if (consumed[i]) break; // i itself occluded away mid-loop (see below)
                 if (consumed[j]) continue;
                 PressureCell a = field.Cells[i];
                 PressureCell b = field.Cells[j];
+                if (a.IsLow != b.IsLow) continue; // opposite types don't interact here
 
                 double dx = b.X - a.X;
                 double dz = b.Z - a.Z;
@@ -313,99 +333,33 @@ public class WindFieldSimulation
                 double threshold = OverlapFactor * (aMean + bMean);
                 if (threshold <= 0 || dist >= threshold) continue;
 
-                double overlapFrac = 1.0 - dist / threshold;
-                if (overlapFrac < 0) overlapFrac = 0; else if (overlapFrac > 1) overlapFrac = 1;
+                // MERGE into cell a; drop cell b.
+                double wa = Math.Abs(a.Strength), wb = Math.Abs(b.Strength);
+                double wsum = wa + wb;
+                if (wsum < 1e-6) { wa = wb = 0.5; wsum = 1.0; }
 
-                if (a.IsLow == b.IsLow)
-                {
-                    // MERGE into cell a; drop cell b.
-                    double wa = Math.Abs(a.Strength), wb = Math.Abs(b.Strength);
-                    double wsum = wa + wb;
-                    if (wsum < 1e-6) { wa = wb = 0.5; wsum = 1.0; }
+                double merged = a.Strength + b.Strength;
+                if (merged > MergedMaxStrength) merged = MergedMaxStrength;
+                else if (merged < -MergedMaxStrength) merged = -MergedMaxStrength;
 
-                    double merged = a.Strength + b.Strength;
-                    if (merged > MergedMaxStrength) merged = MergedMaxStrength;
-                    else if (merged < -MergedMaxStrength) merged = -MergedMaxStrength;
+                a.X = (a.X * wa + b.X * wb) / wsum;
+                a.Z = (a.Z * wa + b.Z * wb) / wsum;
+                a.VelX = (a.VelX * wa + b.VelX * wb) / wsum;
+                a.VelZ = (a.VelZ * wa + b.VelZ * wb) / wsum;
+                a.Strength = (float)merged;
+                a.Radius = (float)Math.Min(MaxRadius, Math.Sqrt((double)a.Radius * a.Radius + (double)b.Radius * b.Radius));
+                double aMinor = a.RadiusMinor > 1e-3f ? a.RadiusMinor : a.Radius;
+                double bMinor = b.RadiusMinor > 1e-3f ? b.RadiusMinor : b.Radius;
+                a.RadiusMinor = (float)Math.Min(a.Radius, Math.Sqrt(aMinor * aMinor + bMinor * bMinor));
+                a.Orientation = (float)WeightedAngleMean(a.Orientation, b.Orientation, wa, wb);
+                a.BornTotalHours = Math.Min(a.BornTotalHours, b.BornTotalHours);
+                a.DiesTotalHours = Math.Max(a.DiesTotalHours, b.DiesTotalHours);
+                a.AirMassTemp = (float)((a.AirMassTemp * wa + b.AirMassTemp * wb) / wsum);
+                a.ColdFrontReach = (float)((a.ColdFrontReach * wa + b.ColdFrontReach * wb) / wsum);
+                a.WarmFrontReach = (float)((a.WarmFrontReach * wa + b.WarmFrontReach * wb) / wsum);
 
-                    a.X = (a.X * wa + b.X * wb) / wsum;
-                    a.Z = (a.Z * wa + b.Z * wb) / wsum;
-                    a.VelX = (a.VelX * wa + b.VelX * wb) / wsum;
-                    a.VelZ = (a.VelZ * wa + b.VelZ * wb) / wsum;
-                    a.Strength = (float)merged;
-                    a.Radius = (float)Math.Min(MaxRadius, Math.Sqrt((double)a.Radius * a.Radius + (double)b.Radius * b.Radius));
-                    double aMinor = a.RadiusMinor > 1e-3f ? a.RadiusMinor : a.Radius;
-                    double bMinor = b.RadiusMinor > 1e-3f ? b.RadiusMinor : b.Radius;
-                    a.RadiusMinor = (float)Math.Min(a.Radius, Math.Sqrt(aMinor * aMinor + bMinor * bMinor));
-                    a.Orientation = (float)WeightedAngleMean(a.Orientation, b.Orientation, wa, wb);
-                    a.BornTotalHours = Math.Min(a.BornTotalHours, b.BornTotalHours);
-                    a.DiesTotalHours = Math.Max(a.DiesTotalHours, b.DiesTotalHours);
-
-                    consumed[j] = true;
-                    changed = true;
-                }
-                else
-                {
-                    // Opposite types: track how much of the warm (low) front's disc the cold (high)
-                    // front's disc covers, approximating true circle-circle overlap from centre distance
-                    // and radii (consistent with this class's other geometric approximations).
-                    PressureCell cold = a.IsLow ? b : a;
-                    PressureCell warm = a.IsLow ? a : b;
-                    int warmIdx = a.IsLow ? i : j;
-
-                    double cdx = warm.X - cold.X, cdz = warm.Z - cold.Z;
-                    double cDist = Math.Sqrt(cdx * cdx + cdz * cdz);
-                    double containDist = Math.Max(0.0, cold.Radius - warm.Radius);
-                    double touchDist = cold.Radius + warm.Radius;
-                    double coverage;
-                    if (touchDist <= 1e-6 || cDist <= containDist) coverage = 1.0;
-                    else if (cDist >= touchDist) coverage = 0.0;
-                    else coverage = 1.0 - (cDist - containDist) / (touchDist - containDist);
-
-                    if (coverage <= 0) continue;
-
-                    // Building toward occlusion: both fronts get stormier the more they overlap.
-                    float interactionBoost = (float)(coverage * StormInteractionBoostPerHour * dGameHours);
-                    cold.StormLikelihood = Math.Min(1f, cold.StormLikelihood + interactionBoost);
-                    warm.StormLikelihood = Math.Min(1f, warm.StormLikelihood + interactionBoost);
-                    changed = true;
-
-                    if (coverage >= OcclusionCoverageThreshold)
-                    {
-                        // Spikes to 100% right before occluding, per the front lifecycle spec.
-                        cold.StormLikelihood = 1f;
-
-                        double remainderFrac = 1.0 - coverage;
-                        if (remainderFrac > MinOcclusionRemainderFrac)
-                        {
-                            // Split off the non-occluded sliver of the warm front as a smaller, weaker
-                            // cell on the uncovered side (area-based scaling: a disc's area ~ r²).
-                            double ux = cDist > 1e-6 ? cdx / cDist : 1.0;
-                            double uz = cDist > 1e-6 ? cdz / cDist : 0.0;
-                            double sqrtFrac = Math.Sqrt(remainderFrac);
-                            double newRadius = warm.Radius * sqrtFrac;
-                            double warmMinor = warm.RadiusMinor > 1e-3f ? warm.RadiusMinor : warm.Radius;
-                            toAdd.Add(new PressureCell
-                            {
-                                X = warm.X + ux * (warm.Radius - newRadius),
-                                Z = warm.Z + uz * (warm.Radius - newRadius),
-                                Strength = warm.Strength * (float)remainderFrac,
-                                Radius = (float)newRadius,
-                                RadiusMinor = (float)(warmMinor * sqrtFrac),
-                                VelX = warm.VelX,
-                                VelZ = warm.VelZ,
-                                BornTotalHours = warm.BornTotalHours,
-                                DiesTotalHours = warm.DiesTotalHours,
-                                Orientation = warm.Orientation,
-                                StormLikelihood = OcclusionAftermathStormLikelihood
-                            });
-                        }
-
-                        // Occlusion kills the warm front and calms both survivors' storminess.
-                        cold.StormLikelihood = OcclusionAftermathStormLikelihood;
-                        cold.OccludedUntilTotalHours = now + OccludedVisualHours;
-                        consumed[warmIdx] = true;
-                    }
-                }
+                consumed[j] = true;
+                changed = true;
             }
         }
 
@@ -413,16 +367,46 @@ public class WindFieldSimulation
 
         for (int i = n - 1; i >= 0; i--)
             if (consumed[i]) field.Cells.RemoveAt(i);
-        if (toAdd.Count > 0) field.Cells.AddRange(toAdd);
 
         field.AnchorHours = now; // positions are current at 'now'
         Dirty = true;
     }
 
     /// <summary>
+    /// Reach-ratio occlusion for LOW cells: real occlusion is a single cyclone's own faster cold front
+    /// catching its slower warm front as the system matures, lifting the warm sector and starting the
+    /// storm's decay — not an event triggered by a separate high. Once a low's
+    /// <see cref="PressureCell.ColdFrontReach"/> has outgrown its <see cref="PressureCell.WarmFrontReach"/>
+    /// by <see cref="OcclusionReachRatio"/> (grown every tick in <see cref="Advect"/>) — i.e. the cold
+    /// front has literally caught the warm one — and it hasn't already occluded (latched via
+    /// <see cref="PressureCell.OccludedUntilTotalHours"/>), its storm likelihood drops hard, it's tagged
+    /// to render as the occluded symbol for a while (see FrontComputer), and its remaining lifetime is
+    /// cut short (occluded lows die out faster).
+    /// </summary>
+    private void ApplyOcclusion(double now, double dGameHours)
+    {
+        if (dGameHours <= 0) return;
+        for (int i = 0; i < field.Cells.Count; i++)
+        {
+            PressureCell c = field.Cells[i];
+            if (!c.IsLow || c.OccludedUntilTotalHours > 0) continue; // highs don't occlude; one-shot latch
+            if (c.WarmFrontReach <= 1e-4f) continue;
+            if (c.ColdFrontReach / c.WarmFrontReach < OcclusionReachRatio) continue;
+
+            c.StormLikelihood = OcclusionAftermathStormLikelihood; // storm winds down once occluded
+            c.OccludedUntilTotalHours = now + OccludedVisualHours;
+
+            double remaining = c.DiesTotalHours - now;
+            if (remaining > 0) c.DiesTotalHours = now + remaining * OcclusionDeathSpeedup;
+
+            Dirty = true;
+        }
+    }
+
+    /// <summary>
     /// Let the weather map feed back onto pressure: sample cloud cover + precipitation at each cell and
-    /// nudge its strength. Clear skies push toward low (+ strength), clouds toward high (−), and storms
-    /// strongly toward high — so a cell's own weather reinforces it (highs that storm deepen; lows that
+    /// nudge its strength. Clear skies push toward high (− strength), clouds toward low (+), and storms
+    /// strongly toward low — so a cell's own weather reinforces it (lows that storm deepen; highs that
     /// stay clear strengthen), bounded by the strength clamp + dispersal decay + finite cell lifetime.
     /// Reads the live climate (which already carries the pressure→weather coupling), closing the loop.
     /// </summary>
@@ -447,11 +431,11 @@ public class WindFieldSimulation
 
             double cloud = GameMath.Clamp(cc.RainCloudOverlay, 0f, 1f);
             double precip = GameMath.Clamp(cc.Rainfall, 0f, 1f);
-            // Clear (cloud below threshold) → positive (toward low); cloudy → negative (toward high);
-            // storms add a strong extra high-ward push (cold fronts ride the highs).
+            // Clear (cloud below threshold) → negative (toward high); cloudy → positive (toward low);
+            // storms add a strong extra low-ward push (storms deepen the low that's producing them).
             double forcing = (cloud - ClearCloudThreshold) + StormForcingGain * precip;
 
-            c.Strength -= (float)(config.WeatherPressureCoupling * forcing * dGameHours);
+            c.Strength += (float)(config.WeatherPressureCoupling * forcing * dGameHours);
             if (c.Strength > MaxStrength) c.Strength = (float)MaxStrength;
             else if (c.Strength < -MaxStrength) c.Strength = -(float)MaxStrength;
         }
@@ -463,12 +447,34 @@ public class WindFieldSimulation
         for (int i = field.Cells.Count - 1; i >= 0; i--)
         {
             PressureCell c = field.Cells[i];
-            if (now >= c.DiesTotalHours || Math.Abs(c.Strength) < MinStrength)
+            if (now >= c.DiesTotalHours || Math.Abs(c.Strength) < MinStrength || IsTooFarFromAllPlayers(c.X, c.Z))
             {
                 field.Cells.RemoveAt(i);
                 Dirty = true;
             }
         }
+    }
+
+    /// <summary>
+    /// True if every online player is farther than <see cref="MaxDistanceFromPlayer"/> from
+    /// (<paramref name="x"/>, <paramref name="z"/>) — a system that's drifted this far off nobody's
+    /// business isn't going to be seen or felt, so let it despawn rather than simulate it forever.
+    /// No online players at all is NOT "too far" (nothing to cull against yet).
+    /// </summary>
+    private bool IsTooFarFromAllPlayers(double x, double z)
+    {
+        double maxDistSq = MaxDistanceFromPlayer * MaxDistanceFromPlayer;
+        bool anyPlayer = false;
+        foreach (IServerPlayer plr in sapi.World.AllOnlinePlayers)
+        {
+            Entity e = plr.Entity;
+            if (e == null) continue;
+            anyPlayer = true;
+            double dx = e.Pos.X - x;
+            double dz = e.Pos.Z - z;
+            if (dx * dx + dz * dz <= maxDistSq) return false;
+        }
+        return anyPlayer;
     }
 
     // Cap spawns/seeds per tick so a huge calendar jump (e.g. sleeping through several days) can't
@@ -501,8 +507,7 @@ public class WindFieldSimulation
         if (!TryGetSpawnAnchor(out double cx, out double cz)) return;
 
         // Size cells to a fraction of the spawn range so neighbours overlap into broad blobs that span
-        // the visible map (the old loaded-chunk extent was only a few hundred blocks → tiny dots far
-        // apart). Config radii act as safety clamps.
+        // the visible map. Config radii (CellRadiusMin/Max, user-set) are the only clamp.
         float radius = GameMath.Clamp((float)((0.15 + rand.NextDouble() * 0.2) * SpawnRangeBlocks), config.CellRadiusMin, config.CellRadiusMax);
 
         // Mean jetstream bearing (seasonally tilted N/S). Systems spawn UPWIND along this bearing and
@@ -514,10 +519,8 @@ public class WindFieldSimulation
         double fx = Math.Cos(jetAng), fz = Math.Sin(jetAng); // downwind unit vector
         double sxn = -fz, szn = fx;                          // cross-stream unit vector
 
-        // Advection speed in blocks/hour along the bearing, scaled by base strength. Cold (high) fronts
-        // start faster too, so they can catch up to an already-drifting warm (low) front and occlude it.
+        // Advection speed in blocks/hour along the bearing, scaled by base strength.
         double advect = (300.0 + rand.NextDouble() * 300.0) * Math.Max(0.2, config.BaseJetstreamStrength);
-        if (!isLow) advect *= ColdFrontSpeedFactor;
         double velX = fx * advect;
         double velZ = fz * advect;
 
@@ -551,7 +554,8 @@ public class WindFieldSimulation
             DiesTotalHours = now + durationHours,
             RadiusMinor = (float)(radius * minorRatio),
             Orientation = (float)(Math.Atan2(velZ, velX) + Math.PI / 2.0),
-            StormLikelihood = (float)rand.NextDouble()
+            StormLikelihood = (float)rand.NextDouble(),
+            AirMassTemp = ComputeAirMassTemp(startX, startZ)
         });
         // Re-anchor so the new cell's stored X/Z are valid at the shared anchor.
         field.AnchorHours = now;
@@ -598,9 +602,7 @@ public class WindFieldSimulation
 
         float radius = GameMath.Clamp((float)(0.12 * SpawnRangeBlocks), config.CellRadiusMin, config.CellRadiusMax);
         float strength = (float)Math.Max(-2.0, Math.Min(2.0, th * SeedGain));
-        bool isLow = strength > 0f;
         double jet = (300.0 + rand.NextDouble() * 300.0) * Math.Max(0.2, config.BaseJetstreamStrength);
-        if (!isLow) jet *= ColdFrontSpeedFactor;
         double durationHours = 8 + rand.NextDouble() * 16;
         double velX = jet;                 // advection re-derives this next tick when enabled
         double velZ = (rand.NextDouble() - 0.5) * jet * 0.3;
@@ -618,10 +620,37 @@ public class WindFieldSimulation
             DiesTotalHours = now + durationHours,
             RadiusMinor = (float)(radius * minorRatio),
             Orientation = (float)(Math.Atan2(velZ, velX) + Math.PI / 2.0),
-            StormLikelihood = (float)rand.NextDouble()
+            StormLikelihood = (float)rand.NextDouble(),
+            AirMassTemp = ComputeAirMassTemp(sx, sz)
         });
         field.AnchorHours = now;
         Dirty = true;
+    }
+
+    /// <summary>
+    /// Intrinsic air-mass character in [-1, 1] a cell is born with (see
+    /// <see cref="PressureCell.AirMassTemp"/>): colder toward the map's N/S edges (a proxy for
+    /// poleward birth), warmer/colder with the birth position's own season (via
+    /// <see cref="ICalendar.GetSeasonRel"/>, which already accounts for hemisphere), plus random jitter
+    /// so same-latitude, same-season systems still vary — real air masses aren't perfectly uniform.
+    /// </summary>
+    private float ComputeAirMassTemp(double x, double z)
+    {
+        double mapHalfZ = Math.Max(1.0, sapi.WorldManager.MapSizeZ / 2.0);
+        double poleward = GameMath.Clamp((float)(Math.Abs(z - mapHalfZ) / mapHalfZ), 0f, 1f); // 0 = equator, 1 = map edge
+
+        double seasonWarmth = 0;
+        try
+        {
+            var pos = new BlockPos((int)x, sapi.World.SeaLevel, (int)z, 0);
+            float seasonRel = sapi.World.Calendar.GetSeasonRel(pos); // hemisphere-aware
+            seasonWarmth = Math.Cos(2.0 * Math.PI * (seasonRel - SummerPeakRel)); // +1 that hemisphere's midsummer, −1 midwinter
+        }
+        catch { /* hemisphere/season not ready yet — treat as neutral */ }
+
+        double jitter = (rand.NextDouble() * 2.0 - 1.0) * AirMassJitter;
+        double t = -AirMassLatitudeWeight * poleward + AirMassSeasonWeight * seasonWarmth + jitter;
+        return (float)(t < -1.0 ? -1.0 : (t > 1.0 ? 1.0 : t));
     }
 
     /// <summary>
@@ -718,6 +747,15 @@ public class WindFieldSimulation
             foreach (PressureCell c in field.Cells)
             {
                 if (c.StormLikelihood <= 0f) c.StormLikelihood = 1f;
+            }
+
+            // Migrate cells saved before ColdFrontReach/WarmFrontReach existed: protobuf defaults a
+            // missing field to 0, which would collapse the front contour to nothing instead of the
+            // intended neutral 1 (matches the base ellipse, no asymmetry yet).
+            foreach (PressureCell c in field.Cells)
+            {
+                if (c.ColdFrontReach <= 0f) c.ColdFrontReach = 1f;
+                if (c.WarmFrontReach <= 0f) c.WarmFrontReach = 1f;
             }
 
             field.AnchorHours = s.TotalHoursAnchor; // provisional; re-anchored to the live clock next tick

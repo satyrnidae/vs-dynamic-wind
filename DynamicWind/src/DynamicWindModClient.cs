@@ -35,6 +35,7 @@ public class DynamicWindModClient : DynamicWindModCommon
         {
             Field.SeaLevel = api.World.SeaLevel;
             Field.WorldHeight = api.World.BlockAccessor.MapSizeY;
+            Field.MapCenterZ = api.World.BlockAccessor.MapSizeZ / 2.0;
         };
 
         var thermalCache = new ThermalCache((x, z, th) => TerrainThermal.PressureAt(api.World, x, z, th));

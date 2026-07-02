@@ -15,15 +15,14 @@ public struct FrontMarker
 }
 
 /// <summary>
-/// A weather front for one pressure system, traced from the same march-to-contour geometry
-/// (<see cref="Radii"/>, one radius per angular bucket around <see cref="CenterX"/>/
-/// <see cref="CenterZ"/>) for both kinds of system. A near-STATIONARY system encircles itself with
-/// the full closed loop. A MOVING system instead renders only the leading half of that same contour
-/// — the ~180° slice centred on <see cref="LeadAngle"/> (its smoothed direction of travel) — since
-/// that's the system's active edge (where precipitation forms), for both lows and highs.
-/// <see cref="Type"/> selects the symbol: a moving low is Cold, a moving high is Warm, a stationary
-/// system is Stationary. <see cref="Strength"/> (|cell strength|) scales how prominent the front is
-/// drawn.
+/// A weather front for one LOW pressure system (highs carry no fronts — see FrontComputer), traced
+/// from a march-to-contour geometry (<see cref="Radii"/>, one radius per angular bucket around
+/// <see cref="CenterX"/>/<see cref="CenterZ"/>). A near-STATIONARY or OCCLUDED low encircles itself
+/// with the full closed loop. A MOVING, open-wave low instead produces two half-loop entries sharing
+/// the same contour, split by real geography rather than direction of travel: a Warm front on the
+/// equatorward ~180° (centred on <see cref="LeadAngle"/> — where warm air overruns) and a Cold front
+/// on the poleward ~180° (its own <see cref="LeadAngle"/>, the opposite pole-pointing direction — where
+/// cold air digs in). <see cref="Strength"/> (|cell strength|) scales how prominent the front is drawn.
 /// </summary>
 public struct FrontLine
 {
@@ -44,11 +43,15 @@ public struct FrontLine
 /// same fronts and they survive world reloads exactly as the cells do (no live-weather sampling, which
 /// is stateful/side-dependent and was what made fronts jump on every reload).
 ///
-/// Every significant cell — low OR high — gets a front, traced at a fraction of its peak pressure. A
-/// moving system renders the leading half of that contour (its active edge, where precipitation
-/// forms), classified cold (moving low) / warm (moving high). A near-stationary system instead
-/// renders the full encircling contour, flagged stationary. Markers (H/L) are emitted for every
-/// significant cell.
+/// Only LOW cells carry fronts — a real high is fair-weather subsidence with no frontal boundary of its
+/// own. A moving low gets BOTH a warm front (its equatorward half, where warm air overruns) and a cold
+/// front (its poleward half, where cold air digs in) from the same traced contour — split by real
+/// geography (<see cref="WindField.PolewardZSign"/>), not the system's own direction of travel, since a
+/// front's warm/cold sides are determined by which air mass is on which side of the boundary, not by
+/// which way the low happens to be moving. A near-stationary low instead renders the full encircling
+/// contour, flagged stationary, and a low mid-occlusion (see WindFieldSimulation.ApplyOcclusion) renders
+/// the full contour as the occluded symbol. Highs still get an H marker, just no front line. Markers
+/// (H/L) are emitted for every significant cell.
 /// </summary>
 public static class FrontComputer
 {
@@ -76,18 +79,36 @@ public static class FrontComputer
 
             double ex = c.X + c.VelX * elapsed;
             double ez = c.Z + c.VelZ * elapsed;
-            bool isHigh = !c.IsLow;
-            markers.Add(new FrontMarker { X = ex, Z = ez, IsHigh = isHigh });
+            markers.Add(new FrontMarker { X = ex, Z = ez, IsHigh = !c.IsLow });
+
+            if (!c.IsLow) continue; // highs are fair weather — marker only, no front
 
             float strength = Math.Abs(c.Strength);
             double speed = Math.Sqrt(c.VelX * c.VelX + c.VelZ * c.VelZ);
 
-            // Both branches trace the same march-to-contour geometry from the summed cell pressure
-            // (so overlapping cells wrap into one blob); only the rendered slice differs.
             double centre = field.CellPressureAt(ex, ez, totalHours);
             if (Math.Abs(centre) < MarkerMinStrength) continue;
             double maxR = MaxContourRadiusFactor * c.Radius;
             double[] radii = TraceContour(field, ex, ez, centre, maxR, totalHours);
+            // Independently stretch the poleward (cold) and equatorward (warm) sides by the cell's own
+            // evolving reach — see PressureCell.ColdFrontReach/WarmFrontReach — so the two sides visibly
+            // move/expand at different rates instead of a single symmetric contour.
+            radii = ApplyFrontReach(radii, field, ez, c.ColdFrontReach, c.WarmFrontReach);
+
+            if (totalHours < c.OccludedUntilTotalHours)
+            {
+                // OCCLUDED: the cold front has caught the warm front — render one merged closed loop.
+                lines.Add(new FrontLine
+                {
+                    Type = FrontType.Occluded,
+                    Seed = c.BornTotalHours,
+                    Strength = strength,
+                    CenterX = ex,
+                    CenterZ = ez,
+                    Radii = radii
+                });
+                continue;
+            }
 
             if (speed < StationarySpeed)
             {
@@ -104,27 +125,31 @@ public static class FrontComputer
                 continue;
             }
 
-            // MOVING: render only the leading half of the contour, centred on the system's smoothed
-            // direction of travel — its active edge, where precipitation forms, for both lows and
-            // highs. Uses the eased/frozen Orientation (not raw VelX/VelZ) so a numerically noisy
-            // instantaneous velocity can't flip the rendered line by ~180° tick to tick.
-            double bearing = c.Orientation - Math.PI / 2.0; // Orientation = bearing + π/2 (set at spawn/ease)
-
-            // A cold (high) front that just occluded a warm front renders as the occluded symbol for a
-            // while (WindFieldSimulation.MergeAndDisplace sets OccludedUntilTotalHours) instead of its
-            // normal cold-front symbol.
-            FrontType type = isHigh && totalHours < c.OccludedUntilTotalHours ? FrontType.Occluded
-                : isHigh ? FrontType.Cold : FrontType.Warm; // moving high = cold symbol, moving low = warm symbol
+            // MOVING, open wave: split by real geography, not the system's own direction of travel — the
+            // cold front sits on the POLEWARD half (cold air digs in behind/above), the warm front on
+            // the EQUATORWARD half (warm air overruns ahead/below), both from the same contour. See
+            // WindField.PolewardZSign.
+            double poleAngle = field.PolewardZSign(ez) > 0 ? Math.PI / 2.0 : -Math.PI / 2.0;
 
             lines.Add(new FrontLine
             {
-                Type = type,
+                Type = FrontType.Warm,
                 Seed = c.BornTotalHours,
                 Strength = strength,
                 CenterX = ex,
                 CenterZ = ez,
                 Radii = radii,
-                LeadAngle = bearing
+                LeadAngle = poleAngle + Math.PI // equatorward
+            });
+            lines.Add(new FrontLine
+            {
+                Type = FrontType.Cold,
+                Seed = c.BornTotalHours,
+                Strength = strength,
+                CenterX = ex,
+                CenterZ = ez,
+                Radii = radii,
+                LeadAngle = poleAngle // poleward
             });
         }
     }
@@ -158,6 +183,23 @@ public static class FrontComputer
             radii[a] = r;
         }
         return radii;
+    }
+
+    /// <summary>Scales each angle bucket of a traced contour by <paramref name="coldReach"/> on the
+    /// poleward side or <paramref name="warmReach"/> on the equatorward side (relative to
+    /// <see cref="WindField.PolewardZSign"/> at the cell's own position), so a low's cold and warm sides
+    /// can independently stretch as PressureCell.ColdFrontReach/WarmFrontReach evolve.</summary>
+    private static double[] ApplyFrontReach(double[] radii, WindField field, double ez, float coldReach, float warmReach)
+    {
+        double poleSign = field.PolewardZSign(ez);
+        var scaled = new double[radii.Length];
+        for (int a = 0; a < radii.Length; a++)
+        {
+            double theta = a / (double)radii.Length * 2 * Math.PI;
+            bool polewardSide = Math.Sin(theta) * poleSign >= 0;
+            scaled[a] = radii[a] * (polewardSide ? coldReach : warmReach);
+        }
+        return scaled;
     }
 
     /// <summary>Contour radius at an arbitrary angle, linearly interpolated between the sampled buckets.</summary>

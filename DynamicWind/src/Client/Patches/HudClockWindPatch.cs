@@ -4,6 +4,7 @@ using DynamicWind.WindSystem;
 using HarmonyLib;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
+using Vintagestory.API.Common.Entities;
 using Vintagestory.API.MathTools;
 
 namespace DynamicWind.Client.Patches;
@@ -70,7 +71,14 @@ internal static class HudClockWindPatch
         BlockPos? pos = (posProviderField.GetValue(__instance) as Delegate)?.DynamicInvoke() as BlockPos;
         if (pos == null) return;
 
-        Vec3d wind = capi.World.BlockAccessor.GetWindSpeedAt(pos);
+        // HUD Clock's provider gives the player's foot position; occlusion (room/skylight checks) should
+        // instead reflect what the player's head actually has sky access to; a player standing in a
+        // shallow pit with their head clear of it shouldn't read as occluded, and vice versa.
+        Entity? plr = capi.World.Player?.Entity;
+        Vec3d queryPos = pos.ToVec3d();
+        if (plr != null) queryPos.Y = plr.Pos.Y + plr.LocalEyePos.Y;
+
+        Vec3d wind = capi.World.BlockAccessor.GetWindSpeedAt(queryPos);
         double mag = Math.Sqrt(wind.X * wind.X + wind.Z * wind.Z);
         windSpeedField.SetValue(__instance, mag);
 

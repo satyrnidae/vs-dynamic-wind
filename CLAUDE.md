@@ -23,8 +23,40 @@ systems, and couples the rest of the world to it:
 - **Sailboats** — Harmony postfix on `EntityBoat.SeatsToMotion`: tailwind +50%, crosswind base,
   headwind −10% (piecewise by heading-vs-wind alignment). Tacking is out of scope.
 - **Weather** — `WeatherCoupling` (Harmony postfix on `WeatherSystemBase.GetRainCloudness`) raises
-  cloudness/rain inside highs (cold fronts ride the highs) and lowers it in lows — storms form in high
-  pressure, not low, in this mod's model. Highs also add circulation, so storms = stronger, swirlier wind.
+  cloudness/rain inside lows and lowers it in highs — storms form in **low** pressure, highs are
+  fair-weather subsidence, matching real synoptic charts (see [noaa.gov/jetstream/wxmaps](https://www.noaa.gov/jetstream/wxmaps)).
+  Lows also add circulation, so storms = stronger, swirlier wind.
+- **Fronts** (`FrontComputer`/`FrontMapLayer`) — only LOW cells carry fronts; a high is fair-weather
+  subsidence with no frontal boundary of its own (still gets an H marker, no line). A moving, open-wave
+  low renders BOTH a warm front (its EQUATORWARD half, where warm air overruns) and a cold front (its
+  POLEWARD half, where cold air digs in) from the same traced pressure contour — split by real geography
+  (`WindField.PolewardZSign`, based on `MapCenterZ`), NOT the system's own direction of travel, since a
+  front's warm/cold sides are set by which air mass sits on which side of the boundary. Symbols always
+  face outward, radially (so cold points poleward, warm points equatorward — no extra per-type flip
+  needed). `WindField.StormBiasAt` mirrors the same split: storminess biases toward a low's poleward
+  (cold) / equatorward (warm) sides (synergy bonus near the low's own centre), highs contribute nothing.
+- **Front reach** — each low's cold and warm sides carry an independent radial reach multiplier
+  (`PressureCell.ColdFrontReach`/`WarmFrontReach`, start at 1) grown every hour in `WindFieldSimulation.Advect`
+  — cold faster (`ColdReachGrowthPerHour`) than warm (`WarmReachGrowthPerHour`), since real cold fronts
+  advect/extend faster — so the two sides visibly move/expand at different rates instead of one symmetric
+  contour. `FrontComputer.ApplyFrontReach` scales the traced contour per angle bucket by whichever side
+  it falls on before rendering.
+- **Occlusion** — intrinsic to a single low's own lifecycle, not a two-cell collision: once a low's
+  `ColdFrontReach` has outgrown its `WarmFrontReach` by `OcclusionReachRatio` (1.5×) — i.e. the cold front
+  has literally caught the warm one — `WindFieldSimulation.ApplyOcclusion` fires: storm likelihood drops
+  hard, it renders as the occluded symbol (full closed loop, not split warm/cold halves) for
+  `OccludedVisualHours`, and its remaining lifetime is cut to `OcclusionDeathSpeedup` (40%) — occluded
+  lows die out faster, like real decaying cyclones. `PressureCell.OccludedUntilTotalHours` doubles as a
+  one-shot latch so a cell only occludes once.
+- **Air-mass temperature** — each `PressureCell` carries an intrinsic `AirMassTemp` in [−1, 1] (cold to
+  warm) independent of whether it's a low or a high, set once at spawn from birth latitude (colder toward
+  the map's N/S edges), birth-position season (`Calendar.GetSeasonRel`, already hemisphere-aware), and
+  random jitter — so a cold low and a warm high can both exist, same as a polar low or a subtropical
+  high in reality. `WindField.CellTemperatureAt` blends nearby cells' `AirMassTemp` (falloff × |strength|
+  weighted) and drives the real temperature shift in `DynamicWindModCommon.OnGetClimate`
+  (`FrontTemperatureMax`), replacing the old low-pressure-is-always-hot assumption. Same-type cell merges
+  (`WindFieldSimulation.MergeAndDisplace`) blend `AirMassTemp` by the same |strength| weighting as
+  position/velocity.
 - **Terrain thermal pressure** (`TerrainThermal`) — beyond the moving synoptic cells, pressure has a
   terrain-driven baseline: warm, sun-exposed dry land → low (rising air), cool water → high (sinking air),
   modulated by time of day + temperature. Water high pressure scales with **depth** (sea level −
@@ -60,7 +92,9 @@ systems, and couples the rest of the world to it:
   - **Altitude lapse** — `WindField.PressureAt(x,y,z,t)` adds a vertical term: real air pressure falls with
     height, read as "more low" (+), reaching +`AltitudePressureDrop` (default 0.5 = −50%) at the build ceiling,
     0 at/below sea level. Vertical-only, so it never alters wind — only the displayed/weather-coupled pressure
-    (map tint, `WeatherCoupling`, `/dynamicwind debug` all pass their Y). `SeaLevel`/`WorldHeight` set per side.
+    (map tint, `WeatherCoupling`, `/dynamicwind debug` all pass their Y). `SeaLevel`/`WorldHeight`/`MapCenterZ`
+    (= `MapSizeZ / 2`, the map's N/S midline used as the hemisphere/pole proxy for fronts and air-mass
+    temperature) are set per side from world geometry, not synced.
 - **Pressure-gradient wind** — wind bleeds down the pressure gradient (high → low), so the synoptic cells
   AND the terrain thermal contrast (water→land sea breeze) actually push the air. `WindField.WindAt` adds
   `PressureWindStrength · ∇P` (numeric gradient of `PressureAt`, clamped). Runs on both sides.
@@ -89,9 +123,8 @@ systems, and couples the rest of the world to it:
 
 Because the map is north-up with +Z pointing *down* (south), the screen-CCW tangent is `(rz, −rx)`, so
 lows circulate **counter-clockwise** and highs **clockwise** (NH convention). Pressure-cell radii are
-derived from the server's loaded-chunk extent (`MaxChunkRadius × 32`): each cell spans ~25–75% of it, so
-a few systems cover what's loaded rather than one cell blanketing everything. `CellRadiusMin/Max` are just
-safety clamps now.
+sized as a fraction of the fixed `SpawnRangeBlocks` (6000-block) spawn scatter box, not the server's
+loaded-chunk extent — `CellRadiusMin`/`CellRadiusMax` (user config) are the only clamp.
 
 ## Architecture
 

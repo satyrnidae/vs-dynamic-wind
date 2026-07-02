@@ -59,7 +59,8 @@ public class RotorvaneRenderer : IRenderer
             if (!float.IsNaN(target))
             {
                 float delta = GameMath.AngleRadDistance(currentYaw, target);
-                currentYaw += delta * Math.Min(1f, dt * 3f); // smooth swing
+                float rate = VaneTurnRate.Compute(be.GetWindSpeed());
+                currentYaw += delta * Math.Min(1f, dt * rate); // smooth swing, faster in stronger wind
             }
             turnSqueak.Update(currentYaw, target);
 

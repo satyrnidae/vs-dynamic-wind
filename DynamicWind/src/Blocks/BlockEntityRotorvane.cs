@@ -148,8 +148,9 @@ public class BlockEntityRotorvane : BlockEntity
     }
 
     /// <summary>True directional wind magnitude at this block (0 when calm or occluded); shared by the
-    /// spinner's angular speed and the sound's volume/pitch curve.</summary>
-    private double GetWindSpeed()
+    /// spinner's angular speed, the sound's volume/pitch curve, and <see cref="RotorvaneRenderer"/>'s
+    /// yaw-easing rate (<see cref="Client.Render.VaneTurnRate"/>).</summary>
+    public double GetWindSpeed()
     {
         if (Api == null || IsOccluded()) return 0.0;
         Vec3d w = Api.World.BlockAccessor.GetWindSpeedAt(Pos.ToVec3d());

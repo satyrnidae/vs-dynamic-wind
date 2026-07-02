@@ -49,10 +49,35 @@ public class PressureCell
     /// migrated cells default to full storm likelihood).</summary>
     public float StormLikelihood;
 
-    /// <summary>Total-hours timestamp until which this cell (always the surviving cold/high side of an
-    /// occlusion) renders as the "occluded" front symbol instead of its normal Cold symbol — see
-    /// FrontComputer.Compute. 0 (the default) or an elapsed timestamp means "not occluded".</summary>
+    /// <summary>Total-hours timestamp until which this (low) cell renders as the "occluded" front
+    /// symbol instead of separate warm/cold fronts — see FrontComputer.Compute and
+    /// WindFieldSimulation.ApplyOcclusion. 0 (the default) or an elapsed timestamp means "not occluded".
+    /// Also doubles as a one-shot latch: once non-zero, the cell has already occluded once and won't
+    /// re-trigger.</summary>
     public double OccludedUntilTotalHours;
+
+    /// <summary>Intrinsic air-mass character in [-1, 1] this system carries (−1 = cold/polar, +1 =
+    /// warm/tropical), independent of whether it's a low or a high — a cold low and a warm high can both
+    /// exist, same as a polar low or a subtropical high in reality. Set once at spawn from the cell's
+    /// birth latitude + season + random jitter (see WindFieldSimulation.ComputeAirMassTemp) and carried
+    /// for the cell's lifetime. Drives the real temperature shift in DynamicWindModCommon.OnGetClimate
+    /// via <see cref="WindField.CellTemperatureAt"/>; independent of the front warm/cold SYMBOL choice,
+    /// which is purely geometric (poleward vs equatorward side of a moving low).</summary>
+    public float AirMassTemp;
+
+    /// <summary>Radial reach multiplier for this (low) cell's COLD/poleward front contour, on top of the
+    /// base <see cref="Radius"/>/<see cref="RadiusMinor"/> ellipse — see FrontComputer. Starts at 1 and
+    /// grows FASTER than <see cref="WarmFrontReach"/> each hour (WindFieldSimulation.Advect) — real cold
+    /// fronts advect/extend faster than warm fronts — so the two sides visibly move and expand at
+    /// different rates over the cell's life. Once this outgrows <see cref="WarmFrontReach"/> by
+    /// WindFieldSimulation's occlusion ratio, the cold front has "caught" the warm front and the cell
+    /// occludes (see WindFieldSimulation.ApplyOcclusion) — this replaces a fixed age timer with a
+    /// sim-driven trigger.</summary>
+    public float ColdFrontReach = 1f;
+
+    /// <summary>Radial reach multiplier for this (low) cell's WARM/equatorward front contour. See
+    /// <see cref="ColdFrontReach"/>.</summary>
+    public float WarmFrontReach = 1f;
 
     // Computed; excluded from protobuf (ImplicitFields.AllPublic would otherwise try to deserialize
     // into this read-only property and throw).
@@ -134,6 +159,19 @@ public class WindField
     public double WorldHeight = 256;
     /// <summary>Fractional pressure drop reached at the build ceiling (0.5 = −50%), toward LOW (+).</summary>
     public double AltitudeMaxDrop = 0.5;
+
+    /// <summary>World Z of the map's N/S midline (its "equator" proxy) — set per side from
+    /// MapSizeZ / 2, same on both sides since it's derived from world geometry, not synced. North of
+    /// this (smaller Z) is treated as the northern hemisphere (pole at Z=0), south of it (larger Z) as
+    /// the southern hemisphere (pole at Z=MapSizeZ) — see <see cref="PolewardZSign"/>. Used to split
+    /// fronts poleward(cold)/equatorward(warm) by real geography instead of the system's travel
+    /// direction.</summary>
+    public double MapCenterZ = 128.0;
+
+    /// <summary>+1 if world Z <paramref name="z"/> is in the (proxy) southern hemisphere — poleward means
+    /// increasing Z there — or −1 if northern, where poleward means decreasing Z. See
+    /// <see cref="MapCenterZ"/>.</summary>
+    public double PolewardZSign(double z) => z < MapCenterZ ? -1.0 : 1.0;
 
     /// <summary>
     /// How much of the raw terrain thermal field stays as a static (terrain-pinned) baseline in
@@ -398,12 +436,15 @@ public class WindField
     }
 
     /// <summary>
-    /// Extra storm-likelihood forcing at a position, driven by nearby fronts' <see cref="PressureCell.StormLikelihood"/>
-    /// and their geometry rather than raw pressure: biased toward the LEADING/outside edge of warm (low)
-    /// fronts and the TRAILING/inside edge of cold (high) fronts, with a synergy bonus where both biases
-    /// coincide (a cold front overlapping a warm one — the run-up to an occlusion). Independent of
+    /// Extra storm-likelihood forcing at a position. Real fronts trail a LOW, not a high — a high is
+    /// fair-weather subsidence and contributes nothing here. Each low carries both a warm front (its
+    /// EQUATORWARD side, where warm air overruns) and a cold front (its POLEWARD side, where cold air
+    /// digs in) — real geography, not the system's own direction of travel — scaled by that cell's own
+    /// <see cref="PressureCell.StormLikelihood"/>, with a synergy bonus near the low's centre where the
+    /// two sides' influence overlaps (strongest weather sits close to the low itself). Independent of
     /// <see cref="PressureAt(double,double,double)"/>; meant to be added into the precipitation gate
-    /// scaled by a caller-owned strength knob (see WeatherCoupling).
+    /// scaled by a caller-owned strength knob (see WeatherCoupling). Mirrors the poleward/equatorward
+    /// split <see cref="DynamicWind.Client.MapLayers.FrontComputer"/> uses to draw the fronts themselves.
     /// </summary>
     public double StormBiasAt(double x, double z, double totalHours)
     {
@@ -412,7 +453,7 @@ public class WindField
         for (int i = 0; i < Cells.Count; i++)
         {
             PressureCell c = Cells[i];
-            if (c.StormLikelihood <= 0f) continue;
+            if (!c.IsLow || c.StormLikelihood <= 0f) continue; // highs are fair weather; no front bias
 
             double cx = c.X + c.VelX * elapsed;
             double cz = c.Z + c.VelZ * elapsed;
@@ -420,21 +461,39 @@ public class WindField
             double falloff = Math.Exp(-EllipseNorm2(c, dx, dz));
             if (falloff < 1e-4) continue;
 
-            double dist = Math.Sqrt(dx * dx + dz * dz);
-            if (dist < 1e-6) continue;
-            double dirx = dx / dist, dirz = dz / dist;
+            double poleSign = PolewardZSign(cz);
+            double alongPole = dz * poleSign; // >0 = poleward of centre (cold side), <0 = equatorward (warm side)
 
-            double travel = c.Orientation - Math.PI / 2.0; // see FrontComputer: Orientation = bearing + π/2
-            double tx = Math.Cos(travel), tz = Math.Sin(travel);
-            double along = dirx * tx + dirz * tz; // >0 = ahead of centre along the direction of travel
-
-            if (c.IsLow)
-                warm += Math.Max(0.0, along) * falloff * c.StormLikelihood;   // warm front: leading/outside edge
-            else
-                cold += Math.Max(0.0, -along) * falloff * c.StormLikelihood; // cold front: trailing/inside edge
+            cold += Math.Max(0.0, alongPole) * falloff * c.StormLikelihood;   // cold front: poleward side
+            warm += Math.Max(0.0, -alongPole) * falloff * c.StormLikelihood; // warm front: equatorward side
         }
-        // Strongest where a warm front's leading bias and a cold front's trailing bias coincide.
+        // Strongest near the low's own centre, where the warm and cold side biases overlap.
         return warm + cold + 2.0 * Math.Min(warm, cold);
+    }
+
+    /// <summary>
+    /// Falloff-weighted blend of nearby cells' intrinsic <see cref="PressureCell.AirMassTemp"/> in
+    /// [-1, 1] — a cold low and a warm high can both exist, so this is deliberately independent of
+    /// pressure sign. Weighted by each cell's footprint falloff × |Strength| (stronger systems dominate
+    /// their own airmass more). Returns 0 (neutral) where no cell has meaningful influence. Used by
+    /// DynamicWindModCommon.OnGetClimate to shift real temperature toward the local air mass's character.
+    /// </summary>
+    public double CellTemperatureAt(double x, double z, double totalHours)
+    {
+        double wSum = 0, tSum = 0;
+        double elapsed = totalHours - AnchorHours;
+        for (int i = 0; i < Cells.Count; i++)
+        {
+            PressureCell cell = Cells[i];
+            double dx = x - (cell.X + cell.VelX * elapsed);
+            double dz = z - (cell.Z + cell.VelZ * elapsed);
+            double falloff = Math.Exp(-EllipseNorm2(cell, dx, dz));
+            if (falloff < 1e-4) continue;
+            double w = falloff * Math.Max(0.05, Math.Abs(cell.Strength));
+            wSum += w;
+            tSum += w * cell.AirMassTemp;
+        }
+        return wSum > 1e-6 ? tSum / wSum : 0.0;
     }
 
     /// <summary>
