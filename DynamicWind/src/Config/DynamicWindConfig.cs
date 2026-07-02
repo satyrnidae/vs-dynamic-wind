@@ -106,6 +106,9 @@ public class DynamicWindConfig
     [Description("description-ThermalTemperatureMax")]
     public float ThermalTemperatureMax { get; set; } = 1.0f;
 
+    [Description("description-HeatColdWaveEnabled")]
+    public bool HeatColdWaveEnabled { get; set; } = true;
+
     // ── Clouds ──────────────────────────────────────────────────────────────
     [ProtoIgnore]
     [Category("clientside")]
@@ -282,6 +285,7 @@ public class DynamicWindConfig
         WeatherPressureCoupling = o.WeatherPressureCoupling;
         FrontTemperatureMax = o.FrontTemperatureMax;
         ThermalTemperatureMax = o.ThermalTemperatureMax;
+        HeatColdWaveEnabled = o.HeatColdWaveEnabled;
         AltitudePressureDrop = o.AltitudePressureDrop;
         AdvectWithWind = o.AdvectWithWind;
         AdvectionSpeed = o.AdvectionSpeed;

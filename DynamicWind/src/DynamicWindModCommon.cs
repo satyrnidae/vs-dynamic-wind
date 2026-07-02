@@ -243,7 +243,7 @@ public abstract class DynamicWindModCommon : ModSystem
     {
         if (climate == null || mode == EnumGetClimateMode.WorldGenValues) return;
         if (inClimateHandler) return;
-        if (Config.FrontTemperatureMax <= 0f && Config.ThermalTemperatureMax <= 0f) return;
+        if (Config.FrontTemperatureMax <= 0f && Config.ThermalTemperatureMax <= 0f && !Config.HeatColdWaveEnabled) return;
 
         inClimateHandler = true;
         try
@@ -262,7 +262,11 @@ public abstract class DynamicWindModCommon : ModSystem
                 thermalDelta = Config.ThermalTemperatureMax * Clamp1(thermal / ThermalNorm);
             }
 
-            climate.Temperature += (float)(frontDelta + thermalDelta);
+            // Heat-wave/cold-wave term: a rare, strong, near-stationary high trapping ground air — see
+            // PressureCell.IsHeatColdWave/WaveTemperatureDelta and WindFieldSimulation.TrySeedHeatColdWave.
+            double waveDelta = Config.HeatColdWaveEnabled ? Field.HeatColdWaveDeltaAt(pos.X, pos.Z, totalHours) : 0.0;
+
+            climate.Temperature += (float)(frontDelta + thermalDelta + waveDelta);
         }
         finally
         {

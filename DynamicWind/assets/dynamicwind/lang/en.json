@@ -40,6 +40,8 @@
     "setting-FrontTemperatureMax": "Front temp shift (max °C)",
     "description-ThermalTemperatureMax": "Maximum °C the terrain-thermal field shifts local temperature. 0 disables terrain temperature.",
     "setting-ThermalTemperatureMax": "Terrain temp shift (max °C)",
+    "description-HeatColdWaveEnabled": "Allow rare, strong, near-stationary heat-wave/cold-wave highs to form over terrain thermal hotspots, pushing local temperature 5-10°C outside the seasonal average for several days.",
+    "setting-HeatColdWaveEnabled": "Heat/cold waves",
 
     "description-CloudsFollowWind": "Make clouds drift along the true wind direction.",
     "setting-CloudsFollowWind": "Clouds follow wind",
@@ -135,6 +137,8 @@
     "command-cells-row": "  {0} s={1} t={7} r={2}/{3} at ({4},{5}) dies in {6}h",
     "command-cell-low": "LOW ",
     "command-cell-high": "HIGH",
+    "command-cell-heatwave": "HEAT",
+    "command-cell-coldwave": "COLD",
 
     "game:maplayer-dynamicwind": "Wind direction and speed",
     "game:maplayer-dynamicwindradar": "Precipitation radar",
