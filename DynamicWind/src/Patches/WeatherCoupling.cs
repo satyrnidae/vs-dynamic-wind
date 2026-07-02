@@ -32,6 +32,16 @@ internal static class WeatherCoupling
     private const double StormBiasShift = 0.5;  // cloudness units shifted per unit of (clamped) WindField.StormBiasAt
     private const double StormBiasClamp = 2.0;
 
+    // Front-type weather intensity: an occluded front (cold front has caught the warm one) brings the
+    // most severe weather (thunderstorms/thundersnow), a cold front heavy storms, a warm front only light
+    // storms, and a stationary front stays relatively calm precipitation-wise — real synoptic behaviour.
+    // Applied as a weighted-average multiplier on the existing StormBiasAt push, using WindField.FrontRegimeBiasAt
+    // to determine which regime(s) are influencing this position.
+    private const double OccludedPrecipMult = 1.4;
+    private const double ColdPrecipMult = 1.2;
+    private const double WarmPrecipMult = 0.7;
+    private const double StationaryPrecipMult = 0.8;
+
     private static bool patched;
 
     public static void Apply(Harmony harmony, ILogger logger)
@@ -67,7 +77,18 @@ internal static class WeatherCoupling
         // fronts, strongest where a cold front is overlapping (occluding) a warm one.
         double bias = field.StormBiasAt(posX, posZ, totalHours);
         if (bias > StormBiasClamp) bias = StormBiasClamp;
-        __result += (float)(config.StormCouplingStrength * bias * StormBiasShift);
+
+        // Weight that bias by which front regime(s) actually influence this position — an occluded low
+        // brings severe weather, a cold front heavy storms, a warm front only light ones, and a
+        // stationary low stays comparatively calm even while it rains.
+        WindField.FrontRegimeBias regime = field.FrontRegimeBiasAt(posX, posZ, totalHours);
+        double regimeTotal = regime.Cold + regime.Warm + regime.Occluded + regime.Stationary;
+        double typeMult = regimeTotal > 1e-6
+            ? (regime.Occluded * OccludedPrecipMult + regime.Cold * ColdPrecipMult
+               + regime.Warm * WarmPrecipMult + regime.Stationary * StationaryPrecipMult) / regimeTotal
+            : 1.0;
+
+        __result += (float)(config.StormCouplingStrength * bias * StormBiasShift * typeMult);
 
         if (__result < 0f) __result = 0f;
     }

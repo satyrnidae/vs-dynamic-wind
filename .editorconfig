@@ -1,0 +1,8 @@
+root = true
+
+[*.cs]
+# Namespaces intentionally omit the "src" folder segment (see CLAUDE.md), so the
+# folder-structure-matches-namespace analyzer is a false positive project-wide.
+dotnet_diagnostic.IDE0130.severity = none
+dotnet_style_namespace_match_folder = false
+dotnet_diagnostic.IDE0005.severity = warning

@@ -28,7 +28,7 @@ public class FrontMapLayer : DynamicWindWorldMapLayerBase
     private DynamicWindConfig? cfg;
     private ICoreClientAPI? capi;
     private MeshRef? quad;
-    private int texWarm, texCold, texStationary, texOccluded, texHigh, texLow;
+    private int texWarm, texCold, texStationary, texOccluded, texColdOcclusion, texWarmOcclusion, texHigh, texLow;
     private readonly Matrixf mvMat = new();
     private static readonly Vec4f White = new(1f, 1f, 1f, 1f);
 
@@ -70,6 +70,8 @@ public class FrontMapLayer : DynamicWindWorldMapLayerBase
         texCold = Tex("front-cold");
         texStationary = Tex("front-stationary");
         texOccluded = Tex("front-occluded");
+        texColdOcclusion = Tex("front-cold-occluded");
+        texWarmOcclusion = Tex("front-warm-occluded");
         texHigh = Tex("pressure-system-high");
         texLow = Tex("pressure-system-low");
         Active = cfg?.FrontMapLayerVisibleByDefault ?? false; // off by default; toggle in the map legend
@@ -98,21 +100,18 @@ public class FrontMapLayer : DynamicWindWorldMapLayerBase
         IShaderProgram shader = BindStandardShader(capi, texWarm);
         shader.Uniform("rgbaIn", White);
 
-        // Fronts: a near-STATIONARY or OCCLUDED low encircles itself with a full closed loop; a MOVING,
-        // open-wave low instead renders an open curve marched outward from the low — warm on the
-        // poleward side, cold on the equatorward side (real geography, not direction of travel — see
-        // FrontComputer). Both representations are sampled uniformly over t in [0,1] via
-        // FrontComputer.SampleAt. Geometry comes from FrontComputer (deterministic, cells-only).
+        // Fronts: every front (Warm/Cold from a moving low's poleward/equatorward sides, Stationary
+        // toward its nearest neighbour, Occluded/ColdOcclusion/WarmOcclusion toward whatever its cold
+        // front caught) is an open curve marched from the low — see FrontComputer. Sampled uniformly over
+        // t in [0,1] via FrontComputer.SampleAt. Geometry comes from FrontComputer (deterministic, cells-only).
         for (int li = 0; li < lines.Count; li++)
         {
             FrontLine f = lines[li];
-            bool fullLoop = f.Points == null;
-            if (fullLoop && (f.Radii == null || f.Radii.Length == 0)) continue;
-            if (!fullLoop && f.Points!.Length == 0) continue;
+            if (f.Points.Length == 0) continue;
 
             double curveLen = FrontComputer.CurveLength(f);
             if (curveLen < 1e-3) continue;
-            double charLen = fullLoop ? curveLen / (2 * Math.PI) : curveLen / 4.0;
+            double charLen = curveLen / 4.0;
             double curveAmpL = CurveAmpFactor * charLen;
             double lenPx = curveLen * scaleX;
 
@@ -143,14 +142,15 @@ public class FrontMapLayer : DynamicWindWorldMapLayerBase
             double totalLenPx = cumPx[nFine];
             if (totalLenPx < 1e-3) continue;
 
-            int minTiles = fullLoop ? 8 : 4;
-            int nT = (int)Math.Clamp(Math.Ceiling(totalLenPx / TilePx), minTiles, 3000);
+            int nT = (int)Math.Clamp(Math.Ceiling(totalLenPx / TilePx), 4, 3000);
             double step = totalLenPx / nT;
 
             int tex = f.Type switch
             {
                 FrontType.Stationary => texStationary,
                 FrontType.Occluded => texOccluded,
+                FrontType.ColdOcclusion => texColdOcclusion,
+                FrontType.WarmOcclusion => texWarmOcclusion,
                 FrontType.Warm => texWarm,
                 _ => texCold
             };

@@ -31,6 +31,16 @@ public abstract class DynamicWindModCommon : ModSystem
     protected readonly WindField Field = new();
     private RoomRegistry? roomRegistry;
 
+    // Front-type gust intensity: an occluded front (its cold front has caught the warm one) brings the
+    // highest winds, a cold front heavy gusts, a warm front only light gusts, and a stationary front
+    // stays comparatively calm — same regime split as WeatherCoupling's precipitation weighting, applied
+    // here as a multiplier on the front-driven EXCESS wind (see ComputeWindSpeed), never on the vanilla
+    // baseline itself.
+    private const double OccludedWindMult = 1.6;
+    private const double ColdWindMult = 1.3;
+    private const double WarmWindMult = 0.6;
+    private const double StationaryWindMult = 0.3;
+
     public override bool ShouldLoad(EnumAppSide side) => false;
 
     // Load after the vanilla weather system so our OnGetWindSpeed handler is appended after its (it
@@ -138,7 +148,18 @@ public abstract class DynamicWindModCommon : ModSystem
         // too, not just front-driven excess.
         double frontExcess = preOroMag - Field.BaseStrength;
         if (frontExcess < 0) frontExcess = 0;
-        double speed = (vsSpeed * Field.JetStreak(pos.X, pos.Z, totalHours) + Config.FrontWindStrength * frontExcess) * oroFactor;
+
+        // Weight that excess by which front regime(s) influence this position — see the *WindMult
+        // consts above. Falls back to a neutral 1x where no low's influence reaches (plain jetstream/
+        // high-pressure gradient wind, which isn't a "front" and shouldn't be gust-differentiated).
+        WindField.FrontRegimeBias regime = Field.FrontRegimeBiasAt(pos.X, pos.Z, totalHours);
+        double regimeTotal = regime.Cold + regime.Warm + regime.Occluded + regime.Stationary;
+        double frontTypeWindMult = regimeTotal > 1e-6
+            ? (regime.Occluded * OccludedWindMult + regime.Cold * ColdWindMult
+               + regime.Warm * WarmWindMult + regime.Stationary * StationaryWindMult) / regimeTotal
+            : 1.0;
+
+        double speed = (vsSpeed * Field.JetStreak(pos.X, pos.Z, totalHours) + Config.FrontWindStrength * frontExcess * frontTypeWindMult) * oroFactor;
 
         if (applyOcclusion && Config.OcclusionEnabled && !IsAmbientPlayerQuery(pos)) speed *= OcclusionFactor(pos);
 

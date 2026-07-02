@@ -41,16 +41,16 @@ public class PressureCell
     public float Orientation;
 
     /// <summary>Rolling storm-likelihood scalar in [0,1] for this front. Starts at a random value at
-    /// spawn and slowly builds over the cell's lifetime (see WindFieldSimulation.Advect), ramps further
-    /// while overlapping an opposite-type front, and spikes to 1 right before that overlap resolves into
-    /// an occlusion — after which it drops hard (WindFieldSimulation.MergeAndDisplace). Feeds
+    /// spawn and slowly builds over the cell's lifetime (see WindFieldSimulation.Advect) until its cold
+    /// front catches another pressure cell and it occludes (see WindFieldSimulation.ApplyOcclusion),
+    /// after which it drops hard — the storm winds down once occluded. Feeds
     /// <see cref="WindField.StormBiasAt"/>. Cells saved before this field existed deserialize it to the
     /// protobuf default 0; WindFieldSimulation.Load migrates those to 1.0 (see the requirement that
     /// migrated cells default to full storm likelihood).</summary>
     public float StormLikelihood;
 
-    /// <summary>Total-hours timestamp until which this (low) cell renders as the "occluded" front
-    /// symbol instead of separate warm/cold fronts — see FrontComputer.Compute and
+    /// <summary>Total-hours timestamp until which this (low) cell renders as an occluded front symbol
+    /// instead of separate warm/cold fronts — see FrontComputer.Compute and
     /// WindFieldSimulation.ApplyOcclusion. 0 (the default) or an elapsed timestamp means "not occluded".
     /// Also doubles as a one-shot latch: once non-zero, the cell has already occluded once and won't
     /// re-trigger.</summary>
@@ -67,17 +67,28 @@ public class PressureCell
 
     /// <summary>Radial reach multiplier for this (low) cell's COLD/equatorward front contour, on top of the
     /// base <see cref="Radius"/>/<see cref="RadiusMinor"/> ellipse — see FrontComputer. Starts at 1 and
-    /// grows FASTER than <see cref="WarmFrontReach"/> each hour (WindFieldSimulation.Advect) — real cold
-    /// fronts advect/extend faster than warm fronts — so the two sides visibly move and expand at
-    /// different rates over the cell's life. Once this outgrows <see cref="WarmFrontReach"/> by
-    /// WindFieldSimulation's occlusion ratio, the cold front has "caught" the warm front and the cell
-    /// occludes (see WindFieldSimulation.ApplyOcclusion) — this replaces a fixed age timer with a
-    /// sim-driven trigger.</summary>
+    /// grows FASTER than <see cref="WarmFrontReach"/> each hour (WindFieldSimulation.ApplyOcclusion) —
+    /// real cold fronts advect/extend faster than warm fronts — so the two sides visibly move and expand
+    /// at different rates over the cell's life; the growth rate on each side is itself modulated by how
+    /// close this cell's <see cref="AirMassTemp"/> is to whatever pressure cell sits on that side (similar
+    /// air masses offer little resistance — sharpen/advance fastest — while starkly different ones slow
+    /// the advance). Once this cell's cold-front reach physically reaches another pressure cell on its
+    /// equatorward side, the cold front has "caught" that cell and this low occludes (see
+    /// WindFieldSimulation.ApplyOcclusion) — a real two-cell event rather than a fixed ratio/age timer.</summary>
     public float ColdFrontReach = 1f;
 
     /// <summary>Radial reach multiplier for this (low) cell's WARM/poleward front contour. See
     /// <see cref="ColdFrontReach"/>.</summary>
     public float WarmFrontReach = 1f;
+
+    /// <summary>Classification of this low's occlusion, set once when <see cref="OccludedUntilTotalHours"/>
+    /// is first triggered (see WindFieldSimulation.ApplyOcclusion): 0 = unset (not yet occluded, or
+    /// occluded before this field existed — pre-migration saves fall back to the generic occluded
+    /// symbol), 1 = COLD occlusion (the catching cold front's air mass was colder than or equal to the
+    /// cell it caught — behaves like a cold front), 2 = WARM occlusion (the catching air was warmer —
+    /// behaves like a warm front). Matches the real synoptic distinction between cold-type and warm-type
+    /// occlusions. Meaningful only while <see cref="OccludedUntilTotalHours"/> is active.</summary>
+    public byte OcclusionKind;
 
     // Computed; excluded from protobuf (ImplicitFields.AllPublic would otherwise try to deserialize
     // into this read-only property and throw).
@@ -180,6 +191,12 @@ public class WindField
     /// seeded by the server sim, so the pressure differential moves with the wind. 1 = fully static.
     /// </summary>
     public double ThermalStaticScale = 1.0;
+
+    /// <summary>|velocity| (blocks/hour) below which a low is treated as "stationary" rather than a
+    /// moving open-wave system — shared by <see cref="FrontRegimeBiasAt"/>, the storm-bias neighbour
+    /// search below, and <see cref="DynamicWind.Client.MapLayers.FrontComputer"/> (which renders the
+    /// closed encircling contour for exactly this regime), so all three agree on the same threshold.</summary>
+    public const double StationarySpeed = 60.0;
 
     private const double GradSampleDist = 48.0;
     private const double GradMaxWind = 1.5;
@@ -451,7 +468,6 @@ public class WindField
     // front map layer draws, rather than a symmetric poleward/equatorward half-cone.
     private const float StormNeighbourMinStrength = 0.15f;
     private const double StormBandWidthFactor = 0.5; // × cell radius
-    private const double StormNeighbourStationarySpeed = 60.0; // mirrors FrontComputer.StationarySpeed
 
     /// <summary>
     /// Extra storm-likelihood forcing at a position. Real fronts trail a LOW, not a high — a high is
@@ -527,7 +543,7 @@ public class WindField
             if (!o.IsLow || Math.Abs(o.Strength) < StormNeighbourMinStrength) continue;
             if (totalHours < o.OccludedUntilTotalHours) continue; // occluded: excluded, same as FrontComputer
             double oSpeed = Math.Sqrt(o.VelX * o.VelX + o.VelZ * o.VelZ);
-            if (oSpeed < StormNeighbourStationarySpeed) continue; // stationary: excluded, same as FrontComputer
+            if (oSpeed < StationarySpeed) continue; // stationary: excluded, same as FrontComputer
             double ox = o.X + o.VelX * elapsed, oz = o.Z + o.VelZ * elapsed;
             double ddx = ox - cx, ddz = oz - cz;
             if (ddx * axisX + ddz * axisZ <= 0) continue; // not on this side
@@ -544,6 +560,65 @@ public class WindField
         if (len < 1e-6) return;
         axisX = toMidX / len; axisZ = toMidZ / len;
         joined = true;
+    }
+
+    /// <summary>
+    /// Falloff+<see cref="PressureCell.StormLikelihood"/>-weighted share of nearby lows' influence at a
+    /// position, bucketed by which weather REGIME each contributing low is currently in — Occluded (its
+    /// cold front has caught its warm front), Stationary (near-zero own velocity), or Moving (split
+    /// Warm/Cold by real geography, same poleward/equatorward convention as <see cref="StormBiasAt"/>).
+    /// Lighter-weight than <see cref="StormBiasAt"/> (a single O(cells) pass, no neighbour-JOIN banding)
+    /// since it's meant to answer "what KIND of front is this" for intensity weighting, not to trace the
+    /// precise spatial extent of the storm band itself.
+    /// </summary>
+    public struct FrontRegimeBias
+    {
+        public double Cold;
+        public double Warm;
+        public double Occluded;
+        public double Stationary;
+    }
+
+    /// <summary>Half-width (× a low's own <see cref="PressureCell.Radius"/>) of the smooth Warm/Cold
+    /// blend band in <see cref="FrontRegimeBiasAt"/>, centred on the low's own latitude line — a plain
+    /// sign test there switched the weather-intensity multiplier discontinuously right at that line,
+    /// reading as an unrealistically sharp jump between stormy and calm weather. <c>Math.Tanh</c> over
+    /// this width gives a gradual apportionment between the two instead.</summary>
+    private const double RegimeBlendWidthFactor = 0.6;
+
+    /// <summary>See <see cref="FrontRegimeBias"/>. Real fronts trail a LOW; highs contribute nothing.</summary>
+    public FrontRegimeBias FrontRegimeBiasAt(double x, double z, double totalHours)
+    {
+        var result = new FrontRegimeBias();
+        double elapsed = totalHours - AnchorHours;
+        for (int i = 0; i < Cells.Count; i++)
+        {
+            PressureCell c = Cells[i];
+            if (!c.IsLow || c.StormLikelihood <= 0f) continue;
+
+            double cx = c.X + c.VelX * elapsed;
+            double cz = c.Z + c.VelZ * elapsed;
+            double dx = x - cx, dz = z - cz;
+            double falloff = Math.Exp(-EllipseNorm2(c, dx, dz));
+            if (falloff < 1e-4) continue;
+
+            double weight = falloff * c.StormLikelihood;
+
+            if (totalHours < c.OccludedUntilTotalHours) { result.Occluded += weight; continue; }
+
+            double speed = Math.Sqrt(c.VelX * c.VelX + c.VelZ * c.VelZ);
+            if (speed < StationarySpeed) { result.Stationary += weight; continue; }
+
+            // Moving open-wave low: poleward side is the warm front, equatorward the cold front — same
+            // convention as StormBiasAt/FrontComputer, but apportioned smoothly across a band straddling
+            // the low's own latitude line rather than switched abruptly at it.
+            double poleSign = PolewardZSign(cz);
+            double blendWidth = Math.Max(1.0, c.Radius) * RegimeBlendWidthFactor;
+            double warmFrac = 0.5 * (1.0 + Math.Tanh(dz * poleSign / blendWidth));
+            result.Warm += weight * warmFrac;
+            result.Cold += weight * (1.0 - warmFrac);
+        }
+        return result;
     }
 
     /// <summary>

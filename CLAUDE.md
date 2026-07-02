@@ -29,24 +29,37 @@ systems, and couples the rest of the world to it:
   Lows also add circulation, so storms = stronger, swirlier wind.
 - **Fronts** (`FrontComputer`/`FrontMapLayer`) — only LOW cells carry fronts; a high is fair-weather
   subsidence with no frontal boundary of its own (still gets an H marker, no line). A moving, open-wave
-  low renders BOTH a warm front (its EQUATORWARD half, where warm air overruns) and a cold front (its
-  POLEWARD half, where cold air digs in) from the same traced pressure contour — split by real geography
+  low renders BOTH a warm front (its POLEWARD half, where warm air overruns) and a cold front (its
+  EQUATORWARD half, where cold air digs in) from the same traced pressure contour — split by real geography
   (`WindField.PolewardZSign`, based on `MapCenterZ`), NOT the system's own direction of travel, since a
   front's warm/cold sides are set by which air mass sits on which side of the boundary. Symbols always
-  face outward, radially (so cold points poleward, warm points equatorward — no extra per-type flip
+  face outward, radially (so warm points poleward, cold points equatorward — no extra per-type flip
   needed). `WindField.StormBiasAt` mirrors the same split: storminess biases toward a low's poleward
-  (cold) / equatorward (warm) sides (synergy bonus near the low's own centre), highs contribute nothing.
+  (warm) / equatorward (cold) sides (synergy bonus near the low's own centre), highs contribute nothing.
 - **Front reach** — each low's cold and warm sides carry an independent radial reach multiplier
-  (`PressureCell.ColdFrontReach`/`WarmFrontReach`, start at 1) grown every hour in `WindFieldSimulation.Advect`
-  — cold faster (`ColdReachGrowthPerHour`) than warm (`WarmReachGrowthPerHour`), since real cold fronts
-  advect/extend faster — so the two sides visibly move/expand at different rates instead of one symmetric
-  contour. `FrontComputer.ApplyFrontReach` scales the traced contour per angle bucket by whichever side
-  it falls on before rendering.
-- **Front occlusion** — intrinsic to a single low's own lifecycle, not a two-cell collision: once a low's
-  `ColdFrontReach` has outgrown its `WarmFrontReach` by `OcclusionReachRatio` (1.5×) — i.e. the cold front
-  has literally caught the warm one — `WindFieldSimulation.ApplyOcclusion` fires: storm likelihood drops
-  hard, it renders as the occluded symbol (full closed loop, not split warm/cold halves) for
-  `OccludedVisualHours`, and its remaining lifetime is cut to `OcclusionDeathSpeedup` (40%) — occluded
+  (`PressureCell.ColdFrontReach`/`WarmFrontReach`, start at 1) grown every hour in `WindFieldSimulation.ApplyOcclusion`
+  — cold faster (`ColdReachGrowthPerHour`) than warm (`WarmReachGrowthPerHour`) at the base rate, since real
+  cold fronts advect/extend faster — so the two sides visibly move/expand at different rates instead of one
+  symmetric contour. Each side's growth rate is further scaled by `DeltaTSlowdownScale` against the
+  `AirMassTemp` of whichever OTHER pressure cell currently sits on that side (`FindNearestCellOnSide`): a
+  similar air mass offers little resistance and the front advances near its base rate, a starkly different
+  one slows it — so cooler Δtemp (more similar air masses) → faster front movement, higher Δtemp → slower.
+  With no cell on a side, growth uses the unmodified base rate. `FrontComputer.ApplyFrontReach` scales the
+  traced contour per angle bucket by whichever side it falls on before rendering.
+- **Front occlusion** — a real two-cell event: a low's advancing cold front physically CATCHES another
+  pressure cell (low or high, whichever `FindNearestCellOnSide` finds equatorward of it), not a fixed ratio
+  against its own warm front or an age timer. `WindFieldSimulation.ApplyOcclusion` triggers a catch once
+  `ColdFrontReach` clears `OcclusionCatchMinReach` (1.15×, guards against an instant catch — cells are
+  deliberately sized to overlap into broad blobs, so a fresh cell's own radius can already overlap a
+  neighbour at reach 1) AND the distance to that equatorward cell falls under
+  `OcclusionCatchRadiusFactor × ColdFrontReach × own Radius + OcclusionCatchTargetRadiusFactor × target Radius`.
+  The relative `AirMassTemp` of the catching low vs. the cell it caught then classifies the occlusion
+  (`PressureCell.OcclusionKind`, 1 = cold / 2 = warm) — catching air colder than or equal to the caught
+  cell's behaves like a cold front (renders `front-cold-occluded.png`), warmer behaves like a warm front
+  (`front-warm-occluded.png`), matching real synoptic classification; `OcclusionKind` 0 (unset, e.g. a save
+  from before this field existed) falls back to the generic `front-occluded.png`. Once classified: storm
+  likelihood drops hard, it renders as the occluded symbol (full closed loop, not split warm/cold halves)
+  for `OccludedVisualHours`, and its remaining lifetime is cut to `OcclusionDeathSpeedup` (40%) — occluded
   lows die out faster, like real decaying cyclones. `PressureCell.OccludedUntilTotalHours` doubles as a
   one-shot latch so a cell only occludes once. (Unrelated to the indoor/underground "Occlusion" wind
   shielding below, besides sharing the name.)
@@ -64,9 +77,9 @@ systems, and couples the rest of the world to it:
   random jitter — so a cold low and a warm high can both exist, same as a polar low or a subtropical
   high in reality. `WindField.CellTemperatureAt` blends nearby cells' `AirMassTemp` (falloff × |strength|
   weighted) and drives the real temperature shift in `DynamicWindModCommon.OnGetClimate`
-  (`FrontTemperatureMax`), replacing the old low-pressure-is-always-hot assumption. Same-type cell merges
-  (`WindFieldSimulation.MergeAndDisplace`) blend `AirMassTemp` by the same |strength| weighting as
-  position/velocity.
+  (`FrontTemperatureMax`), replacing the old low-pressure-is-always-hot assumption. (Same-type cell
+  merging was removed — it interfered with the occlusion catch-target search below, and active cell count
+  is already bounded by spawn rate + despawn distance, so it wasn't needed to keep cell count in check.)
 - **Terrain thermal pressure** (`TerrainThermal`) — beyond the moving synoptic cells, pressure has a
   terrain-driven baseline: warm, sun-exposed dry land → low (rising air), cool water → high (sinking air),
   modulated by time of day + temperature. Water high pressure scales with **depth** (sea level −
@@ -90,15 +103,20 @@ systems, and couples the rest of the world to it:
   and the season offset cancel — one reference sample is correct everywhere. Shows in `/dynamicwind debug`.
 - **Pressure dynamics** (flat `*` config knobs, evolved in `WindFieldSimulation`) — cells are a living
   field, not static gaussians:
-  - **Advection** — each server tick a cell drifts along the *local background wind* (`WindAt(x,z,t,excludeCell)`,
-    self excluded), and its current velocity is stored so the client extrapolates linearly between snapshots.
-    `AdvectionSpeed` (blocks/game-hour per unit wind). Off → falls back to the fixed jetstream velocity.
+  - **Advection** — each server tick a cell EASES its velocity toward the *local background wind*
+    (`WindAt(x,z,t,excludeCell)`, self excluded) rather than snapping straight to it — an exponential
+    approach at `VelocityEaseRatePerHour`, real inertia — and its current velocity is stored so the client
+    extrapolates linearly between snapshots. `AdvectionSpeed` (blocks/game-hour per unit wind). Off →
+    falls back to the fixed jetstream velocity (or, for a thermal-seeded cell, stays stationary — see below).
   - **Dispersal** — `DispersalRate` grows each cell's radius and decays its strength per hour; cells expire
     once strength falls below `MinStrength` (or hit their lifetime backstop). So systems spread out and fade.
   - **Bernoulli** — `BernoulliStrength`: faster-than-nominal flow lowers a cell's pressure (toward low, +),
     stagnant air raises it. Sampled once per tick from the same background wind (no recursion).
   - **Thermal seeding** — `ThermalSeeding` spawns small mobile cells from terrain thermal hotspots near
-    players (hot dry land → low, deep water → high), which then advect + disperse.
+    players (hot dry land → low, deep water → high). Unlike a regular jet-spawned system, these are born
+    perfectly STATIONARY (a hotspot itself isn't moving) and only pick up speed gradually via the
+    Advection easing above as nearby cells' circulation and the base jetstream act on them, then
+    disperse like any other cell.
   - **Altitude lapse** — `WindField.PressureAt(x,y,z,t)` adds a vertical term: real air pressure falls with
     height, read as "more low" (+), reaching +`AltitudePressureDrop` (default 0.5 = −50%) at the build ceiling,
     0 at/below sea level. Vertical-only, so it never alters wind — only the displayed/weather-coupled pressure
@@ -133,8 +151,15 @@ systems, and couples the rest of the world to it:
 
 Because the map is north-up with +Z pointing *down* (south), the screen-CCW tangent is `(rz, −rx)`, so
 lows circulate **counter-clockwise** and highs **clockwise** (NH convention). Pressure-cell radii are
-sized as a fraction of the fixed `SpawnRangeBlocks` (6000-block) spawn scatter box, not the server's
-loaded-chunk extent — `CellRadiusMin`/`CellRadiusMax` (user config) are the only clamp.
+sized as a fraction of the fixed `SpawnRangeBlocks` (6000-block) scale reference, not the server's
+loaded-chunk extent — `CellRadiusMin`/`CellRadiusMax` (user config) are the only clamp. New cells spawn
+~8000 blocks (`SpawnDistanceBlocks` ± `SpawnDistanceJitter`) from a random online player, generally
+upwind (scattered within `SpawnAngleSpreadRad` of the pure-upwind bearing) so they drift back through the
+player's area — like a real system approaching from a distance. That target distance is capped by the
+cell's own radius (`SpawnDespawnSafetyMargin` inside the `DespawnMargin` threshold) so a cell never spawns
+close enough to immediately despawn, and if the scattered position still lands within
+`SpawnPlayerAvoidRadius` of ANY online player (not just the anchor one), it's pushed further upwind
+instead (`WindFieldSimulation.Spawn`/`NearestOnlinePlayerDistance`).
 
 ## Architecture
 

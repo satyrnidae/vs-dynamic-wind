@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using AlgernonsTerrainSampler;
 using DynamicWind.Network;
 using DynamicWind.Patches;
@@ -7,7 +5,6 @@ using DynamicWind.ThermalPressure;
 using DynamicWind.WindSystem;
 using HarmonyLib;
 using Vintagestory.API.Common;
-using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 
 namespace DynamicWind;
@@ -35,6 +32,7 @@ public class DynamicWindModServer : DynamicWindModCommon
         DynamicWindRuntime.ServerField = Field;
         DynamicWindRuntime.ServerConfig = Config;
 
+#pragma warning disable CA1416 // Algernons Terrain Sampler is a hard dependency (see modinfo.json), not actually Windows-only
         sampler = api.ModLoader.GetModSystem<TerrainSamplerMod>();
         if (sampler == null)
         {
@@ -48,6 +46,7 @@ public class DynamicWindModServer : DynamicWindModCommon
             var heightCache = new ThermalCache((x, z, _) => sampler.GetBlockColumnHeight((int)x, (int)z), tile: 8.0, bucketHours: 1e9);
             Field.TerrainHeightFunc = (x, z) => heightCache.Get(x, z, 0);
         }
+#pragma warning restore CA1416
 
         sim = new WindFieldSimulation(api, Field, Config);
 
