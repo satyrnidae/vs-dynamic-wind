@@ -31,7 +31,8 @@ systems, and couples the rest of the world to it:
   subsidence with no frontal boundary of its own (still gets an H marker, no line). A moving, open-wave
   low renders BOTH a warm front (its POLEWARD half, where warm air overruns) and a cold front (its
   EQUATORWARD half, where cold air digs in) from the same traced pressure contour — split by real geography
-  (`WindField.PolewardZSign`, based on `MapCenterZ`), NOT the system's own direction of travel, since a
+  (`WindField.PolewardZSign`, driven by the real climate latitude via `WindField.LatitudeFunc` — see
+  "Real latitude" below, NOT a simple map-midline split), NOT the system's own direction of travel, since a
   front's warm/cold sides are set by which air mass sits on which side of the boundary. Symbols always
   face outward, radially (so warm points poleward, cold points equatorward — no extra per-type flip
   needed). `WindField.StormBiasAt` mirrors the same split: storminess biases toward a low's poleward
@@ -92,6 +93,18 @@ systems, and couples the rest of the world to it:
   hot low-pressure land. NOTE: `WeatherCoupling.OnGetClimate` calls `PressureAt` → thermal → `GetClimateAt`,
   so it uses a `[ThreadStatic]` reentrancy guard to avoid infinite recursion. (Thermal currently feeds
   pressure/weather/visualization only, not wind direction — sea-breeze wind coupling is possible future work.)
+- **Real latitude** (`WindField.LatitudeFunc`) — Vintage Story's actual climate latitude is NOT a single
+  equator at the map's centre with poles at its edges: it's a repeating triangle wave in world Z (period
+  `4 × polarEquatorDistance`, a world-config value defaulting to 50000 blocks, phase-shifted by a per-seed
+  offset), so poles and equators alternate repeatedly across the map. `LatitudeFunc` is a thin per-side
+  wrapper around the game's own `Calendar.OnGetLatitude(z)` (set once the calendar's ready, re-checked per
+  call rather than captured, since world-gen wires it up asynchronously) — never reimplemented, since the
+  period/phase aren't derivable from `MapSizeZ` alone. `WindField.PolewardZSign(z)` differentiates it
+  numerically (which local direction increases `|latitude|`) rather than assuming a fixed hemisphere, so
+  "poleward" correctly flips every `2 × polarEquatorDistance` blocks instead of once at the map midline.
+  `WindFieldSimulation.ComputeAirMassTemp`'s birth-latitude term (colder near a real pole) uses the same
+  function. Falls back to the old map-midline heuristic (`MapCenterZ`) only if `LatitudeFunc` isn't wired
+  up yet.
 - **Seasonal jetstream bias** — the westerly base flow tilts N/S with the seasons: poleward in summer,
   equatorward in winter. So a northern-hemisphere section is southwesterly in summer / northwesterly in
   winter, and a southern section is the mirror. Implemented as a single signed factor `WindField.SeasonalBiasZ`
@@ -121,8 +134,8 @@ systems, and couples the rest of the world to it:
     height, read as "more low" (+), reaching +`AltitudePressureDrop` (default 0.5 = −50%) at the build ceiling,
     0 at/below sea level. Vertical-only, so it never alters wind — only the displayed/weather-coupled pressure
     (map tint, `WeatherCoupling`, `/dynamicwind debug` all pass their Y). `SeaLevel`/`WorldHeight`/`MapCenterZ`
-    (= `MapSizeZ / 2`, the map's N/S midline used as the hemisphere/pole proxy for fronts and air-mass
-    temperature) are set per side from world geometry, not synced.
+    (= `MapSizeZ / 2`, now only a fallback for `PolewardZSign` before `LatitudeFunc` is wired — see "Real
+    latitude" above) are set per side from world geometry, not synced.
 - **Pressure-gradient wind** — wind bleeds down the pressure gradient (high → low), so the synoptic cells
   AND the terrain thermal contrast (water→land sea breeze) actually push the air. `WindField.WindAt` adds
   `PressureWindStrength · ∇P` (numeric gradient of `PressureAt`, clamped). Runs on both sides.

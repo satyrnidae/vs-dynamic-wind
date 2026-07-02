@@ -1,6 +1,8 @@
 using System;
 using DynamicWind.Config;
 using DynamicWind.Network;
+using DynamicWind.PressureSystem;
+using DynamicWind.Utils;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
 using Vintagestory.API.MathTools;
@@ -691,15 +693,16 @@ public class WindFieldSimulation
 
     /// <summary>
     /// Intrinsic air-mass character in [-1, 1] a cell is born with (see
-    /// <see cref="PressureCell.AirMassTemp"/>): colder toward the map's N/S edges (a proxy for
-    /// poleward birth), warmer/colder with the birth position's own season (via
+    /// <see cref="PressureCell.AirMassTemp"/>): colder toward a real pole (via <see cref="WindField.LatitudeFunc"/>,
+    /// a proxy for poleward birth), warmer/colder with the birth position's own season (via
     /// <see cref="ICalendar.GetSeasonRel"/>, which already accounts for hemisphere), plus random jitter
     /// so same-latitude, same-season systems still vary — real air masses aren't perfectly uniform.
     /// </summary>
     private float ComputeAirMassTemp(double x, double z)
     {
-        double mapHalfZ = Math.Max(1.0, sapi.WorldManager.MapSizeZ / 2.0);
-        double poleward = GameMath.Clamp((float)(Math.Abs(z - mapHalfZ) / mapHalfZ), 0f, 1f); // 0 = equator, 1 = map edge
+        double poleward = field.LatitudeFunc != null
+            ? GameMath.Clamp((float)Math.Abs(field.LatitudeFunc(z)), 0f, 1f) // 0 = equator, 1 = pole
+            : 0f; // latitude not ready yet — treat as neutral
 
         double seasonWarmth = 0;
         try

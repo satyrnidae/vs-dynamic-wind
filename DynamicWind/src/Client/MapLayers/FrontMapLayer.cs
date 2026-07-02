@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using DynamicWind.Config;
+using DynamicWind.PressureSystem;
+using DynamicWind.Utils;
 using DynamicWind.WindSystem;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;

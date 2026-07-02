@@ -4,7 +4,7 @@ using DynamicWind.Client.Patches;
 using DynamicWind.Config;
 using DynamicWind.Network;
 using DynamicWind.Patches;
-using DynamicWind.ThermalPressure;
+using DynamicWind.TerrainSystem;
 using HarmonyLib;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
@@ -36,6 +36,12 @@ public class DynamicWindModClient : DynamicWindModCommon
             Field.SeaLevel = api.World.SeaLevel;
             Field.WorldHeight = api.World.BlockAccessor.MapSizeY;
             Field.MapCenterZ = api.World.BlockAccessor.MapSizeZ / 2.0;
+            // Real climate latitude (repeating triangle wave, see WindField.LatitudeFunc) — re-checked
+            // per call rather than captured once, since Calendar.OnGetLatitude is wired up by world-gen
+            // and may not be assigned yet at this exact moment.
+            Field.LatitudeFunc = z => api.World.Calendar.OnGetLatitude != null
+                ? api.World.Calendar.OnGetLatitude(z)
+                : (z < Field.MapCenterZ ? 1.0 : -1.0);
         };
 
         SetupThermalPressureFunc(api);

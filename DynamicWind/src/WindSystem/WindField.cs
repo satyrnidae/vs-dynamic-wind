@@ -1,100 +1,10 @@
 using System;
 using System.Collections.Generic;
 using DynamicWind.Network;
-using ProtoBuf;
+using DynamicWind.PressureSystem;
 using Vintagestory.API.MathTools;
 
 namespace DynamicWind.WindSystem;
-
-/// <summary>
-/// A moving pressure system. Positive <see cref="Strength"/> = low pressure (cyclonic, draws wind
-/// inward and circulates counter-clockwise); negative = high pressure (anticyclonic, pushes wind
-/// outward, clockwise). Cells advect roughly west-to-east on the jetstream and expire after a while.
-/// </summary>
-[ProtoContract(ImplicitFields = ImplicitFields.AllPublic)]
-public class PressureCell
-{
-    public double X;
-    public double Z;
-    /// <summary>+ = low pressure, - = high pressure. Magnitude scales the induced wind speed.</summary>
-    public float Strength;
-    /// <summary>Influence radius in blocks (gaussian falloff).</summary>
-    public float Radius;
-    public double VelX;
-    public double VelZ;
-    public double BornTotalHours;
-    public double DiesTotalHours;
-
-    // Appended fields (see WindFieldSimulation/Load): ImplicitFields.AllPublic tags fields by declaration
-    // order and this struct is both network-synced and save-persisted, so new fields MUST be added at the
-    // end — inserting one earlier would shift the tag numbers of everything after it and corrupt old saves.
-
-    /// <summary>Influence radius along the cell's direction of travel (the along-stream/minor semi-axis),
-    /// always &lt;= <see cref="Radius"/> (the cross-stream/major semi-axis). Real fronts are elongated
-    /// perpendicular to the flow rather than circular, so this starts close to but below <see cref="Radius"/>
-    /// and grows slower as the cell ages, increasing eccentricity over its lifetime.</summary>
-    public float RadiusMinor;
-
-    /// <summary>World-space angle (radians) of the major/cross-stream axis. Stored and eased toward the
-    /// cell's velocity bearing rather than derived live, so the ellipse rotates smoothly instead of
-    /// snapping when velocity changes (see WindFieldSimulation.Advect).</summary>
-    public float Orientation;
-
-    /// <summary>Rolling storm-likelihood scalar in [0,1] for this front. Starts at a random value at
-    /// spawn and slowly builds over the cell's lifetime (see WindFieldSimulation.Advect) until its cold
-    /// front catches another pressure cell and it occludes (see WindFieldSimulation.ApplyOcclusion),
-    /// after which it drops hard — the storm winds down once occluded. Feeds
-    /// <see cref="WindField.StormBiasAt"/>. Cells saved before this field existed deserialize it to the
-    /// protobuf default 0; WindFieldSimulation.Load migrates those to 1.0 (see the requirement that
-    /// migrated cells default to full storm likelihood).</summary>
-    public float StormLikelihood;
-
-    /// <summary>Total-hours timestamp until which this (low) cell renders as an occluded front symbol
-    /// instead of separate warm/cold fronts — see FrontComputer.Compute and
-    /// WindFieldSimulation.ApplyOcclusion. 0 (the default) or an elapsed timestamp means "not occluded".
-    /// Also doubles as a one-shot latch: once non-zero, the cell has already occluded once and won't
-    /// re-trigger.</summary>
-    public double OccludedUntilTotalHours;
-
-    /// <summary>Intrinsic air-mass character in [-1, 1] this system carries (−1 = cold/polar, +1 =
-    /// warm/tropical), independent of whether it's a low or a high — a cold low and a warm high can both
-    /// exist, same as a polar low or a subtropical high in reality. Set once at spawn from the cell's
-    /// birth latitude + season + random jitter (see WindFieldSimulation.ComputeAirMassTemp) and carried
-    /// for the cell's lifetime. Drives the real temperature shift in DynamicWindModCommon.OnGetClimate
-    /// via <see cref="WindField.CellTemperatureAt"/>; independent of the front warm/cold SYMBOL choice,
-    /// which is purely geometric (poleward vs equatorward side of a moving low).</summary>
-    public float AirMassTemp;
-
-    /// <summary>Radial reach multiplier for this (low) cell's COLD/equatorward front contour, on top of the
-    /// base <see cref="Radius"/>/<see cref="RadiusMinor"/> ellipse — see FrontComputer. Starts at 1 and
-    /// grows FASTER than <see cref="WarmFrontReach"/> each hour (WindFieldSimulation.ApplyOcclusion) —
-    /// real cold fronts advect/extend faster than warm fronts — so the two sides visibly move and expand
-    /// at different rates over the cell's life; the growth rate on each side is itself modulated by how
-    /// close this cell's <see cref="AirMassTemp"/> is to whatever pressure cell sits on that side (similar
-    /// air masses offer little resistance — sharpen/advance fastest — while starkly different ones slow
-    /// the advance). Once this cell's cold-front reach physically reaches another pressure cell on its
-    /// equatorward side, the cold front has "caught" that cell and this low occludes (see
-    /// WindFieldSimulation.ApplyOcclusion) — a real two-cell event rather than a fixed ratio/age timer.</summary>
-    public float ColdFrontReach = 1f;
-
-    /// <summary>Radial reach multiplier for this (low) cell's WARM/poleward front contour. See
-    /// <see cref="ColdFrontReach"/>.</summary>
-    public float WarmFrontReach = 1f;
-
-    /// <summary>Classification of this low's occlusion, set once when <see cref="OccludedUntilTotalHours"/>
-    /// is first triggered (see WindFieldSimulation.ApplyOcclusion): 0 = unset (not yet occluded, or
-    /// occluded before this field existed — pre-migration saves fall back to the generic occluded
-    /// symbol), 1 = COLD occlusion (the catching cold front's air mass was colder than or equal to the
-    /// cell it caught — behaves like a cold front), 2 = WARM occlusion (the catching air was warmer —
-    /// behaves like a warm front). Matches the real synoptic distinction between cold-type and warm-type
-    /// occlusions. Meaningful only while <see cref="OccludedUntilTotalHours"/> is active.</summary>
-    public byte OcclusionKind;
-
-    // Computed; excluded from protobuf (ImplicitFields.AllPublic would otherwise try to deserialize
-    // into this read-only property and throw).
-    [ProtoIgnore]
-    public bool IsLow => Strength > 0f;
-}
 
 /// <summary>
 /// Deterministic wind field shared by server and client. Given the same parameters and cell list
@@ -172,18 +82,44 @@ public class WindField
     /// <summary>Fractional pressure drop reached at the build ceiling (0.5 = −50%), toward LOW (+).</summary>
     public double AltitudeMaxDrop = 0.5;
 
-    /// <summary>World Z of the map's N/S midline (its "equator" proxy) — set per side from
-    /// MapSizeZ / 2, same on both sides since it's derived from world geometry, not synced. North of
-    /// this (smaller Z) is treated as the northern hemisphere (pole at Z=0), south of it (larger Z) as
-    /// the southern hemisphere (pole at Z=MapSizeZ) — see <see cref="PolewardZSign"/>. Used to split
-    /// fronts poleward(cold)/equatorward(warm) by real geography instead of the system's travel
-    /// direction.</summary>
+    /// <summary>World Z of the map's N/S midline — set per side from MapSizeZ / 2, same on both sides
+    /// since it's derived from world geometry, not synced. Vintage Story's REAL climate latitude
+    /// (<see cref="LatitudeFunc"/>) is a repeating triangle wave, not a single equator/pole pair at the
+    /// map edges, so this is only a crude fallback for <see cref="PolewardZSign"/> when
+    /// <see cref="LatitudeFunc"/> hasn't been wired up yet (e.g. very early startup).</summary>
     public double MapCenterZ = 128.0;
 
-    /// <summary>+1 if world Z <paramref name="z"/> is in the (proxy) southern hemisphere — poleward means
-    /// increasing Z there — or −1 if northern, where poleward means decreasing Z. See
-    /// <see cref="MapCenterZ"/>.</summary>
-    public double PolewardZSign(double z) => z < MapCenterZ ? -1.0 : 1.0;
+    /// <summary>
+    /// Optional hook onto the game's real climate latitude at world Z (<c>Calendar.OnGetLatitude</c>):
+    /// +1 at a north pole, −1 at a south pole, 0 at an equator. Set per side once the calendar is ready.
+    /// Vintage Story's latitude is a repeating triangle wave (period <c>4 × polarEquatorDistance</c>, a
+    /// world-config value, phase-shifted by a per-seed offset) — poles and equators alternate repeatedly
+    /// across the map, NOT a single equator at the map's centre with poles at its edges. See
+    /// <see cref="PolewardZSign"/>.
+    /// </summary>
+    public Func<double, double>? LatitudeFunc;
+
+    /// <summary>Z step used to numerically differentiate <see cref="LatitudeFunc"/> in
+    /// <see cref="PolewardZSign"/> — cheap since the real latitude curve is piecewise-linear, so any
+    /// small step off an exact fold point (a pole or equator crossing) gives the correct local slope.</summary>
+    private const double LatitudeSampleDist = 8.0;
+
+    /// <summary>
+    /// +1 if the LOCAL poleward direction (away from the equator, toward whichever pole is nearer) at
+    /// world Z <paramref name="z"/> is +Z, else −1. Found from the sign of <see cref="LatitudeFunc"/>'s
+    /// local slope in |latitude| — NOT from a fixed hemisphere, since Vintage Story's real latitude
+    /// alternates north/south repeatedly across the map (see <see cref="LatitudeFunc"/>), so which way is
+    /// "poleward" flips every <c>2 × polarEquatorDistance</c> blocks rather than once at a map midline.
+    /// Falls back to the old map-midline heuristic (via <see cref="MapCenterZ"/>) if
+    /// <see cref="LatitudeFunc"/> isn't wired up yet.
+    /// </summary>
+    public double PolewardZSign(double z)
+    {
+        if (LatitudeFunc == null) return z < MapCenterZ ? -1.0 : 1.0;
+        double m0 = Math.Abs(LatitudeFunc(z));
+        double m1 = Math.Abs(LatitudeFunc(z + LatitudeSampleDist));
+        return m1 >= m0 ? 1.0 : -1.0;
+    }
 
     /// <summary>
     /// How much of the raw terrain thermal field stays as a static (terrain-pinned) baseline in

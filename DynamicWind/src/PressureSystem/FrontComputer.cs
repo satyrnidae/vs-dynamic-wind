@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using DynamicWind.WindSystem;
 using Vintagestory.API.MathTools;
 
-namespace DynamicWind.Client.MapLayers;
+namespace DynamicWind.PressureSystem;
 
 public enum FrontType { Cold, Warm, Stationary, Occluded, ColdOcclusion, WarmOcclusion }
 

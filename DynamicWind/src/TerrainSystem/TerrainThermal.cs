@@ -3,7 +3,7 @@ using DynamicWind.WindSystem;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
 
-namespace DynamicWind.ThermalPressure;
+namespace DynamicWind.TerrainSystem;
 
 /// <summary>
 /// Terrain-driven thermal pressure: warm, sun-exposed dry land creates low pressure (rising air),

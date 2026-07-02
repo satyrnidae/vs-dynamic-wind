@@ -1,6 +1,6 @@
 using System;
 
-namespace DynamicWind.WindSystem;
+namespace DynamicWind.Utils;
 
 /// <summary>Shared angle-interpolation helpers used by both the simulation and map rendering.</summary>
 internal static class AngleMath

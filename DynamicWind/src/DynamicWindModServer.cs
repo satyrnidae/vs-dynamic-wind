@@ -1,7 +1,7 @@
 using AlgernonsTerrainSampler;
 using DynamicWind.Network;
 using DynamicWind.Patches;
-using DynamicWind.ThermalPressure;
+using DynamicWind.TerrainSystem;
 using DynamicWind.WindSystem;
 using HarmonyLib;
 using Vintagestory.API.Common;
@@ -55,6 +55,12 @@ public class DynamicWindModServer : DynamicWindModCommon
             Field.SeaLevel = api.World.SeaLevel;
             Field.WorldHeight = api.WorldManager.MapSizeY;
             Field.MapCenterZ = api.WorldManager.MapSizeZ / 2.0;
+            // Real climate latitude (repeating triangle wave, see WindField.LatitudeFunc) — re-checked
+            // per call rather than captured once, since Calendar.OnGetLatitude is wired up by world-gen
+            // and may not be assigned yet at this exact moment.
+            Field.LatitudeFunc = z => api.World.Calendar.OnGetLatitude != null
+                ? api.World.Calendar.OnGetLatitude(z)
+                : (z < Field.MapCenterZ ? 1.0 : -1.0);
             sim.Load();
         };
         api.Event.GameWorldSave += () => sim.Save();
