@@ -40,6 +40,20 @@ public class PressureCell
     /// snapping when velocity changes (see WindFieldSimulation.Advect).</summary>
     public float Orientation;
 
+    /// <summary>Rolling storm-likelihood scalar in [0,1] for this front. Starts at a random value at
+    /// spawn and slowly builds over the cell's lifetime (see WindFieldSimulation.Advect), ramps further
+    /// while overlapping an opposite-type front, and spikes to 1 right before that overlap resolves into
+    /// an occlusion — after which it drops hard (WindFieldSimulation.MergeAndDisplace). Feeds
+    /// <see cref="WindField.StormBiasAt"/>. Cells saved before this field existed deserialize it to the
+    /// protobuf default 0; WindFieldSimulation.Load migrates those to 1.0 (see the requirement that
+    /// migrated cells default to full storm likelihood).</summary>
+    public float StormLikelihood;
+
+    /// <summary>Total-hours timestamp until which this cell (always the surviving cold/high side of an
+    /// occlusion) renders as the "occluded" front symbol instead of its normal Cold symbol — see
+    /// FrontComputer.Compute. 0 (the default) or an elapsed timestamp means "not occluded".</summary>
+    public double OccludedUntilTotalHours;
+
     // Computed; excluded from protobuf (ImplicitFields.AllPublic would otherwise try to deserialize
     // into this read-only property and throw).
     [ProtoIgnore]
@@ -381,6 +395,46 @@ public class WindField
             p += cell.Strength * Math.Exp(-norm2);
         }
         return p;
+    }
+
+    /// <summary>
+    /// Extra storm-likelihood forcing at a position, driven by nearby fronts' <see cref="PressureCell.StormLikelihood"/>
+    /// and their geometry rather than raw pressure: biased toward the LEADING/outside edge of warm (low)
+    /// fronts and the TRAILING/inside edge of cold (high) fronts, with a synergy bonus where both biases
+    /// coincide (a cold front overlapping a warm one — the run-up to an occlusion). Independent of
+    /// <see cref="PressureAt(double,double,double)"/>; meant to be added into the precipitation gate
+    /// scaled by a caller-owned strength knob (see WeatherCoupling).
+    /// </summary>
+    public double StormBiasAt(double x, double z, double totalHours)
+    {
+        double warm = 0, cold = 0;
+        double elapsed = totalHours - AnchorHours;
+        for (int i = 0; i < Cells.Count; i++)
+        {
+            PressureCell c = Cells[i];
+            if (c.StormLikelihood <= 0f) continue;
+
+            double cx = c.X + c.VelX * elapsed;
+            double cz = c.Z + c.VelZ * elapsed;
+            double dx = x - cx, dz = z - cz;
+            double falloff = Math.Exp(-EllipseNorm2(c, dx, dz));
+            if (falloff < 1e-4) continue;
+
+            double dist = Math.Sqrt(dx * dx + dz * dz);
+            if (dist < 1e-6) continue;
+            double dirx = dx / dist, dirz = dz / dist;
+
+            double travel = c.Orientation - Math.PI / 2.0; // see FrontComputer: Orientation = bearing + π/2
+            double tx = Math.Cos(travel), tz = Math.Sin(travel);
+            double along = dirx * tx + dirz * tz; // >0 = ahead of centre along the direction of travel
+
+            if (c.IsLow)
+                warm += Math.Max(0.0, along) * falloff * c.StormLikelihood;   // warm front: leading/outside edge
+            else
+                cold += Math.Max(0.0, -along) * falloff * c.StormLikelihood; // cold front: trailing/inside edge
+        }
+        // Strongest where a warm front's leading bias and a cold front's trailing bias coincide.
+        return warm + cold + 2.0 * Math.Min(warm, cold);
     }
 
     /// <summary>

@@ -30,7 +30,7 @@ public class FrontMapLayer : MapLayer
     private DynamicWindConfig? cfg;
     private ICoreClientAPI? capi;
     private MeshRef? quad;
-    private int texWarm, texCold, texStationary, texHigh, texLow;
+    private int texWarm, texCold, texStationary, texOccluded, texHigh, texLow;
     private readonly Matrixf mvMat = new();
     private static readonly FieldInfo? fSnapToPlayer = AccessTools.Field(typeof(GuiElementMap), "snapToPlayer");
     private static readonly Vec4f White = new(1f, 1f, 1f, 1f);
@@ -56,6 +56,7 @@ public class FrontMapLayer : MapLayer
         texWarm = Tex("front-warm");
         texCold = Tex("front-cold");
         texStationary = Tex("front-stationary");
+        texOccluded = Tex("front-occluded");
         texHigh = Tex("pressure-system-high");
         texLow = Tex("pressure-system-low");
         Active = cfg?.FrontMapLayerVisibleByDefault ?? false; // off by default; toggle in the map legend
@@ -153,7 +154,10 @@ public class FrontMapLayer : MapLayer
             int nT = (int)Math.Clamp(Math.Ceiling(totalLenPx / TilePx), minTiles, 3000);
             double step = totalLenPx / nT;
 
-            int tex = stationary ? texStationary : f.Type == FrontType.Warm ? texWarm : texCold;
+            int tex = stationary ? texStationary
+                : f.Type == FrontType.Warm ? texWarm
+                : f.Type == FrontType.Occluded ? texOccluded
+                : texCold;
             shader.BindTexture2D("tex2d", tex, 0);
 
             float halfH = TilePx * 0.5f;

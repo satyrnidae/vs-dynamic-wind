@@ -29,6 +29,8 @@ internal static class WeatherCoupling
 {
     private const double PrecipShift = 0.6;     // cloudness units shifted per unit of (clamped) pressure
     private const double PressureClamp = 1.5;
+    private const double StormBiasShift = 0.5;  // cloudness units shifted per unit of (clamped) WindField.StormBiasAt
+    private const double StormBiasClamp = 2.0;
 
     private static bool patched;
 
@@ -60,6 +62,13 @@ internal static class WeatherCoupling
 
         // − pressure (high, cold-front side) raises cloudness past the 0.5 precip threshold; + (low) pushes it below.
         __result -= (float)(config.StormCouplingStrength * p * PrecipShift);
+
+        // Extra storm bias from front geometry/StormLikelihood: ahead of warm fronts, behind cold
+        // fronts, strongest where a cold front is overlapping (occluding) a warm one.
+        double bias = field.StormBiasAt(posX, posZ, totalHours);
+        if (bias > StormBiasClamp) bias = StormBiasClamp;
+        __result += (float)(config.StormCouplingStrength * bias * StormBiasShift);
+
         if (__result < 0f) __result = 0f;
     }
 }

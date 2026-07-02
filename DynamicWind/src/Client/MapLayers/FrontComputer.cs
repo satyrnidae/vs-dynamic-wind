@@ -4,7 +4,7 @@ using DynamicWind.WindSystem;
 
 namespace DynamicWind.Client.MapLayers;
 
-public enum FrontType { Cold, Warm, Stationary }
+public enum FrontType { Cold, Warm, Stationary, Occluded }
 
 /// <summary>A pressure-system marker (the "H"/"L" letter) at a cell's current effective centre.</summary>
 public struct FrontMarker
@@ -110,9 +110,15 @@ public static class FrontComputer
             // instantaneous velocity can't flip the rendered line by ~180° tick to tick.
             double bearing = c.Orientation - Math.PI / 2.0; // Orientation = bearing + π/2 (set at spawn/ease)
 
+            // A cold (high) front that just occluded a warm front renders as the occluded symbol for a
+            // while (WindFieldSimulation.MergeAndDisplace sets OccludedUntilTotalHours) instead of its
+            // normal cold-front symbol.
+            FrontType type = isHigh && totalHours < c.OccludedUntilTotalHours ? FrontType.Occluded
+                : isHigh ? FrontType.Cold : FrontType.Warm; // moving high = cold symbol, moving low = warm symbol
+
             lines.Add(new FrontLine
             {
-                Type = isHigh ? FrontType.Cold : FrontType.Warm, // moving high = cold symbol, moving low = warm symbol
+                Type = type,
                 Seed = c.BornTotalHours,
                 Strength = strength,
                 CenterX = ex,
