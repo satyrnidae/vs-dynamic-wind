@@ -19,6 +19,7 @@ public class WeathervaneRenderer : IRenderer
     private readonly Matrixf modelMat = new();
     private MeshRef? meshref;
     private float currentYaw;
+    private readonly TurnSqueakSound turnSqueak;
 
     public double RenderOrder => 0.5;
     public int RenderRange => 48;
@@ -28,6 +29,7 @@ public class WeathervaneRenderer : IRenderer
         this.capi = capi;
         this.be = be;
         pos = be.Pos.ToVec3d();
+        turnSqueak = new TurnSqueakSound(capi, pos);
     }
 
     public void SetMesh(MeshRef mesh) => meshref = mesh;
@@ -36,11 +38,15 @@ public class WeathervaneRenderer : IRenderer
     {
         if (meshref == null || meshref.Disposed) return;
 
-        float target = be.GetTargetYaw();
-        if (!float.IsNaN(target))
+        if (!capi.IsGamePaused)
         {
-            float delta = GameMath.AngleRadDistance(currentYaw, target);
-            currentYaw += delta * Math.Min(1f, dt * 3f); // smooth swing
+            float target = be.GetTargetYaw();
+            if (!float.IsNaN(target))
+            {
+                float delta = GameMath.AngleRadDistance(currentYaw, target);
+                currentYaw += delta * Math.Min(1f, dt * 3f); // smooth swing
+            }
+            turnSqueak.Update(currentYaw, target);
         }
 
         IRenderAPI rpi = capi.Render;

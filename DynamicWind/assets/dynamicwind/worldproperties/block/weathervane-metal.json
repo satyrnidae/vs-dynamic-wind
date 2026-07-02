@@ -1,0 +1,11 @@
+{
+  "code": "weathervane-metal",
+  "variants": [
+    { "code": "copper" },
+    { "code": "brass" },
+    { "code": "tinbronze" },
+    { "code": "blackbronze" },
+    { "code": "iron" },
+    { "code": "steel" }
+  ]
+}

@@ -1,7 +1,10 @@
 using System;
+using System.Text;
 using DynamicWind.Client.Render;
+using DynamicWind.WindSystem;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
+using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
 
 namespace DynamicWind.Blocks;
@@ -65,6 +68,15 @@ public class BlockEntityWeathervane : BlockEntity
         // rendered orientation so it lands on the true downwind bearing (−π/2 was 90° off the other way
         // and pointed into the wind; +π/2 is the correct quarter-turn).
         return (float)(Math.Atan2(w.X, w.Z) + Math.PI / 2.0);
+    }
+
+    public override void GetBlockInfo(IPlayer forPlayer, StringBuilder dsc)
+    {
+        base.GetBlockInfo(forPlayer, dsc);
+        if (Api == null) return;
+
+        Vec3d w = Api.World.BlockAccessor.GetWindSpeedAt(Pos.ToVec3d());
+        dsc.AppendLine(Lang.Get("dynamicwind:blockinfo-windheading", WindCompass.GetName(w.X, w.Z)));
     }
 
     public override bool OnTesselation(ITerrainMeshPool mesher, ITesselatorAPI tessThreadTesselator)

@@ -9,201 +9,218 @@ namespace DynamicWind.Config;
 /// <c>LoadModConfig</c>/<c>StoreModConfig</c>) AND the network packet (via protobuf) that the server
 /// pushes to clients. Attributes (<see cref="DescriptionAttribute"/>/<see cref="RangeAttribute"/>/
 /// <see cref="CategoryAttribute"/>) are read reflectively by the optional ConfigLib integration to
-/// build the in-game GUI; they are inert when ConfigLib is absent.
+/// build the in-game GUI; they are inert when ConfigLib is absent. ConfigLib's managed-config reflection
+/// does NOT use <c>[Category]</c> for visual grouping — it only recognizes the literal tags
+/// <c>"logarithmic"</c> (log-scale slider) and <c>"clientside"</c> (bypasses the controlserver privilege
+/// check), so it's applied only to properties that need one of those.
 ///
 /// All settings are FLAT top-level scalar properties: ConfigLib's managed-config reflection only sees
 /// top-level scalars (it does not recurse into nested objects), so flattening makes every knob appear
-/// in the GUI. The <c>[Category]</c> attribute groups them visually.
+/// in the GUI.
 /// </summary>
 [ProtoContract(ImplicitFields = ImplicitFields.AllPublic)]
 public class DynamicWindConfig
 {
     // ── Jetstream (base flow) ───────────────────────────────────────────────
-    [Category("Jetstream")]
     [Range(0.0, 3.0)]
-    [Description("Strength multiplier of the base west-to-east jetstream flow (1.0 = nominal).")]
-    public float BaseJetstreamStrength { get; set; } = 1.0f;
+    [Description("description-BaseJetstreamStrength")]
+    public float BaseJetstreamStrength { get; set; } = 0.7f;
 
-    [Category("Jetstream")]
     [Range(0.0, 1.5)]
-    [Description("Maximum meander of the jetstream bearing, in radians. 0 = perfectly straight east.")]
+    [Description("description-JetstreamMeanderAmplitude")]
     public float JetstreamMeanderAmplitude { get; set; } = 0.9f;
 
-    [Category("Jetstream")]
+    [Category("logarithmic")]
     [Range(0.1, 4.0)]
-    [Description("Frequency of the jetstream meander: higher makes the bearing snake more across north/south distance and evolve faster over time.")]
+    [Description("description-JetstreamMeanderFrequency")]
     public float JetstreamMeanderFrequency { get; set; } = 2.0f;
 
-    [Category("Jetstream")]
     [Range(0.0, 1.0)]
-    [Description("Amplitude of the slow jet-streak speed noise (jetstream baseline × 1 ± this). Gives faster/slower jet segments. 0 = constant.")]
+    [Description("description-JetstreamNoiseAmplitude")]
     public float JetstreamNoiseAmplitude { get; set; } = 0.3f;
 
-    [Category("Jetstream")]
+    [Category("logarithmic")]
     [Range(0.0, 500.0)]
-    [Description("How strongly wind flows down the pressure gradient (high → low). 0 disables pressure-driven wind.")]
+    [Description("description-PressureWindStrength")]
     public float PressureWindStrength { get; set; } = 150f;
 
-    [Category("Jetstream")]
-    [Range(0.0, 2.0)]
-    [Description("Extra wind speed added by pressure fronts on top of vanilla's wind (additive, so fronts blow even when vanilla wind is calm). 0 = fronts add no wind, wind is purely vanilla's speed in our direction.")]
+    [Range(0.0, 1.0)]
+    [Description("description-FrontWindStrength")]
     public float FrontWindStrength { get; set; } = 0.4f;
 
-    [Category("Jetstream")]
-    [Description("Shift the westerly bias north/south with the seasons (poleward in summer → southwesterly, equatorward in winter → northwesterly; mirrored per hemisphere).")]
+    [Description("description-SeasonalBias")]
     public bool SeasonalBias { get; set; } = true;
 
-    [Category("Jetstream")]
     [Range(0.0, 80.0)]
-    [Description("Maximum north/south tilt of the westerly at peak summer/winter, in degrees (45 ≈ pure NW/SW at the extremes).")]
+    [Description("description-SeasonalBiasMaxAngleDeg")]
     public float SeasonalBiasMaxAngleDeg { get; set; } = 60f;
 
     // ── Pressure systems ────────────────────────────────────────────────────
-    [Category("PressureSystems")]
     [Range(0.0, 24.0)]
-    [Description("Average number of low-pressure systems (storms) spawned per game day.")]
+    [Description("description-LowSpawnRatePerDay")]
     public float LowSpawnRatePerDay { get; set; } = 3.0f;
 
-    [Category("PressureSystems")]
     [Range(0.0, 24.0)]
-    [Description("Average number of high-pressure systems (clear/calm) spawned per game day.")]
+    [Description("description-HighSpawnRatePerDay")]
     public float HighSpawnRatePerDay { get; set; } = 2.0f;
 
-    [Category("PressureSystems")]
+    [Category("logarithmic")]
     [Range(50.0, 8000.0)]
-    [Description("Minimum pressure-cell influence radius, in blocks (safety clamp; cell size is derived from the loaded-chunk extent).")]
+    [Description("description-CellRadiusMin")]
     public float CellRadiusMin { get; set; } = 4000f;
 
-    [Category("PressureSystems")]
+    [Category("logarithmic")]
     [Range(50.0, 32000.0)]
-    [Description("Maximum pressure-cell influence radius, in blocks (safety clamp; cell size is derived from the loaded-chunk extent).")]
+    [Description("description-CellRadiusMax")]
     public float CellRadiusMax { get; set; } = 16000f;
 
-    [Category("PressureSystems")]
     [Range(0.0, 60.0)]
-    [Description("Cyclonic inflow/outflow tilt of circulation around a pressure cell, in degrees.")]
+    [Description("description-CyclonicInflowAngleDeg")]
     public float CyclonicInflowAngleDeg { get; set; } = 20f;
 
-    [Category("PressureSystems")]
     [Range(0.0, 6.0)]
-    [Description("How strongly wind swirls around pressure systems (multiplier on each cell's circulation). Higher = stronger, more obvious rotation around lows/highs.")]
+    [Description("description-CirculationStrength")]
     public float CirculationStrength { get; set; } = 2.5f;
 
-    [Category("PressureSystems")]
     [Range(0.0, 64.0)]
-    [Description("Maximum number of pressure systems active at once; new spawns and thermal seeds are skipped while at this cap (merges still reduce the count).")]
+    [Description("description-MaxActiveCells")]
     public int MaxActiveCells { get; set; } = 9;
 
     // ── Weather coupling ────────────────────────────────────────────────────
-    [Category("Weather")]
     [Range(0.0, 2.0)]
-    [Description("How strongly low pressure biases weather toward storms (and raises wind strength). 0 disables coupling.")]
+    [Description("description-StormCouplingStrength")]
     public float StormCouplingStrength { get; set; } = 1.0f;
 
-    [Category("Weather")]
     [Range(0.0, 2.0)]
-    [Description("How strongly the weather feeds back onto pressure: clear skies lower a cell's pressure (toward high), clouds raise it (toward low), and storms raise it strongly (deep low). 0 disables the weather→pressure feedback.")]
+    [Description("description-WeatherPressureCoupling")]
     public float WeatherPressureCoupling { get; set; } = 0.3f;
 
     // ── Temperature ─────────────────────────────────────────────────────────
-    [Category("Temperature")]
     [Range(0.0, 15.0)]
-    [Description("Maximum °C a peak pressure system shifts local temperature: a deep low (+) warms, a strong high (−) cools. 0 disables front temperature.")]
+    [Description("description-FrontTemperatureMax")]
     public float FrontTemperatureMax { get; set; } = 3.0f;
 
-    [Category("Temperature")]
     [Range(0.0, 5.0)]
-    [Description("Maximum °C the terrain-thermal field shifts local temperature (warm dry land warms, cool/deep water cools). 0 disables terrain temperature.")]
+    [Description("description-ThermalTemperatureMax")]
     public float ThermalTemperatureMax { get; set; } = 1.0f;
 
     // ── Clouds ──────────────────────────────────────────────────────────────
-    [Category("Clouds")]
-    [Description("Make clouds drift along the true wind direction (requires patching the cloud renderer).")]
+    [ProtoIgnore]
+    [Category("clientside")]
+    [Description("description-CloudsFollowWind")]
     public bool CloudsFollowWind { get; set; } = true;
 
     // ── Pressure dynamics ───────────────────────────────────────────────────
-    [Category("PressureDynamics")]
     [Range(0.0, 1.0)]
-    [Description("Fractional pressure drop reached at the build ceiling (0.5 = −50%). Pressure falls with altitude toward 'low'; no effect at/below sea level.")]
+    [Description("description-AltitudePressureDrop")]
     public float AltitudePressureDrop { get; set; } = 0.5f;
 
-    [Category("PressureDynamics")]
-    [Description("Advect pressure cells along the local wind (so the pressure differential moves with the wind) instead of a fixed jetstream velocity.")]
+    [Description("description-AdvectWithWind")]
     public bool AdvectWithWind { get; set; } = true;
 
-    [Category("PressureDynamics")]
+    [Category("logarithmic")]
     [Range(0.0, 2000.0)]
-    [Description("Cell drift speed in blocks per game-hour per unit of wind strength. Higher = pressure systems travel faster.")]
+    [Description("description-AdvectionSpeed")]
     public float AdvectionSpeed { get; set; } = 400f;
 
-    [Category("PressureDynamics")]
     [Range(0.0, 1.0)]
-    [Description("How fast cells spread out (radius grows) and fade (strength decays) over their life. 0 = no dispersal.")]
+    [Description("description-DispersalRate")]
     public float DispersalRate { get; set; } = 0.3f;
 
-    [Category("PressureDynamics")]
     [Range(0.0, 1.0)]
-    [Description("Bernoulli coupling: faster-moving air lowers local pressure, stagnant air raises it. 0 disables speed→pressure feedback.")]
+    [Description("description-BernoulliStrength")]
     public float BernoulliStrength { get; set; } = 0.3f;
 
-    [Category("PressureDynamics")]
-    [Description("Spawn mobile, dispersing pressure cells from terrain thermal hotspots (hot dry land → low, deep water → high) so terrain influence drifts with the wind.")]
+    [Description("description-ThermalSeeding")]
     public bool ThermalSeeding { get; set; } = true;
 
-    [Category("PressureDynamics")]
     [Range(0.0, 1.0)]
-    [Description("How much of the raw terrain thermal field stays as a static, terrain-pinned baseline (the rest is expressed as mobile seeded cells). 1 = fully static (old behaviour), 0 = fully mobile.")]
+    [Description("description-ThermalStaticScale")]
     public float ThermalStaticScale { get; set; } = 0.35f;
 
     // ── Orographic (terrain) ────────────────────────────────────────────────
-    [Category("Orographic")]
-    [Description("Let terrain slow and deflect wind (mountains block, valleys channel).")]
+    [Description("description-OrographicEnabled")]
     public bool OrographicEnabled { get; set; } = true;
 
-    [Category("Orographic")]
     [Range(0.0, 255.0)]
-    [Description("Terrain height (blocks) above which wind starts to slow.")]
+    [Description("description-OrographicHeightThreshold")]
     public float OrographicHeightThreshold { get; set; } = 130f;
 
-    [Category("Orographic")]
     [Range(0.0, 1.0)]
-    [Description("Maximum fractional wind slowdown over the highest terrain.")]
+    [Description("description-OrographicSlowdownFactor")]
     public float OrographicSlowdownFactor { get; set; } = 0.5f;
 
-    [Category("Orographic")]
     [Range(0.0, 3.0)]
-    [Description("How strongly terrain gradients deflect/curve the wind around obstacles.")]
+    [Description("description-OrographicDeflectionStrength")]
     public float OrographicDeflectionStrength { get; set; } = 1.0f;
 
-    [Category("Orographic")]
     [Range(0.0, 1.0)]
-    [Description("Wind speed loss in the sheltered lee (downwind) of higher terrain.")]
+    [Description("description-OrographicWakeFactor")]
     public float OrographicWakeFactor { get; set; } = 0.5f;
 
+    // ── Occlusion (indoor/underground shielding) ───────────────────────────
+    [Description("description-OcclusionEnabled")]
+    public bool OcclusionEnabled { get; set; } = true;
+
+    [Description("description-OcclusionRoomsZeroWind")]
+    public bool OcclusionRoomsZeroWind { get; set; } = true;
+
+    [Range(1.0, 24.0)]
+    [Description("description-OcclusionLightThreshold")]
+    public float OcclusionLightThreshold { get; set; } = 10f;
+
+    [Range(1.0, 6.0)]
+    [Description("description-OcclusionSharpness")]
+    public float OcclusionSharpness { get; set; } = 3f;
+
+    [Range(0.0, 1.0)]
+    [Description("description-OcclusionMinFactor")]
+    public float OcclusionMinFactor { get; set; } = 0f;
+
     // ── Windmill ────────────────────────────────────────────────────────────
-    [Category("Windmill")]
-    [Description("Scale windmill power by how well the wind aligns with the rotor axle.")]
+    [Description("description-WindmillDirectionality")]
     public bool WindmillDirectionality { get; set; } = true;
 
-    [Category("Windmill")]
     [Range(0.0, 1.0)]
-    [Description("Minimum directional efficiency floor so mills don't fully stall when wind is perpendicular to the axle. 0 = can stall completely.")]
+    [Description("description-WindmillMinEfficiency")]
     public float WindmillMinEfficiency { get; set; } = 0.0f;
 
     // ── Sailboat ────────────────────────────────────────────────────────────
-    [Category("Sailboat")]
-    [Description("Make sailboat speed depend on wind direction relative to heading.")]
+    [Description("description-SailboatEnabled")]
     public bool SailboatEnabled { get; set; } = true;
 
-    [Category("Sailboat")]
     [Range(0.0, 2.0)]
-    [Description("Fractional speed boost with a pure tailwind (0.5 = +50%).")]
+    [Description("description-SailboatTailwindMaxBoost")]
     public float SailboatTailwindMaxBoost { get; set; } = 0.5f;
 
-    [Category("Sailboat")]
     [Range(0.0, 1.0)]
-    [Description("Fractional speed penalty sailing straight into the wind (0.1 = -10%).")]
+    [Description("description-SailboatHeadwindMaxPenalty")]
     public float SailboatHeadwindMaxPenalty { get; set; } = 0.1f;
+
+    #region Client-side only properties
+
+    [ProtoIgnore]
+    [Category("clientside")]
+    [Description("description-DopplerRadarMapLayerVisibleByDefault")]
+    public bool DopplerRadarMapLayerVisibleByDefault { get; set; } = false;
+
+    [ProtoIgnore]
+    [Category("clientside")]
+    [Description("description-FrontMapLayerVisibleByDefault")]
+    public bool FrontMapLayerVisibleByDefault { get; set; } = false;
+
+    [ProtoIgnore]
+    [Category("clientside")]
+    [Description("description-WindDirectionMapLayerVisibleByDefault")]
+    public bool WindDirectionMapLayerVisibleByDefault { get; set; } = false;
+
+    [ProtoIgnore]
+    [Category("clientside,logarithmic")]
+    [Range(8.0, 64.0)]
+    [Description("description-RotorvaneSpeedMult")]
+    public float RotorvaneSpeedMult { get; set; } = 24f;
+
+    #endregion
 
     /// <summary>Clamp every value into its valid range. Mutates in place; safe to call repeatedly.</summary>
     public void Validate()
@@ -213,7 +230,7 @@ public class DynamicWindConfig
         JetstreamMeanderFrequency = Clamp(JetstreamMeanderFrequency, 0.1f, 4f);
         JetstreamNoiseAmplitude = Clamp(JetstreamNoiseAmplitude, 0f, 1f);
         PressureWindStrength = Clamp(PressureWindStrength, 0f, 500f);
-        FrontWindStrength = Clamp(FrontWindStrength, 0f, 2f);
+        FrontWindStrength = Clamp(FrontWindStrength, 0f, 1f);
         SeasonalBiasMaxAngleDeg = Clamp(SeasonalBiasMaxAngleDeg, 0f, 80f);
         LowSpawnRatePerDay = Clamp(LowSpawnRatePerDay, 0f, 24f);
         HighSpawnRatePerDay = Clamp(HighSpawnRatePerDay, 0f, 24f);
@@ -240,10 +257,16 @@ public class DynamicWindConfig
         OrographicDeflectionStrength = Clamp(OrographicDeflectionStrength, 0f, 3f);
         OrographicWakeFactor = Clamp(OrographicWakeFactor, 0f, 1f);
 
+        OcclusionLightThreshold = Clamp(OcclusionLightThreshold, 1f, 24f);
+        OcclusionSharpness = Clamp(OcclusionSharpness, 1f, 6f);
+        OcclusionMinFactor = Clamp(OcclusionMinFactor, 0f, 1f);
+
         WindmillMinEfficiency = Clamp(WindmillMinEfficiency, 0f, 1f);
 
         SailboatTailwindMaxBoost = Clamp(SailboatTailwindMaxBoost, 0f, 2f);
         SailboatHeadwindMaxPenalty = Clamp(SailboatHeadwindMaxPenalty, 0f, 1f);
+
+        RotorvaneSpeedMult = Clamp(RotorvaneSpeedMult, 1f, 24f);
     }
 
     internal static float Clamp(float v, float min, float max) => v < min ? min : (v > max ? max : v);
@@ -274,7 +297,6 @@ public class DynamicWindConfig
         WeatherPressureCoupling = o.WeatherPressureCoupling;
         FrontTemperatureMax = o.FrontTemperatureMax;
         ThermalTemperatureMax = o.ThermalTemperatureMax;
-        CloudsFollowWind = o.CloudsFollowWind;
         AltitudePressureDrop = o.AltitudePressureDrop;
         AdvectWithWind = o.AdvectWithWind;
         AdvectionSpeed = o.AdvectionSpeed;
@@ -287,6 +309,11 @@ public class DynamicWindConfig
         OrographicSlowdownFactor = o.OrographicSlowdownFactor;
         OrographicDeflectionStrength = o.OrographicDeflectionStrength;
         OrographicWakeFactor = o.OrographicWakeFactor;
+        OcclusionEnabled = o.OcclusionEnabled;
+        OcclusionRoomsZeroWind = o.OcclusionRoomsZeroWind;
+        OcclusionLightThreshold = o.OcclusionLightThreshold;
+        OcclusionSharpness = o.OcclusionSharpness;
+        OcclusionMinFactor = o.OcclusionMinFactor;
         WindmillDirectionality = o.WindmillDirectionality;
         WindmillMinEfficiency = o.WindmillMinEfficiency;
         SailboatEnabled = o.SailboatEnabled;

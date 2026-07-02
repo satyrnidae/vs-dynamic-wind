@@ -3,7 +3,7 @@
 	"class": "BlockWeathervane",
 	"entityClass": "BlockEntityWeathervane",
 	"variantgroups": [
-		{ "code": "metal", "states": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"] }
+		{ "code": "metal", "loadFromProperties": "dynamicwind:block/weathervane-metal" }
 	],
 	"shape": { "base": "dynamicwind:block/weathervane" },
 	"textures": {

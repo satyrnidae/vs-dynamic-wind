@@ -31,10 +31,16 @@ internal static class DynamicWindConfigLib
 
         string domain = DynamicWindModCommon.Domain;
 
+        // Deliberately NOT DynamicWindModCommon.ConfigFileName: ConfigLib resolves its own `path` to
+        // the exact same ModConfig/<file> location our mod's own LoadModConfig/StoreModConfig use. In
+        // singleplayer the server round-trip (see DynamicWindModServer.OnConfigUpdateRequest) writes
+        // that file on every settings change with whatever it has in memory for the clientside-only
+        // (ProtoIgnore, never transmitted) properties — near-instantly clobbering whatever ConfigLib
+        // just wrote for those properties and reverting them once something re-reads the file.
         configLib.RegisterCustomManagedConfig(
             domain,
             config,
-            path: DynamicWindModCommon.ConfigFileName,
+            path: "dynamicwind-configlib.json",
             onSyncedFromServer: applyLocal,
             onSettingChanged: _ => requestServerApply());
 

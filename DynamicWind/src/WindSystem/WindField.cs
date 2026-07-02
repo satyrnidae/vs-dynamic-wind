@@ -219,14 +219,28 @@ public class WindField
     /// Wind vector at a world position. X/Z components are East/South; the magnitude is the strength
     /// multiplier (≈1.0 in calm jetstream flow, higher near strong lows).
     /// </summary>
-    public Vec2d WindAt(double x, double z, double totalHours) => WindAt(x, z, totalHours, -1);
+    public Vec2d WindAt(double x, double z, double totalHours) => WindAt(x, z, totalHours, -1, out _);
+
+    /// <summary>
+    /// As <see cref="WindAt(double,double,double)"/> but also reports the orographic speed attenuation
+    /// (1 = unaffected by terrain, &lt;1 = slowed by windward climb/lee wake) so callers that derive their
+    /// own speed from something other than this vector's magnitude — see
+    /// <see cref="DynamicWindModCommon.OnGetWindSpeed"/> — can still apply the terrain slowdown.
+    /// </summary>
+    public Vec2d WindAt(double x, double z, double totalHours, out double orographicFactor) =>
+        WindAt(x, z, totalHours, -1, out orographicFactor);
 
     /// <summary>
     /// As <see cref="WindAt(double,double,double)"/> but optionally excluding one cell index from both
     /// the circulation sum and the pressure gradient. Used by the server sim to advect a cell on the
     /// <em>background</em> flow (everything but its own contribution), avoiding self-advection.
     /// </summary>
-    public Vec2d WindAt(double x, double z, double totalHours, int excludeCell)
+    public Vec2d WindAt(double x, double z, double totalHours, int excludeCell) =>
+        WindAt(x, z, totalHours, excludeCell, out _);
+
+    /// <summary>As <see cref="WindAt(double,double,double,int)"/> plus the orographic factor (see the
+    /// <c>out</c> overload above).</summary>
+    public Vec2d WindAt(double x, double z, double totalHours, int excludeCell, out double orographicFactor)
     {
         // Base jetstream: due-East flow with a slow meandering bearing, tilted N/S by the season
         // (poleward in summer → −Z, equatorward in winter → +Z; sign is in SeasonalBiasZ).
@@ -283,9 +297,10 @@ public class WindField
         }
 
         // 4. Orographic interaction with terrain.
+        orographicFactor = 1.0;
         if (OrographicEnabled && TerrainHeightFunc != null)
         {
-            ApplyOrographic(ref wx, ref wz, x, z);
+            ApplyOrographic(ref wx, ref wz, x, z, out orographicFactor);
         }
 
         return new Vec2d(wx, wz);
@@ -295,10 +310,12 @@ public class WindField
     /// Terrain interaction: wind climbing into a slope slows (stagnation) and curves along the contour
     /// around the obstacle; wind sheltered by higher terrain upwind slows in the lee wake.
     /// </summary>
-    private void ApplyOrographic(ref double wx, ref double wz, double x, double z)
+    private void ApplyOrographic(ref double wx, ref double wz, double x, double z, out double orographicFactor)
     {
-        double spd = Math.Sqrt(wx * wx + wz * wz);
-        if (spd < 1e-4) return;
+        orographicFactor = 1.0;
+        double origSpd = Math.Sqrt(wx * wx + wz * wz);
+        if (origSpd < 1e-4) return;
+        double spd = origSpd;
         double dirx = wx / spd;
         double dirz = wz / spd;
 
@@ -339,6 +356,7 @@ public class WindField
 
         wx = dirx * spd;
         wz = dirz * spd;
+        orographicFactor = spd / origSpd;
     }
 
     /// <summary>Signed pressure at a position (sum of cell contributions). + = low, - = high.</summary>

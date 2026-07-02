@@ -2,7 +2,6 @@ using System;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using DynamicWind.Config;
-using DynamicWind.WindSystem;
 using HarmonyLib;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
@@ -12,10 +11,15 @@ namespace DynamicWind.Patches;
 
 /// <summary>
 /// Server Harmony patch giving windmills directional response. Vanilla
-/// <see cref="BEBehaviorWindmillRotor"/>.CheckWindSpeed sets a scalar <c>windSpeed</c> (strength only).
-/// Our postfix scales it by |cos θ| between the wind and the rotor axle (<c>ownFacing</c>) — parallel =
-/// full power, perpendicular = stalled — and records the SIGN of the alignment: when the wind comes from
-/// behind the rotor (cos θ &lt; 0) the mill should turn backwards.
+/// <see cref="BEBehaviorWindmillRotor"/>.CheckWindSpeed sets its scalar <c>windSpeed</c> from
+/// <c>WeatherSystemBase.WeatherDataSlowAccess.GetWindSpeed(pos)</c> — the same raw, undirected vanilla
+/// noise source <see cref="Client.Patches.HudClockWindPatch"/> has to work around — which is completely
+/// disconnected from this mod's actual wind field (front excess, jetstream noise, orographic slowdown,
+/// occlusion). Our postfix OVERWRITES it (not scales it) with the magnitude of the real, hooked wind at
+/// this block (<see cref="IBlockAccessor.GetWindSpeedAt"/>, the same value the HUD/particles/etc. see),
+/// then applies |cos θ| between that wind and the rotor axle (<c>ownFacing</c>) — parallel = full power,
+/// perpendicular = stalled — and records the SIGN of the alignment: when the wind comes from behind the
+/// rotor (cos θ &lt; 0) the mill should turn backwards.
 ///
 /// The engine can't reverse from a negative windSpeed alone (<see cref="BEBehaviorMPRotor"/>.GetTorque
 /// does <c>Max(0, …)</c>, so a negative target just stalls). So we keep windSpeed as the positive torque
@@ -58,16 +62,18 @@ internal static class WindmillDirectionality
     private static void CheckWindSpeedPostfix(BEBehaviorWindmillRotor __instance)
     {
         DynamicWindConfig? cfg = DynamicWindRuntime.ServerConfig;
-        WindField? field = DynamicWindRuntime.ServerField;
-        if (cfg == null || field == null || !cfg.WindmillDirectionality) return;
+        if (cfg == null || !cfg.WindmillDirectionality) return;
         if (fWindSpeed == null || fOwnFacing == null) return;
 
         if (fOwnFacing.GetValue(__instance) is not BlockFacing axle) return;
         BlockPos pos = __instance.Blockentity.Pos;
+        ICoreAPI api = __instance.Blockentity.Api;
 
-        Vec2d w = field.WindAt(pos.X, pos.Z, __instance.Blockentity.Api.World.Calendar.TotalHours);
-        double len = w.Length();
-        if (len < 1e-6) return;
+        // The real, hooked wind at this block — front excess, jetstream noise, orographic slowdown,
+        // occlusion all already folded in — NOT vanilla's raw, undirected noise (see class remarks).
+        Vec3d trueWind = api.World.BlockAccessor.GetWindSpeedAt(pos.ToVec3d());
+        double len = Math.Sqrt(trueWind.X * trueWind.X + trueWind.Z * trueWind.Z);
+        if (len < 1e-6) { fWindSpeed.SetValue(__instance, 0.0); return; }
 
         // Align against the rotor's own facing axis. (The earlier "E/W↔N/S reversed" report was a
         // spin-DIRECTION inversion — a 180° flip — not a 90° axis swap, so we keep ownFacing and flip the
@@ -78,15 +84,16 @@ internal static class WindmillDirectionality
         if (al < 1e-6) return;
 
         // SIGNED alignment (no Math.Abs). The sign chooses spin direction; magnitude is the power.
-        double dot = (w.X * ax + w.Y * az) / (len * al); // [-1, 1]
+        double dot = (trueWind.X * ax + trueWind.Z * az) / (len * al); // [-1, 1]
         double mag = Math.Abs(dot);
         if (mag < cfg.WindmillMinEfficiency) mag = cfg.WindmillMinEfficiency;
         if (mag > 1.0) mag = 1.0;
 
         // windSpeed stays the positive torque MAGNITUDE; reversal is done by flipping the drive direction
         // in GetTorque (so the vanilla speed governor still caps the speed — negating torque does not).
-        double ws = (double)fWindSpeed.GetValue(__instance)!;
-        fWindSpeed.SetValue(__instance, ws * mag);
+        // This OVERWRITES vanilla's own windSpeed rather than scaling it, since that value never agreed
+        // with our field in the first place.
+        fWindSpeed.SetValue(__instance, len * mag);
 
         // Update the wind-reversal state and, on a TRANSITION, reverse the whole mechanical network the
         // way vanilla does: MechanicalNetwork.DirectionHasReversed flips the network's speed sign once on

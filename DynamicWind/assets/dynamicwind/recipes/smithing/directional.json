@@ -1,0 +1,38 @@
+[{
+  "ingredient": {
+    "type": "item",
+    "code": "game:ingot-*",
+    "name": "metal",
+    "allowedVariants": [ "copper", "brass", "tinbronze", "blackbronze", "iron", "steel" ]
+  },
+  "pattern": [[
+    "##_#________###",
+    "#_############_",
+    "#__#_______###_"
+  ]],
+  "name": "north south directional",
+  "code": "directional-northsouth-{metal}",
+  "output": {
+    "type": "item",
+    "code": "directional-northsouth-{metal}"
+  }
+},
+{
+  "ingredient": {
+    "type": "item",
+    "code": "game:ingot-*",
+    "name": "metal",
+    "allowedVariants": [ "copper", "brass", "tinbronze", "blackbronze", "iron", "steel" ]
+  },
+  "pattern": [[
+    "#__#______####",
+    "############__",
+    "####______####"
+  ]],
+  "name": "west east directional",
+  "code": "directional-westeast-{metal}",
+  "output": {
+    "type": "item",
+    "code": "directional-westeast-{metal}"
+  }
+}]

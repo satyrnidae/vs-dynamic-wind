@@ -15,11 +15,6 @@ namespace DynamicWind.Client.Render;
 /// </summary>
 public class RotorvaneRenderer : IRenderer
 {
-    // Radians/s per unit of horizontal wind speed. Positive spins the hub's local +X axis in the
-    // direction that reads counterclockwise to an observer standing outside the block, looking inward
-    // along -X toward the mast (the side the fan protrudes from).
-    public const float SpinSpeedFactor = 8f;
-
     private readonly ICoreClientAPI capi;
     private readonly BlockEntityRotorvane be;
     private readonly Vec3d pos;
@@ -29,9 +24,14 @@ public class RotorvaneRenderer : IRenderer
     private MeshRef? spinnerMeshref;
     private float currentYaw;
     private float spinAngle;
+    private readonly TurnSqueakSound turnSqueak;
 
     public double RenderOrder => 0.5;
     public int RenderRange => 48;
+
+    /// <summary>The assembly's current eased yaw (radians); read by <see cref="BlockEntityRotorvane"/> to
+    /// derive the facing-direction spin/pitch modulator from how far it still lags the true wind bearing.</summary>
+    public float CurrentYaw => currentYaw;
 
     public RotorvaneRenderer(ICoreClientAPI capi, BlockEntityRotorvane be, Vec3f spinnerPivot)
     {
@@ -39,6 +39,7 @@ public class RotorvaneRenderer : IRenderer
         this.be = be;
         this.spinnerPivot = spinnerPivot;
         pos = be.Pos.ToVec3d();
+        turnSqueak = new TurnSqueakSound(capi, pos);
     }
 
     public void SetMeshes(MeshRef assemblyMesh, MeshRef spinnerMesh)
@@ -52,15 +53,19 @@ public class RotorvaneRenderer : IRenderer
         if (assemblyMeshref == null || assemblyMeshref.Disposed) return;
         if (spinnerMeshref == null || spinnerMeshref.Disposed) return;
 
-        float target = be.GetTargetYaw();
-        if (!float.IsNaN(target))
+        if (!capi.IsGamePaused)
         {
-            float delta = GameMath.AngleRadDistance(currentYaw, target);
-            currentYaw += delta * Math.Min(1f, dt * 3f); // smooth swing
-        }
+            float target = be.GetTargetYaw();
+            if (!float.IsNaN(target))
+            {
+                float delta = GameMath.AngleRadDistance(currentYaw, target);
+                currentYaw += delta * Math.Min(1f, dt * 3f); // smooth swing
+            }
+            turnSqueak.Update(currentYaw, target);
 
-        spinAngle += be.GetSpinSpeed() * dt;
-        spinAngle = GameMath.Mod(spinAngle, GameMath.TWOPI);
+            spinAngle += be.GetSpinSpeed() * dt;
+            spinAngle = GameMath.Mod(spinAngle, GameMath.TWOPI);
+        }
 
         IRenderAPI rpi = capi.Render;
         Vec3d cam = capi.World.Player.Entity.CameraPos;

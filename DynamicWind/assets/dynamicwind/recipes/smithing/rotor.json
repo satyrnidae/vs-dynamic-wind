@@ -3,7 +3,7 @@
     "type": "item",
     "code": "game:ingot-*",
     "name": "metal",
-    "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+    "allowedVariants": [ "copper", "brass", "tinbronze", "blackbronze", "iron", "steel" ]
   },
   "pattern": [[
     "_#_#_#_",
@@ -14,10 +14,10 @@
     "#_###_#",
     "_#_#_#_"
   ]],
-  "name": "weathervane rotor",
-  "code": "weathervane-rotor-{metal}",
+  "name": "vane rotor",
+  "code": "rotor-{metal}",
   "output": {
     "type": "item",
-    "code": "weathervane-rotor-{metal}"
+    "code": "rotor-{metal}"
   }
 }]

@@ -4,7 +4,9 @@ using DynamicWind.Network;
 using DynamicWind.WindSystem;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
+using Vintagestory.API.Common.Entities;
 using Vintagestory.API.MathTools;
+using Vintagestory.GameContent;
 
 namespace DynamicWind;
 
@@ -26,6 +28,7 @@ public abstract class DynamicWindModCommon : ModSystem
     public DynamicWindConfig Config { get; protected set; } = new();
     protected INetworkChannel Channel { get; private set; } = null!;
     protected readonly WindField Field = new();
+    private RoomRegistry? roomRegistry;
 
     public override bool ShouldLoad(EnumAppSide side) => false;
 
@@ -38,6 +41,7 @@ public abstract class DynamicWindModCommon : ModSystem
         Api = api;
         LoadConfig(api);
         ApplyConfigToField();
+        roomRegistry = api.ModLoader.GetModSystem<RoomRegistry>();
 
         Channel = (api.Network.GetChannel(ChannelName) ?? api.Network.RegisterChannel(ChannelName))
             .RegisterMessageType(typeof(DynamicWindConfig))
@@ -92,21 +96,99 @@ public abstract class DynamicWindModCommon : ModSystem
     /// </summary>
     protected void OnGetWindSpeed(Vec3d pos, ref Vec3d windSpeed)
     {
-        double vsSpeed = windSpeed.X; // vanilla's own wind-speed variation
         double th = Api.World.Calendar.TotalHours;
-        Vec2d w = Field.WindAt(pos.X, pos.Z, th);
+        Vec3d result = ComputeWindSpeed(pos, windSpeed.X, th, applyOcclusion: true);
+        windSpeed.X = result.X;
+        windSpeed.Z = result.Z;
+    }
+
+    /// <summary>
+    /// Core directional wind formula behind <see cref="OnGetWindSpeed"/>, factored out so callers that
+    /// need the true wind speed but can't (or shouldn't) pay for the per-position occlusion check — e.g.
+    /// <see cref="Client.MapLayers.WindArrowMapLayer"/>, which samples a 24×24 world-map grid where
+    /// "indoors" is meaningless and the room/light lookups would be the dominant cost — can pass
+    /// <paramref name="applyOcclusion"/> = false and get the same speed/direction sans that factor.
+    /// <paramref name="vsSpeed"/> is vanilla's own raw wind-speed noise at <paramref name="pos"/> (e.g.
+    /// <c>WeatherSystemBase.WeatherDataSlowAccess.GetWindSpeed(pos)</c>), taken as a parameter so callers
+    /// outside the hook chain (which never receive vanilla's pre-computed value) can supply it directly.
+    /// </summary>
+    public Vec3d ComputeWindSpeed(Vec3d pos, double vsSpeed, double totalHours, bool applyOcclusion)
+    {
+        Vec2d w = Field.WindAt(pos.X, pos.Z, totalHours, out double oroFactor);
 
         double mag = w.Length();
-        if (mag < 1e-6) return; // degenerate field → leave vanilla value
+        if (mag < 1e-6) return new Vec3d(vsSpeed, 0, 0); // degenerate field → leave vanilla value
+
+        // Front strength is read from the field magnitude BEFORE orographic slowdown, so a system's
+        // intensity isn't double-counted once here and again when the terrain factor is applied below.
+        double preOroMag = oroFactor > 1e-6 ? mag / oroFactor : mag;
 
         // Baseline jetstream speed = vanilla's, modulated by a slow jet-streak noise (faster/slower
-        // segments, never zero). Pressure fronts then ADD wind on top of that.
-        double frontExcess = mag - Field.BaseStrength;
+        // segments, never zero). Pressure fronts then ADD wind on top of that. Orographic interaction
+        // (windward climb, lee wake) then scales the WHOLE total down, so terrain slows baseline wind
+        // too, not just front-driven excess.
+        double frontExcess = preOroMag - Field.BaseStrength;
         if (frontExcess < 0) frontExcess = 0;
-        double speed = vsSpeed * Field.JetStreak(pos.X, pos.Z, th) + Config.FrontWindStrength * frontExcess;
+        double speed = (vsSpeed * Field.JetStreak(pos.X, pos.Z, totalHours) + Config.FrontWindStrength * frontExcess) * oroFactor;
 
-        windSpeed.X = speed * w.X / mag;
-        windSpeed.Z = speed * w.Y / mag;
+        if (applyOcclusion && Config.OcclusionEnabled && !IsAmbientPlayerQuery(pos)) speed *= OcclusionFactor(pos);
+
+        return new Vec3d(speed * w.X / mag, 0, speed * w.Y / mag);
+    }
+
+    /// <summary>
+    /// True if <paramref name="pos"/> is (X/Z-wise) the client player's own position. Vanilla's
+    /// <c>WeatherSystemClient.OnRenderFrame</c> calls <c>GetWindSpeedAt</c> at the player's exact X/Z
+    /// every frame (once at the player's own Y, once at the player-column's rain-map-height Y) purely to
+    /// smooth <c>GlobalConstants.CurrentWindSpeedClient</c>/<c>CurrentSurfaceWindSpeedClient</c> — a single
+    /// value vanilla then broadcasts world-wide for things like the foliage-sway shader uniform, which is
+    /// NOT re-queried per leaf/block. If we occluded that call, a player standing in one shed would freeze
+    /// foliage sway for the ENTIRE visible world, not just their shed. Real per-position callers (dropped
+    /// items, particles, weathervanes) pass their own world position, essentially never the player's exact
+    /// X/Z, so this exemption doesn't leak into legitimate occlusion elsewhere.
+    /// </summary>
+    private bool IsAmbientPlayerQuery(Vec3d pos)
+    {
+        if (Api is not ICoreClientAPI capi) return false;
+        Entity? plr = capi.World.Player?.Entity;
+        if (plr == null) return false;
+        double dx = pos.X - plr.Pos.X;
+        double dz = pos.Z - plr.Pos.Z;
+        return dx * dx + dz * dz < 0.01;
+    }
+
+    /// <summary>
+    /// Shielding from roofs/walls/underground. A position inside a fully enclosed vanilla "room"
+    /// (<see cref="RoomRegistry"/> — the same room detection cellars/greenhouses use for cooling/humidity,
+    /// <c>ExitCount == 0</c> meaning no gaps to open air) gets flat-zero wind: a glass-roofed greenhouse
+    /// still reads bright on <c>OnlySunLight</c>, so the light-based falloff below would miss it, but it
+    /// has no opening for outside air to actually move through. Everywhere else falls back to a power-curve
+    /// falloff on sun-exposure light level (0 = fully enclosed, <see cref="DynamicWindConfig.OcclusionLightThreshold"/>
+    /// or above = fully open): <see cref="DynamicWindConfig.OcclusionSharpness"/> &gt; 1 keeps near-open spots
+    /// near full speed and only cuts hard once mostly enclosed.
+    ///
+    /// Both the room BFS and the light lookup touch chunk data, so skip both entirely outside loaded
+    /// terrain (fully open) — otherwise the world-map wind overlay pays this cost every sampled cell at
+    /// high zoom-out, most of which land in unloaded chunks it can't usefully occlude anyway
+    /// (<see cref="WindArrowMapLayer"/> intentionally samples everywhere via <c>RequireChunkLoaded = false</c>).
+    /// </summary>
+    private double OcclusionFactor(Vec3d pos)
+    {
+        BlockPos bp = new((int)pos.X, (int)pos.Y, (int)pos.Z, 0);
+        if (Api.World.BlockAccessor.GetChunkAtBlockPos(bp) == null) return 1.0;
+
+        if (Config.OcclusionRoomsZeroWind && roomRegistry != null)
+        {
+            Room room = roomRegistry.GetRoomForPosition(bp);
+            if (room != null && room.ExitCount == 0 && room.SkylightCount + room.NonSkylightCount > 0) return 0.0;
+        }
+
+        int sunLight = Api.World.BlockAccessor.GetLightLevel(bp, EnumLightLevelType.OnlySunLight);
+
+        double t = sunLight / (double)Config.OcclusionLightThreshold;
+        if (t < 0) t = 0; else if (t > 1) t = 1;
+
+        return Config.OcclusionMinFactor + (1.0 - Config.OcclusionMinFactor) * Math.Pow(t, Config.OcclusionSharpness);
     }
 
     // Re-entrancy guard: the terrain-thermal term below calls ThermalPressureFunc → TerrainThermal →

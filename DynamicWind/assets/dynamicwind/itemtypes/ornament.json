@@ -1,5 +1,5 @@
 {
-  "code": "weathervane-ornament",
+  "code": "ornament",
   "behaviors":[{
     "name": "GroundStorable",
     "properties": {
@@ -27,7 +27,7 @@
     }
   },
   "variantgroups": [
-    { "code": "metal", "states": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"] }
+    { "code": "metal", "loadFromProperties": "dynamicwind:block/weathervane-metal" }
   ],
   "shape": { "base": "item/ornament" },
   "textures": {

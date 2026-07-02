@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using DynamicWind.Config;
 using DynamicWind.WindSystem;
 using HarmonyLib;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
+using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
 using Vintagestory.GameContent;
 
@@ -20,11 +22,12 @@ namespace DynamicWind.Client.MapLayers;
 /// </summary>
 public class FrontMapLayer : MapLayer
 {
-    private const double RecomputeInterval = 0.5;
-    private const float TilePx = 14f;     // on-screen length of one front segment tile
-    private const float MarkerPx = 26f;   // on-screen size of an H/L letter
+    private const double RecomputeInterval = 0.5; // seconds between resamples (2 fps, matches wind arrows/Doppler)
+    private const float TilePx = 32f;     // on-screen length of one front segment tile
+    private const float MarkerPx = 48f;   // on-screen size of an H/L letter
     private const double CurveAmpFactor = 0.06; // × front length, curvature amplitude
 
+    private DynamicWindConfig? cfg;
     private ICoreClientAPI? capi;
     private MeshRef? quad;
     private int texWarm, texCold, texStationary, texHigh, texLow;
@@ -39,7 +42,7 @@ public class FrontMapLayer : MapLayer
 
     public FrontMapLayer(ICoreAPI api, IWorldMapManager mapSink) : base(api, mapSink) { }
 
-    public override string Title => "Weather fronts";
+    public override string Title => Lang.Get("game:maplayer-dynamicwindfronts");
     public override string LayerGroupCode => "dynamicwindfronts";
     public override EnumMapAppSide DataSide => EnumMapAppSide.Client;
     public override bool RequireChunkLoaded => false;
@@ -47,6 +50,7 @@ public class FrontMapLayer : MapLayer
     public override void OnLoaded()
     {
         if (api.Side != EnumAppSide.Client) return;
+        cfg = DynamicWindRuntime.ClientConfig;
         capi = (ICoreClientAPI)api;
         quad = capi.Render.UploadMesh(QuadMeshUtil.GetQuad());
         texWarm = Tex("front-warm");
@@ -54,7 +58,7 @@ public class FrontMapLayer : MapLayer
         texStationary = Tex("front-stationary");
         texHigh = Tex("pressure-system-high");
         texLow = Tex("pressure-system-low");
-        Active = false; // off by default; toggle in the map legend
+        Active = cfg?.FrontMapLayerVisibleByDefault ?? false; // off by default; toggle in the map legend
     }
 
     private int Tex(string name) => capi!.Render.GetOrLoadTexture(new AssetLocation("dynamicwind", "textures/icons/" + name + ".png"));

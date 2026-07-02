@@ -1,5 +1,5 @@
 {
-  "code": "weathervane-directional",
+  "code": "directional",
   "behaviorsByType":{
     "*-northsouth-*": [{
       "name": "GroundStorable",
@@ -50,7 +50,7 @@
   },
   "variantgroups": [
     { "code": "direction", "states": [ "northsouth", "westeast" ]},
-    { "code": "metal", "states": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"] }
+    { "code": "metal", "loadFromProperties": "dynamicwind:block/weathervane-metal" }
   ],
   "shape": { "base": "item/directional-{direction}" },
   "textures": {

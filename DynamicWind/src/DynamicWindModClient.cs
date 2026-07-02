@@ -30,6 +30,7 @@ public class DynamicWindModClient : DynamicWindModCommon
         capi = api;
         DynamicWindRuntime.ClientField = Field;
         DynamicWindRuntime.ClientConfig = Config;
+        DynamicWindRuntime.ClientModSystem = this;
         api.Event.LevelFinalize += () =>
         {
             Field.SeaLevel = api.World.SeaLevel;
@@ -55,6 +56,13 @@ public class DynamicWindModClient : DynamicWindModCommon
         // client's GetPrecipitation) matches the clouds/rain. Idempotent: in singleplayer the server
         // already patched the shared base method; the static guard makes this a no-op there.
         WeatherCoupling.Apply(harmony, Mod.Logger);
+
+        // Optional: fix the locally-installed HUD Clock mod's wind readout (it reads vanilla's raw
+        // scalar wind, bypassing our directional hook) and add a 16-point cardinal direction.
+        if (api.ModLoader.IsModEnabled(HudClockWindPatch.HudClockModId))
+        {
+            HudClockWindPatch.Apply(harmony, api, Mod.Logger);
+        }
 
         // Wind-direction arrow overlay on the minimap + world map. Registered before the map manager
         // instantiates layers (OnLvlFinalize), so it is picked up automatically.
@@ -121,5 +129,6 @@ public class DynamicWindModClient : DynamicWindModCommon
         harmony?.UnpatchAll("dynamicwind.client");
         DynamicWindRuntime.ClientField = null;
         DynamicWindRuntime.ClientConfig = null;
+        DynamicWindRuntime.ClientModSystem = null;
     }
 }

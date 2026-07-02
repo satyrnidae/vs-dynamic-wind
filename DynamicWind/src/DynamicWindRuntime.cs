@@ -17,6 +17,10 @@ public static class DynamicWindRuntime
     public static WindField? ClientField;
     public static DynamicWindConfig? ClientConfig;
 
+    /// <summary>The client mod system instance, so client-only callers (e.g. <see cref="Client.MapLayers.WindArrowMapLayer"/>)
+    /// can reach <see cref="DynamicWindModCommon.ComputeWindSpeed"/> without their own copy of the formula.</summary>
+    public static DynamicWindModCommon? ClientModSystem;
+
     public static WindField? FieldFor(EnumAppSide side)
         => side == EnumAppSide.Server ? ServerField : ClientField;
 

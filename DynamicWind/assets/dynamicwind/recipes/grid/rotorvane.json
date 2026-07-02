@@ -6,31 +6,31 @@
         "type": "item",
         "code": "game:rod-*",
         "name": "metal",
-        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+        "allowedVariants": [ "copper", "brass", "tinbronze", "blackbronze", "iron", "steel" ]
       },
       "O": {
         "type": "item",
-        "code": "weathervane-ornament-*",
+        "code": "ornament-*",
         "name": "metal",
-        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+        "allowedVariants": [ "copper", "brass", "tinbronze", "blackbronze", "iron", "steel" ]
       },
       "W": {
         "type": "item",
-        "code": "weathervane-directional-westeast-*",
+        "code": "directional-westeast-*",
         "name": "metal",
-        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+        "allowedVariants": [ "copper", "brass", "tinbronze", "blackbronze", "iron", "steel" ]
       },
       "N": {
         "type": "item",
-        "code": "weathervane-directional-northsouth-*",
+        "code": "directional-northsouth-*",
         "name": "metal",
-        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+        "allowedVariants": [ "copper", "brass", "tinbronze", "blackbronze", "iron", "steel" ]
       },
       "T": {
         "type": "item",
-        "code": "weathervane-rotor-*",
+        "code": "rotor-*",
         "name": "metal",
-        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+        "allowedVariants": [ "copper", "brass", "tinbronze", "blackbronze", "iron", "steel" ]
       }
     },
     "width": 3,
@@ -48,31 +48,31 @@
         "type": "item",
         "code": "game:rod-*",
         "name": "metal",
-        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+        "allowedVariants": [ "copper", "brass", "tinbronze", "blackbronze", "iron", "steel" ]
       },
       "O": {
         "type": "item",
-        "code": "weathervane-ornament-*",
+        "code": "ornament-*",
         "name": "metal",
-        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+        "allowedVariants": [ "copper", "brass", "tinbronze", "blackbronze", "iron", "steel" ]
       },
       "W": {
         "type": "item",
-        "code": "weathervane-directional-westeast-*",
+        "code": "directional-westeast-*",
         "name": "metal",
-        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+        "allowedVariants": [ "copper", "brass", "tinbronze", "blackbronze", "iron", "steel" ]
       },
       "N": {
         "type": "item",
-        "code": "weathervane-directional-northsouth-*",
+        "code": "directional-northsouth-*",
         "name": "metal",
-        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+        "allowedVariants": [ "copper", "brass", "tinbronze", "blackbronze", "iron", "steel" ]
       },
       "T": {
         "type": "item",
-        "code": "weathervane-rotor-*",
+        "code": "rotor-*",
         "name": "metal",
-        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+        "allowedVariants": [ "copper", "brass", "tinbronze", "blackbronze", "iron", "steel" ]
       }
     },
     "width": 3,
@@ -90,13 +90,13 @@
         "type": "block",
         "code": "weathervane-*",
         "name": "metal",
-        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+        "allowedVariants": [ "copper", "brass", "tinbronze", "blackbronze", "iron", "steel" ]
       },
       "R": {
         "type": "item",
-        "code": "weathervane-rotor-*",
+        "code": "rotor-*",
         "name": "metal",
-        "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+        "allowedVariants": [ "copper", "brass", "tinbronze", "blackbronze", "iron", "steel" ]
       }
     },
     "width": 2,

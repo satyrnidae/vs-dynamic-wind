@@ -109,7 +109,7 @@ public class DynamicWindModServer : DynamicWindModCommon
         }
         if (packet?.Config == null) return;
 
-        Config = packet.Config;
+        Config.CopyFrom(packet.Config);
         Config.Validate();
         ApplyConfigToField();
         DynamicWindRuntime.ServerConfig = Config;

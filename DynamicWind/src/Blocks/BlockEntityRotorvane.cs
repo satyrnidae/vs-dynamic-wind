@@ -1,7 +1,11 @@
 using System;
+using System.Text;
 using DynamicWind.Client.Render;
+using DynamicWind.Config;
+using DynamicWind.WindSystem;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
+using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
 
 namespace DynamicWind.Blocks;
@@ -30,13 +34,64 @@ public class BlockEntityRotorvane : BlockEntity
     // origin here spins the fan about a point near the block's corner instead of its hub.
     private static readonly Vec3f SpinnerPivot = new(13.375f / 16f, 12.15f / 16f, 8f / 16f);
 
+    // "100% wind speed" reference for the sound's volume/pitch curve, matching WindArrowMapLayer's own
+    // RefSpeed convention (the field's magnitude at calm baseline jetstream flow) so the sound reaches
+    // full intended loudness/pitch at roughly the same wind strength the map overlay would call "100%".
+    private const double RefSpeed = 1.0;
+    private const float MaxVolume = 0.25f; // the sound asset is authored for 100% wind speed at full volume
+    private const float MinPitch = 0.6f;
+    private const float MaxPitch = 1.4f;
+    private const int SoundUpdateMs = 150;
+
     private MeshData? baseMesh;
     private RotorvaneRenderer? renderer;
+    private ILoadedSound? sound;
+    private ICoreClientAPI? capi;
 
     public override void Initialize(ICoreAPI api)
     {
         base.Initialize(api);
-        if (api is ICoreClientAPI capi) BuildMeshesAndRenderer(capi);
+        if (api is ICoreClientAPI capi)
+        {
+            this.capi = capi;
+            BuildMeshesAndRenderer(capi);
+            StartSound(capi);
+            RegisterGameTickListener(UpdateSound, SoundUpdateMs);
+        }
+    }
+
+    private void StartSound(ICoreClientAPI capi)
+    {
+        sound = capi.World.LoadSound(new SoundParams
+        {
+            Location = new AssetLocation("dynamicwind", "sounds/rotorvane.ogg"),
+            ShouldLoop = true,
+            Position = Pos.ToVec3f().Add(0.5f, 0.5f, 0.5f),
+            DisposeOnFinish = false,
+            Volume = 0f,
+            Range = 16f,
+        });
+        sound.Start();
+    }
+
+    /// <summary>Volume/pitch track wind strength continuously rather than starting/stopping the loop, so a
+    /// calm spell just fades it to silence instead of an audible restart click.</summary>
+    private void UpdateSound(float dt)
+    {
+        if (sound == null || sound.IsDisposed) return;
+
+        if (capi != null && capi.IsGamePaused)
+        {
+            if (!sound.IsPaused) sound.Pause();
+            return;
+        }
+        if (sound.IsPaused) sound.Start(); // resume
+
+        double frac = GetWindSpeed() / RefSpeed;
+        if (frac > 1) frac = 1;
+
+        sound.SetVolume((float)(MaxVolume * frac));
+        sound.SetPitch((float)(MinPitch + (MaxPitch - MinPitch) * frac) * Math.Abs(GetDirectionalMod()));
     }
 
     private void BuildMeshesAndRenderer(ICoreClientAPI capi)
@@ -68,14 +123,37 @@ public class BlockEntityRotorvane : BlockEntity
         return (float)(Math.Atan2(w.X, w.Z) + Math.PI / 2.0);
     }
 
-    /// <summary>Angular speed (radians/s) the spinner should turn at, driven purely by wind strength.</summary>
+    /// <summary>Angular speed (radians/s) the spinner should turn at: wind strength scaled by how well the
+    /// assembly's current facing catches the wind (see <see cref="GetDirectionalMod"/>) — head-on toward
+    /// the wind spins it forward at full rate, facing away reverses it.</summary>
     public float GetSpinSpeed()
     {
-        if (Api == null || IsOccluded()) return 0f;
+        if (Api == null) return 0f;
 
+        DynamicWindConfig? cfg = DynamicWindRuntime.ConfigFor(Api.Side);
+        float speed = (float)GetWindSpeed() * cfg?.RotorvaneSpeedMult ?? 8f;
+        return speed * GetDirectionalMod();
+    }
+
+    /// <summary>Cosine of the angle between the assembly's current (eased) yaw and the yaw it's swinging
+    /// toward: +1 when fully caught up and facing the wind head-on, 0 when perpendicular (stalled), −1 when
+    /// still facing the opposite way (spins backwards) — same head-on/perpendicular/reversed convention the
+    /// windmill rotor patch uses. 1 (no modulation) when calm/occluded, since speed is already 0 then.</summary>
+    private float GetDirectionalMod()
+    {
+        if (renderer == null) return 1f;
+        float target = GetTargetYaw();
+        if (float.IsNaN(target)) return 1f;
+        return GameMath.Cos(GameMath.AngleRadDistance(renderer.CurrentYaw, target));
+    }
+
+    /// <summary>True directional wind magnitude at this block (0 when calm or occluded); shared by the
+    /// spinner's angular speed and the sound's volume/pitch curve.</summary>
+    private double GetWindSpeed()
+    {
+        if (Api == null || IsOccluded()) return 0.0;
         Vec3d w = Api.World.BlockAccessor.GetWindSpeedAt(Pos.ToVec3d());
-        double speed = Math.Sqrt(w.X * w.X + w.Z * w.Z);
-        return (float)speed * RotorvaneRenderer.SpinSpeedFactor;
+        return Math.Sqrt(w.X * w.X + w.Z * w.Z);
     }
 
     /// <summary>Same cave/undergroundWindmills gate windmill rotors and the plain weathervane arrow use.</summary>
@@ -83,6 +161,16 @@ public class BlockEntityRotorvane : BlockEntity
     {
         return Api!.World.BlockAccessor.GetLightLevel(Pos, EnumLightLevelType.OnlySunLight) < 5
             && Api.World.Config.GetString("undergroundWindmills", "false") != "true";
+    }
+
+    public override void GetBlockInfo(IPlayer forPlayer, StringBuilder dsc)
+    {
+        base.GetBlockInfo(forPlayer, dsc);
+        if (Api == null) return;
+
+        Vec3d w = Api.World.BlockAccessor.GetWindSpeedAt(Pos.ToVec3d());
+        dsc.AppendLine(Lang.Get("dynamicwind:blockinfo-windheading", WindCompass.GetName(w.X, w.Z)));
+        dsc.AppendLine(Lang.Get("dynamicwind:blockinfo-windspeed", (int)Math.Round(GetWindSpeed() / RefSpeed * 100)));
     }
 
     public override bool OnTesselation(ITerrainMeshPool mesher, ITesselatorAPI tessThreadTesselator)
@@ -97,6 +185,7 @@ public class BlockEntityRotorvane : BlockEntity
         base.OnBlockRemoved();
         renderer?.Dispose();
         renderer = null;
+        StopSound();
     }
 
     public override void OnBlockUnloaded()
@@ -104,5 +193,14 @@ public class BlockEntityRotorvane : BlockEntity
         base.OnBlockUnloaded();
         renderer?.Dispose();
         renderer = null;
+        StopSound();
+    }
+
+    private void StopSound()
+    {
+        if (sound == null) return;
+        sound.Stop();
+        sound.Dispose();
+        sound = null;
     }
 }

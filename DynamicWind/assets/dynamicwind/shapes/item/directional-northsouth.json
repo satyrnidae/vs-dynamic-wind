@@ -13,7 +13,7 @@
 		"metal": [32, 32]
 	},
 	"textures": {
-		"metal": ""
+		"metal": "game:block/metal/plate/copper"
 	},
 	"elements": [
 		{

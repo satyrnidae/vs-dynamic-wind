@@ -3,7 +3,7 @@
     "type": "item",
     "code": "game:ingot-*",
     "name": "metal",
-    "allowedVariants": ["copper", "tinbronze", "bismuthbronze", "blackbronze", "silver", "gold", "iron", "meteoriciron", "steel"]
+    "allowedVariants": [ "copper", "brass", "tinbronze", "blackbronze", "iron", "steel" ]
   },
   "pattern": [[
     "##___#_____",
@@ -15,10 +15,10 @@
     "##___#_____",
     "_____#_____"
   ]],
-  "name": "weathervane ornament",
-  "code": "weathervane-ornament-{metal}",
+  "name": "vane ornament",
+  "code": "ornament-{metal}",
   "output": {
     "type": "item",
-    "code": "weathervane-ornament-{metal}"
+    "code": "ornament-{metal}"
   }
 }]

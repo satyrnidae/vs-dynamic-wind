@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using DynamicWind.Config;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
+using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
 using Vintagestory.GameContent;
 
@@ -28,7 +30,7 @@ public class DopplerRadarMapLayer : MapLayer
     private const double WorldStep = 48.0;      // base world size of a radar cell, blocks
     private const double RadarRange = 1200.0;   // blocks around the player to scan
     private const int MaxCells = 1600;
-    private const double RecomputeInterval = 0.4;
+    private const double RecomputeInterval = 0.5; // seconds between resamples (2 fps, matches wind arrows/fronts)
     private const float MinPrecip = 0.04f;
     private const double RampFullPrecip = 0.9;  // precip level mapped to the red (storm-core) end
     private const double RampExponent = 2.0;    // >1 keeps light/edge rain green; only intense precip → red
@@ -38,6 +40,7 @@ public class DopplerRadarMapLayer : MapLayer
     private static readonly Vec4f Orange = Rgb(0xFF, 0x90, 0x28);
     private static readonly Vec4f Red = Rgb(0xFF, 0x3F, 0x26);
 
+    private DynamicWindConfig? cfg;
     private ICoreClientAPI? capi;
     private MeshRef? quad;
     private int whiteTexId;
@@ -52,7 +55,7 @@ public class DopplerRadarMapLayer : MapLayer
 
     public DopplerRadarMapLayer(ICoreAPI api, IWorldMapManager mapSink) : base(api, mapSink) { }
 
-    public override string Title => "Doppler radar";
+    public override string Title => Lang.Get("game:maplayer-dynamicwindradar");
     public override string LayerGroupCode => "dynamicwindradar";
     public override EnumMapAppSide DataSide => EnumMapAppSide.Client;
     public override bool RequireChunkLoaded => false;
@@ -60,11 +63,12 @@ public class DopplerRadarMapLayer : MapLayer
     public override void OnLoaded()
     {
         if (api.Side != EnumAppSide.Client) return;
+        cfg = DynamicWindRuntime.ClientConfig;
         capi = (ICoreClientAPI)api;
         quad = capi.Render.UploadMesh(QuadMeshUtil.GetQuad());
         whiteTexId = capi.Render.GetOrLoadTexture(new AssetLocation("dynamicwind", "textures/icons/doppler-cell.png"));
         weather = capi.ModLoader.GetModSystem<WeatherSystemClient>();
-        Active = false;
+        Active = cfg?.DopplerRadarMapLayerVisibleByDefault ?? false;
     }
 
     public override void Render(GuiElementMap mapElem, float dt)
