@@ -46,7 +46,7 @@ public class WindFieldSimulation
     // spikes/drops around occlusion (see ApplyOcclusion) as the storm winds down.
     private const double StormLikelihoodGrowthPerHour = 0.04;
 
-    // Front reach: each low's cold (poleward) and warm (equatorward) front sides carry an independent
+    // Front reach: each low's cold (equatorward) and warm (poleward) front sides carry an independent
     // radial reach multiplier (PressureCell.ColdFrontReach/WarmFrontReach) that grows every hour — cold
     // faster than warm, since real cold fronts advect/extend faster — so the two sides visibly move and
     // expand at different rates instead of a single symmetric contour.
@@ -268,7 +268,7 @@ public class WindFieldSimulation
                 c.StormLikelihood = Math.Min(1f, c.StormLikelihood + (float)(StormLikelihoodGrowthPerHour * dGameHours));
             }
 
-            // Cold (poleward) front reach grows faster than warm (equatorward) — the two sides move and
+            // Cold (equatorward) front reach grows faster than warm (poleward) — the two sides move and
             // expand at different rates; see ApplyOcclusion for the sim-driven trigger this feeds.
             if (c.IsLow && dGameHours > 0)
             {

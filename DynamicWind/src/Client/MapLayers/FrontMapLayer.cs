@@ -96,51 +96,39 @@ public class FrontMapLayer : MapLayer
         shader.UniformMatrix("projectionMatrix", capi.Render.CurrentProjectionMatrix);
 
         // Fronts: a near-STATIONARY or OCCLUDED low encircles itself with a full closed loop; a MOVING,
-        // open-wave low instead renders two half-arcs of the same contour — cold on the poleward half,
-        // warm on the equatorward half (real geography, not direction of travel — see FrontComputer).
-        // All symbols face outward, radially, so cold points poleward and warm points equatorward.
-        // Geometry comes from FrontComputer (deterministic, cells-only).
+        // open-wave low instead renders an open curve marched outward from the low — warm on the
+        // poleward side, cold on the equatorward side (real geography, not direction of travel — see
+        // FrontComputer). Both representations are sampled uniformly over t in [0,1] via
+        // FrontComputer.SampleAt. Geometry comes from FrontComputer (deterministic, cells-only).
         for (int li = 0; li < lines.Count; li++)
         {
             FrontLine f = lines[li];
-            if (f.Radii == null || f.Radii.Length == 0) continue;
-            double[] radii = f.Radii;
-            // Stationary and occluded lows render the full closed loop; Warm/Cold render only their half.
-            bool fullLoop = f.Type == FrontType.Stationary || f.Type == FrontType.Occluded;
+            bool fullLoop = f.Points == null;
+            if (fullLoop && (f.Radii == null || f.Radii.Length == 0)) continue;
+            if (!fullLoop && f.Points!.Length == 0) continue;
 
-            double rMean = 0;
-            for (int k = 0; k < radii.Length; k++) rMean += radii[k];
-            rMean /= radii.Length;
-            double rPx = rMean * scaleX;
-            double curveAmpL = CurveAmpFactor * rMean;
+            double curveLen = FrontComputer.CurveLength(f);
+            if (curveLen < 1e-3) continue;
+            double charLen = fullLoop ? curveLen / (2 * Math.PI) : curveLen / 4.0;
+            double curveAmpL = CurveAmpFactor * charLen;
+            double lenPx = curveLen * scaleX;
 
-            double thetaStart, thetaSpan;
-            if (fullLoop)
-            {
-                thetaStart = 0;
-                thetaSpan = 2 * Math.PI;
-            }
-            else
-            {
-                thetaStart = f.LeadAngle - Math.PI / 2.0;
-                thetaSpan = Math.PI; // leading half only
-            }
-
-            // Walk the contour finely (world space -> screen space) and tile it by ACTUAL on-screen
-            // arc length, not by uniform angle steps. A uniform-theta split under/over-spaces tiles
-            // wherever the traced contour bulges away from the mean radius (elongated systems, the
-            // Curve() wobble) — real arc length is what has to stay tiled with no gaps, regardless of
-            // zoom or how stretched the front is.
-            double roughLenPx = rPx * thetaSpan; // cheap estimate, just to size the fine sampling
-            int nFine = (int)Math.Clamp(Math.Ceiling(roughLenPx / (TilePx * 0.5)), 32, 3000);
+            // Walk the curve finely (world space -> screen space) and tile it by ACTUAL on-screen
+            // arc length, not by uniform parameter steps. A uniform-t split under/over-spaces tiles
+            // wherever the curve bulges away from its mean spacing (elongated systems, the Curve()
+            // wobble) — real arc length is what has to stay tiled with no gaps, regardless of zoom or
+            // how stretched the front is.
+            int nFine = (int)Math.Clamp(Math.Ceiling(lenPx / (TilePx * 0.5)), 32, 3000);
 
             float[] sxs = new float[nFine + 1];
             float[] sys = new float[nFine + 1];
+            float[] fas = new float[nFine + 1];
             double[] cum = new double[nFine + 1];
             for (int j = 0; j <= nFine; j++)
             {
-                double theta = thetaStart + (double)j / nFine * thetaSpan;
-                ArcPoint(f, radii, curveAmpL, theta, (theta - thetaStart) * rMean, th, out double wx, out double wz);
+                double t = (double)j / nFine;
+                FrontComputer.SampleAt(f, t, curveAmpL, th, out double wx, out double wz, out double fa);
+                fas[j] = (float)fa;
                 ToScreen(b, vb, wx, wz, out sxs[j], out sys[j]); // ignore visibility flag; still valid off-screen coords
                 if (j > 0)
                 {
@@ -172,21 +160,19 @@ public class FrontMapLayer : MapLayer
                 double targetDist = (i + 0.5) * step;
                 while (seg < nFine - 1 && cum[seg + 1] < targetDist) seg++;
                 double segLen = cum[seg + 1] - cum[seg];
-                double t = segLen > 1e-9 ? (targetDist - cum[seg]) / segLen : 0;
-                float sx = (float)(sxs[seg] + (sxs[seg + 1] - sxs[seg]) * t);
-                float sy = (float)(sys[seg] + (sys[seg + 1] - sys[seg]) * t);
+                double segT = segLen > 1e-9 ? (targetDist - cum[seg]) / segLen : 0;
+                float sx = (float)(sxs[seg] + (sxs[seg + 1] - sxs[seg]) * segT);
+                float sy = (float)(sys[seg] + (sys[seg + 1] - sys[seg]) * segT);
 
                 // Cull tiles well outside the visible map element (same tolerance as ToScreen used).
                 float fx = (float)((sx - b.renderX) / b.InnerWidth);
                 float fy = (float)((sy - b.renderY) / b.InnerHeight);
                 if (fx < -0.05f || fx > 1.05f || fy < -0.05f || fy > 1.05f) continue;
 
-                // Symbols always face outward, radially — for a full loop that's simply "away from
-                // centre"; for a Warm/Cold half-arc it means pointing equatorward/poleward respectively
-                // (the geography the split itself is based on), which reads correctly with no extra
-                // per-type flip needed.
-                double theta = thetaStart + (seg + t) / nFine * thetaSpan;
-                float angle = (float)Math.Atan2(Math.Sin(theta), Math.Cos(theta));
+                // Symbols face outward, radially, for a full loop; for a Warm/Cold open curve they face
+                // whichever tangent-perpendicular best matches the low's own direction of travel (see
+                // FrontComputer.ChooseFacing) — stays correct even where a JOIN curve bends sharply.
+                float angle = AngleLerp(fas[seg], fas[seg + 1], (float)segT);
 
                 mvMat.Set(capi.Render.CurrentModelviewMatrix)
                     .Translate(sx, sy, 62f)
@@ -212,14 +198,12 @@ public class FrontMapLayer : MapLayer
         }
     }
 
-    /// <summary>A point on a front's contour at angle theta (world space), with the slow per-tile
-    /// curvature wobble (<see cref="FrontComputer.Curve"/>) added on top of the traced radius.</summary>
-    private static void ArcPoint(FrontLine f, double[] radii, double curveAmpL, double theta, double u, double th, out double wx, out double wz)
+    /// <summary>Shortest-path angle interpolation, wrapping through whichever direction is closer —
+    /// avoids a ±π discontinuity glitch when lerping a tile's facing angle between two curve samples.</summary>
+    private static float AngleLerp(float from, float to, float t)
     {
-        double ct = Math.Cos(theta), st = Math.Sin(theta);
-        double rr = FrontComputer.RadiusAt(radii, theta) + curveAmpL * FrontComputer.Curve(u, f.Seed, th);
-        wx = f.CenterX + rr * ct;
-        wz = f.CenterZ + rr * st;
+        float diff = (float)Math.Atan2(Math.Sin(to - from), Math.Cos(to - from));
+        return from + diff * t;
     }
 
     /// <summary>World (x,z) → screen px within the map element; false if outside the visible bounds.</summary>

@@ -65,7 +65,7 @@ public class PressureCell
     /// which is purely geometric (poleward vs equatorward side of a moving low).</summary>
     public float AirMassTemp;
 
-    /// <summary>Radial reach multiplier for this (low) cell's COLD/poleward front contour, on top of the
+    /// <summary>Radial reach multiplier for this (low) cell's COLD/equatorward front contour, on top of the
     /// base <see cref="Radius"/>/<see cref="RadiusMinor"/> ellipse — see FrontComputer. Starts at 1 and
     /// grows FASTER than <see cref="WarmFrontReach"/> each hour (WindFieldSimulation.Advect) — real cold
     /// fronts advect/extend faster than warm fronts — so the two sides visibly move and expand at
@@ -75,7 +75,7 @@ public class PressureCell
     /// sim-driven trigger.</summary>
     public float ColdFrontReach = 1f;
 
-    /// <summary>Radial reach multiplier for this (low) cell's WARM/equatorward front contour. See
+    /// <summary>Radial reach multiplier for this (low) cell's WARM/poleward front contour. See
     /// <see cref="ColdFrontReach"/>.</summary>
     public float WarmFrontReach = 1f;
 
@@ -420,12 +420,21 @@ public class WindField
     /// climate/thermal path) and the front-blob contour (so fronts derive purely from the synced cells
     /// and persist across reloads exactly as the cells do). + = low, − = high.
     /// </summary>
-    public double CellPressureAt(double x, double z, double totalHours)
+    public double CellPressureAt(double x, double z, double totalHours) => CellPressureAt(x, z, totalHours, -1);
+
+    /// <summary>
+    /// As <see cref="CellPressureAt(double,double,double)"/> but optionally excluding one cell index —
+    /// the "background" field induced by every OTHER system. Used by FrontComputer's open-curve march to
+    /// find how strongly a nearby neighbour pulls a low's own front toward/around it, independent of the
+    /// low's own (locally dominant, radially symmetric) contribution.
+    /// </summary>
+    public double CellPressureAt(double x, double z, double totalHours, int excludeCell)
     {
         double p = 0;
         double elapsed = totalHours - AnchorHours;
         for (int i = 0; i < Cells.Count; i++)
         {
+            if (i == excludeCell) continue;
             PressureCell cell = Cells[i];
             double dx = x - (cell.X + cell.VelX * elapsed);
             double dz = z - (cell.Z + cell.VelZ * elapsed);
@@ -435,16 +444,28 @@ public class WindField
         return p;
     }
 
+    // Storm-band narrowing when a low has a real JOIN neighbour on a side — mirrors
+    // FrontComputer.MarkerMinStrength/BuildJoinCurve so weather intensifies along the same lines the
+    // front map layer draws, rather than a symmetric poleward/equatorward half-cone.
+    private const float StormNeighbourMinStrength = 0.15f;
+    private const double StormBandWidthFactor = 0.5; // × cell radius
+    private const double StormNeighbourStationarySpeed = 60.0; // mirrors FrontComputer.StationarySpeed
+
     /// <summary>
     /// Extra storm-likelihood forcing at a position. Real fronts trail a LOW, not a high — a high is
     /// fair-weather subsidence and contributes nothing here. Each low carries both a warm front (its
-    /// EQUATORWARD side, where warm air overruns) and a cold front (its POLEWARD side, where cold air
-    /// digs in) — real geography, not the system's own direction of travel — scaled by that cell's own
+    /// POLEWARD side, where warm air overruns, advancing poleward) and a cold front (its EQUATORWARD
+    /// side, where cold air digs in, advancing equatorward) — real geography, not the system's own
+    /// direction of travel — scaled by that cell's own
     /// <see cref="PressureCell.StormLikelihood"/>, with a synergy bonus near the low's centre where the
-    /// two sides' influence overlaps (strongest weather sits close to the low itself). Independent of
+    /// two sides' influence overlaps (strongest weather sits close to the low itself). When a side has a
+    /// real neighbouring low (the same JOIN a front curve would connect to — see
+    /// <see cref="DynamicWind.Client.MapLayers.FrontComputer"/>'s BuildJoinCurve), that side's bias is
+    /// narrowed into a band hugging the axis toward the neighbour's midpoint instead of spread across the
+    /// whole half-plane, so storminess visibly develops ALONG the same connecting line the map draws
+    /// rather than just somewhere in that general direction. Independent of
     /// <see cref="PressureAt(double,double,double)"/>; meant to be added into the precipitation gate
-    /// scaled by a caller-owned strength knob (see WeatherCoupling). Mirrors the poleward/equatorward
-    /// split <see cref="DynamicWind.Client.MapLayers.FrontComputer"/> uses to draw the fronts themselves.
+    /// scaled by a caller-owned strength knob (see WeatherCoupling).
     /// </summary>
     public double StormBiasAt(double x, double z, double totalHours)
     {
@@ -462,13 +483,65 @@ public class WindField
             if (falloff < 1e-4) continue;
 
             double poleSign = PolewardZSign(cz);
-            double alongPole = dz * poleSign; // >0 = poleward of centre (cold side), <0 = equatorward (warm side)
+            double bandWidth = Math.Max(1.0, c.Radius) * StormBandWidthFactor;
 
-            cold += Math.Max(0.0, alongPole) * falloff * c.StormLikelihood;   // cold front: poleward side
-            warm += Math.Max(0.0, -alongPole) * falloff * c.StormLikelihood; // warm front: equatorward side
+            FindSidedLowNeighbourAxis(i, cx, cz, elapsed, totalHours, -poleSign, out double coldAxisX, out double coldAxisZ, out bool coldJoined);
+            double coldAlong = dx * coldAxisX + dz * coldAxisZ;
+            double coldPerp = dx * -coldAxisZ + dz * coldAxisX;
+            double coldBand = coldJoined ? Math.Exp(-(coldPerp * coldPerp) / (bandWidth * bandWidth)) : 1.0;
+            cold += Math.Max(0.0, coldAlong) * falloff * c.StormLikelihood * coldBand;
+
+            FindSidedLowNeighbourAxis(i, cx, cz, elapsed, totalHours, poleSign, out double warmAxisX, out double warmAxisZ, out bool warmJoined);
+            double warmAlong = dx * warmAxisX + dz * warmAxisZ;
+            double warmPerp = dx * -warmAxisZ + dz * warmAxisX;
+            double warmBand = warmJoined ? Math.Exp(-(warmPerp * warmPerp) / (bandWidth * bandWidth)) : 1.0;
+            warm += Math.Max(0.0, warmAlong) * falloff * c.StormLikelihood * warmBand;
         }
         // Strongest near the low's own centre, where the warm and cold side biases overlap.
         return warm + cold + 2.0 * Math.Min(warm, cold);
+    }
+
+    /// <summary>
+    /// Finds the nearest OTHER significant, MOVING (open-wave) low strictly on the <paramref
+    /// name="poleSign"/> side (pure poleward if +1, equatorward if −1) of low <paramref
+    /// name="selfIndex"/> — the same neighbour a front curve would JOIN to (FrontComputer excludes
+    /// Stationary/Occluded lows from that search too, since those already draw their own closed loop).
+    /// Returns a unit axis toward that neighbour's midpoint with <paramref name="selfIndex"/>'s own
+    /// position (<paramref name="joined"/> = true), or the plain poleward/equatorward direction with
+    /// <paramref name="joined"/> = false if there's no such neighbour.
+    /// </summary>
+    private void FindSidedLowNeighbourAxis(int selfIndex, double cx, double cz, double elapsed, double totalHours, double poleSign,
+        out double axisX, out double axisZ, out bool joined)
+    {
+        axisX = 0.0; axisZ = poleSign; // plain poleward/equatorward direction (PolewardZSign is Z-only)
+        joined = false;
+
+        int bestIdx = -1;
+        double bestDist = double.MaxValue;
+        for (int j = 0; j < Cells.Count; j++)
+        {
+            if (j == selfIndex) continue;
+            PressureCell o = Cells[j];
+            if (!o.IsLow || Math.Abs(o.Strength) < StormNeighbourMinStrength) continue;
+            if (totalHours < o.OccludedUntilTotalHours) continue; // occluded: excluded, same as FrontComputer
+            double oSpeed = Math.Sqrt(o.VelX * o.VelX + o.VelZ * o.VelZ);
+            if (oSpeed < StormNeighbourStationarySpeed) continue; // stationary: excluded, same as FrontComputer
+            double ox = o.X + o.VelX * elapsed, oz = o.Z + o.VelZ * elapsed;
+            double ddx = ox - cx, ddz = oz - cz;
+            if (ddx * axisX + ddz * axisZ <= 0) continue; // not on this side
+            double dist = Math.Sqrt(ddx * ddx + ddz * ddz);
+            if (dist < bestDist) { bestDist = dist; bestIdx = j; }
+        }
+        if (bestIdx < 0) return;
+
+        PressureCell nb = Cells[bestIdx];
+        double nx = nb.X + nb.VelX * elapsed, nz = nb.Z + nb.VelZ * elapsed;
+        double midX = (cx + nx) / 2.0, midZ = (cz + nz) / 2.0;
+        double toMidX = midX - cx, toMidZ = midZ - cz;
+        double len = Math.Sqrt(toMidX * toMidX + toMidZ * toMidZ);
+        if (len < 1e-6) return;
+        axisX = toMidX / len; axisZ = toMidZ / len;
+        joined = true;
     }
 
     /// <summary>
