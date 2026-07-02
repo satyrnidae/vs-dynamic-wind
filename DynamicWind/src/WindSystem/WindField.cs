@@ -538,7 +538,11 @@ public class WindField
             double falloff = Math.Exp(-EllipseNorm2(c, dx, dz));
             if (falloff < 1e-4) continue;
 
-            double weight = falloff * c.StormLikelihood;
+            // Weighted by the cell's own pressure strength too (same pattern as CellTemperatureAt) —
+            // otherwise a barely-significant low sitting at the same distance as an intense one would
+            // sway the Cold/Warm/Occluded/Stationary wind-character mix just as much, decorrelating the
+            // chosen gust multiplier from how strong the system actually pushing the wind is.
+            double weight = falloff * c.StormLikelihood * Math.Max(0.2, Math.Abs(c.Strength));
 
             if (totalHours < c.OccludedUntilTotalHours) { result.Occluded += weight; continue; }
 

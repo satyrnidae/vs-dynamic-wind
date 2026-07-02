@@ -597,9 +597,12 @@ public class WindFieldSimulation
         // across the populated area before it can pair with a low into a front. Starting them weak (the
         // old -0.3..-1.0) left them below the marker/front threshold by the time they arrived, so the
         // overlay showed only lows and never drew a front line.
+        // Widened from the old 0.6..1.6 (only a 2.67x weak-to-strong spread against the MaxStrength=3.0
+        // clamp) — too narrow to make front wind visibly track pressure strength. 0.4..2.6 gives a 6.5x
+        // spread so weak and intense systems actually feel different.
         float strength = isLow
-            ? (float)(0.6 + rand.NextDouble() * 1.0)
-            : (float)-(0.6 + rand.NextDouble() * 1.0);
+            ? (float)(0.4 + rand.NextDouble() * 2.2)
+            : (float)-(0.4 + rand.NextDouble() * 2.2);
 
         double minorRatio = SpawnMinorRatioMin + rand.NextDouble() * (SpawnMinorRatioMax - SpawnMinorRatioMin);
 
