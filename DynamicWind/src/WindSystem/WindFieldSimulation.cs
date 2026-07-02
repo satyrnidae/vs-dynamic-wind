@@ -106,12 +106,34 @@ public class WindFieldSimulation
     private const double SpawnPlayerAvoidRadius = 2000.0;    // never spawn this close to ANY online player
     private const double SpawnPlayerAvoidPush = 500.0;       // extra clearance pushed past the avoid radius
 
-    // Terrain thermal seeding: spawn mobile cells from terrain hotspots near players.
-    private const double ThermalSeedRatePerDay = 14.0;   // seed attempts per game day (terrain reacts faster)
+    // Terrain thermal seeding: spawn mobile cells from terrain hotspots near players. Kept deliberately
+    // modest — terrain pressure cell spawning was cluttering the field with far too many short-lived
+    // cells at the old rate.
+    private const double ThermalSeedRatePerDay = 4.0;    // seed attempts per game day
     private const double SeedScanRadius = 1500.0;        // sample box half-extent around population center
     private const double SeedThreshold = 0.25;           // minimum |thermal| to seed a cell
     private const double SeedGain = 1.2;                 // thermal magnitude → seeded cell strength
     private const double SeedMinSeparation = 600.0;      // don't seed atop an existing cell
+
+    // Heat-wave/cold-wave events: a rare, very strong, near-stationary HIGH that traps ground air near
+    // the surface — a real heat dome in warm months, an arctic-high cold snap in cold months (both are
+    // anticyclonic highs; it's the trapped, subsiding air itself that reads hot or cold, not the pressure
+    // sign). Sited on a genuine terrain-thermal hotspot like ordinary thermal seeding above, but the
+    // heat/cold side is decided by the season at the spawn site, independent of the hotspot's own sign.
+    // Deliberately far rarer than ordinary thermal seeding — this is meant to be a notable, occasional
+    // event, not a routine one.
+    private const double HeatColdWaveRatePerDay = 0.03;       // ~once every ~33 game-days on average
+    private const double HeatColdWaveTempMin = 5.0;           // °C, "outside the average" floor
+    private const double HeatColdWaveTempMax = 10.0;          // °C, ceiling
+    private const float HeatColdWaveStrengthMin = 2.2f;       // magnitude; always a strong HIGH (negative)
+    private const float HeatColdWaveStrengthMax = 2.8f;
+    private const double HeatColdWaveDurationMinHours = 72.0;  // 3 days
+    private const double HeatColdWaveDurationMaxHours = 120.0; // 5 days
+    // Highs have a lot of inertia: an ordinary cell eases toward the background wind over ~a day
+    // (VelocityEaseRatePerHour); a heat/cold-wave high eases far slower so it lingers over the same area
+    // for its multi-day life instead of drifting off with the jet — only a strong, moving system nearby
+    // (a big local background-wind term) will noticeably nudge it before then.
+    private const double HeatColdWaveVelocityEaseRatePerHour = 0.02;
 
     // Synergy leaves the position index NearestPlayer relies on unpopulated, so its result can't be
     // trusted with it installed — fall back to the exhaustive AllOnlinePlayers entity scan instead.
@@ -174,6 +196,7 @@ public class WindFieldSimulation
         Expire(now);
         MaybeSpawn(now, dGameHours);
         MaybeSeedThermal(now, dGameHours);
+        MaybeSeedHeatColdWave(now, dGameHours);
     }
 
     // Centre of the "Summer" season band from GameCalendar.GetSeason: (0.4685 + 0.726) / 2.
@@ -240,9 +263,11 @@ public class WindFieldSimulation
                 if (pd.AdvectWithWind)
                 {
                     // Ease toward the local wind rather than snapping to it — see VelocityEaseRatePerHour.
+                    // A heat/cold-wave high eases far slower (a lot of inertia — see HeatColdWaveVelocityEaseRatePerHour).
                     double targetVX = w.X * pd.AdvectionSpeed;
                     double targetVZ = w.Y * pd.AdvectionSpeed;
-                    double ease = 1.0 - Math.Exp(-VelocityEaseRatePerHour * dGameHours);
+                    double easeRate = c.IsHeatColdWave ? HeatColdWaveVelocityEaseRatePerHour : VelocityEaseRatePerHour;
+                    double ease = 1.0 - Math.Exp(-easeRate * dGameHours);
                     newVX[i] = c.VelX + (targetVX - c.VelX) * ease;
                     newVZ[i] = c.VelZ + (targetVZ - c.VelZ) * ease;
                 }
@@ -692,6 +717,93 @@ public class WindFieldSimulation
         });
         field.AnchorHours = now;
         Dirty = true;
+    }
+
+    /// <summary>
+    /// Rare heat-wave/cold-wave event: spawn attempts scale with elapsed game time, same pattern as
+    /// <see cref="MaybeSeedThermal"/>, but at a far lower rate — this is meant to be a notable, occasional
+    /// event, not a routine one. Capped at one attempt per tick (never worth bursting several at once).
+    /// </summary>
+    private void MaybeSeedHeatColdWave(double now, double dGameHours)
+    {
+        if (dGameHours <= 0) return;
+        if (!config.HeatColdWaveEnabled || field.ThermalPressureFunc == null) return;
+        if (field.Cells.Count >= config.MaxActiveCells) return;
+
+        double expected = HeatColdWaveRatePerDay / 24.0 * dGameHours;
+        int attempts = expected >= 1.0 ? 1 : 0;
+        if (rand.NextDouble() < expected - attempts) attempts++;
+        for (int i = 0; i < attempts; i++) TrySeedHeatColdWave(now);
+    }
+
+    /// <summary>
+    /// Spawn a heat-wave/cold-wave high: sited on a genuine terrain-thermal hotspot like ordinary thermal
+    /// seeding (<see cref="TrySeedOne"/>), but always a strong HIGH regardless of the hotspot's own sign —
+    /// a heat dome and an arctic-high cold snap are both anticyclonic. Warm-season vs. cold-season (and
+    /// therefore heat wave vs. cold wave) is decided by the season at the spawn site, not by the hotspot.
+    /// Spawned near-max strength and near-stationary (see HeatColdWaveVelocityEaseRatePerHour in Advect):
+    /// that large initial magnitude is what gives it "a lot of inertia" — the same proportional dispersal
+    /// decay every cell gets takes far longer to fade a near-max-strength cell below MinStrength, so it
+    /// naturally lasts on the order of days rather than hours, with DiesTotalHours as a 3–5 day backstop.
+    /// </summary>
+    private void TrySeedHeatColdWave(double now)
+    {
+        if (field.Cells.Count >= config.MaxActiveCells) return;
+        if (!TryGetSpawnAnchor(out double cx, out double cz)) return;
+
+        double sx = cx + (rand.NextDouble() - 0.5) * 2.0 * SeedScanRadius;
+        double sz = cz + (rand.NextDouble() - 0.5) * 2.0 * SeedScanRadius;
+        double th = field.ThermalPressureFunc!(sx, sz, now);
+        if (Math.Abs(th) < SeedThreshold) return; // needs a genuine terrain thermal condition to anchor to
+
+        // Don't pile onto an existing cell (same guard as TrySeedOne).
+        double elapsed = now - field.AnchorHours;
+        foreach (PressureCell c in field.Cells)
+        {
+            double dx = (c.X + c.VelX * elapsed) - sx;
+            double dz = (c.Z + c.VelZ * elapsed) - sz;
+            if (dx * dx + dz * dz < SeedMinSeparation * SeedMinSeparation) return;
+        }
+
+        double seasonWarmth;
+        try
+        {
+            var pos = new BlockPos((int)sx, sapi.World.SeaLevel, (int)sz, 0);
+            float seasonRel = sapi.World.Calendar.GetSeasonRel(pos); // hemisphere-aware
+            seasonWarmth = Math.Cos(2.0 * Math.PI * (seasonRel - SummerPeakRel)); // +1 midsummer, −1 midwinter
+        }
+        catch { return; } // season not ready yet — safer to skip this rare event than guess a side
+
+        bool isHeatWave = seasonWarmth >= 0;
+        double waveDelta = (HeatColdWaveTempMin + rand.NextDouble() * (HeatColdWaveTempMax - HeatColdWaveTempMin))
+            * (isHeatWave ? 1.0 : -1.0);
+
+        float radius = GameMath.Clamp((float)(0.15 * SpawnRangeBlocks), config.CellRadiusMin, config.CellRadiusMax);
+        float strength = -(float)(HeatColdWaveStrengthMin + rand.NextDouble() * (HeatColdWaveStrengthMax - HeatColdWaveStrengthMin)); // always a strong HIGH
+        double durationHours = HeatColdWaveDurationMinHours + rand.NextDouble() * (HeatColdWaveDurationMaxHours - HeatColdWaveDurationMinHours);
+        double minorRatio = SpawnMinorRatioMin + rand.NextDouble() * (SpawnMinorRatioMax - SpawnMinorRatioMin);
+
+        field.Cells.Add(new PressureCell
+        {
+            X = sx,
+            Z = sz,
+            Strength = strength,
+            Radius = radius,
+            VelX = 0.0,
+            VelZ = 0.0,
+            BornTotalHours = now,
+            DiesTotalHours = now + durationHours,
+            RadiusMinor = (float)(radius * minorRatio),
+            Orientation = (float)(Math.PI / 2.0),
+            StormLikelihood = 0f, // highs never front/storm — irrelevant, keep it inert
+            AirMassTemp = (float)(isHeatWave ? 1.0 : -1.0),
+            IsHeatColdWave = true,
+            WaveTemperatureDelta = (float)waveDelta
+        });
+        field.AnchorHours = now;
+        Dirty = true;
+        sapi.Logger.Notification("[dynamicwind] {0} forming near ({1:0}, {2:0}): {3:+0.0;-0.0}°C, ~{4:0.0} day(s).",
+            isHeatWave ? "Heat wave" : "Cold wave", sx, sz, waveDelta, durationHours / 24.0);
     }
 
     /// <summary>

@@ -81,6 +81,26 @@ systems, and couples the rest of the world to it:
   (`FrontTemperatureMax`), replacing the old low-pressure-is-always-hot assumption. (Same-type cell
   merging was removed — it interfered with the occlusion catch-target search below, and active cell count
   is already bounded by spawn rate + despawn distance, so it wasn't needed to keep cell count in check.)
+- **Heat/cold waves** (`WindFieldSimulation.TrySeedHeatColdWave`, config `HeatColdWaveEnabled`) — a rare,
+  very strong, near-stationary `PressureCell.IsHeatColdWave` HIGH sited on a genuine terrain-thermal
+  hotspot (same siting as ordinary thermal seeding below), always anticyclonic regardless of the hotspot's
+  own sign — real heat domes and arctic-high cold snaps are both highs; it's the trapped, subsiding air
+  itself that reads hot or cold. Heat wave vs. cold wave is decided by the season at the spawn site (warm
+  months → heat wave, cold months → cold wave), NOT by the hotspot's sign, and both draw from the *same*
+  rare spawn-attempt rate (`HeatColdWaveRatePerDay`, ~once per ~33 game-days), so — since seasons split
+  roughly 50/50 warm/cold over a year — hot and cold waves come out equally rare by construction rather
+  than needing separate rates. Pushes local temperature 5–10°C outside the seasonal average via
+  `PressureCell.WaveTemperatureDelta` / `WindField.HeatColdWaveDeltaAt`, added in `OnGetClimate` alongside
+  (not blended into) the normal `AirMassTemp` term — an ordinary front sitting nearby would otherwise
+  dilute the wave's swing back toward neutral. Spawned at near-max `Strength` and (like a thermal-seeded
+  cell) stationary at birth: that large initial magnitude is what gives it "a lot of inertia" — the same
+  proportional dispersal decay every cell gets takes far longer to fade a near-max-strength cell below
+  `MinStrength`, so it naturally persists on the order of days rather than hours, with a 3–5 day
+  `DiesTotalHours` as the outer backstop. It also eases toward the local background wind far slower than
+  an ordinary cell (`HeatColdWaveVelocityEaseRatePerHour`), so only a strong, moving system passing nearby
+  will meaningfully nudge it before its natural lifetime runs out. Ordinary terrain-thermal seeding
+  (`ThermalSeedRatePerDay`) was also made rarer (14/day → 4/day) — it was cluttering the field with far
+  too many short-lived cells.
 - **Terrain thermal pressure** (`TerrainThermal`) — beyond the moving synoptic cells, pressure has a
   terrain-driven baseline: warm, sun-exposed dry land → low (rising air), cool water → high (sinking air),
   modulated by time of day + temperature. Water high pressure scales with **depth** (sea level −

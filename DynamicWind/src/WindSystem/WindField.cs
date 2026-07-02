@@ -587,6 +587,31 @@ public class WindField
     }
 
     /// <summary>
+    /// Falloff-weighted sum of nearby heat-wave/cold-wave highs' <see cref="PressureCell.WaveTemperatureDelta"/>
+    /// (°C) — kept separate from <see cref="CellTemperatureAt"/>'s [-1,1] air-mass blend so a rare, strong
+    /// heat/cold-wave event's swing isn't diluted by averaging against every other active cell (an ordinary
+    /// front sitting nearby would otherwise pull the blend back toward neutral). Summed rather than
+    /// averaged: these are rare and spawned clear of other cells (see TrySeedHeatColdWave), so overlap
+    /// between two waves is an edge case, not the common path. Used by DynamicWindModCommon.OnGetClimate.
+    /// </summary>
+    public double HeatColdWaveDeltaAt(double x, double z, double totalHours)
+    {
+        double sum = 0;
+        double elapsed = totalHours - AnchorHours;
+        for (int i = 0; i < Cells.Count; i++)
+        {
+            PressureCell cell = Cells[i];
+            if (!cell.IsHeatColdWave) continue;
+            double dx = x - (cell.X + cell.VelX * elapsed);
+            double dz = z - (cell.Z + cell.VelZ * elapsed);
+            double falloff = Math.Exp(-EllipseNorm2(cell, dx, dz));
+            if (falloff < 1e-4) continue;
+            sum += falloff * cell.WaveTemperatureDelta;
+        }
+        return sum;
+    }
+
+    /// <summary>
     /// As <see cref="PressureAt(double,double,double)"/> but optionally excluding one cell index (used
     /// when advecting that cell on the background flow). The static terrain thermal baseline is scaled
     /// by <see cref="ThermalStaticScale"/>; the rest of the terrain signal is carried by mobile cells
