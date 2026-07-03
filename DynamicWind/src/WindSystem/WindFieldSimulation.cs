@@ -173,6 +173,11 @@ public class WindFieldSimulation
         public PlayerPos(double x, double z) { X = x; Z = z; }
     }
 
+    // Nobody online (e.g. between CapturePlayerSnapshot's first call and a player actually joining, or a
+    // dedicated server sitting empty) ⇒ nothing to spawn near or despawn against — spawn/seed/despawn all
+    // abort up front rather than falling through to per-cell/per-attempt checks that always fail anyway.
+    private bool HasPlayers => playerSnapshot.Length > 0;
+
     private Thread? simThread;
     private volatile bool running;
 
@@ -544,10 +549,12 @@ public class WindFieldSimulation
     {
         lock (field.CellsLock)
         {
+            bool hasPlayers = HasPlayers; // no players online ⇒ nothing to cull distance against yet
             for (int i = field.Cells.Count - 1; i >= 0; i--)
             {
                 PressureCell c = field.Cells[i];
-                if (now >= c.DiesTotalHours || Math.Abs(c.Strength) < MinStrength || IsTooFarFromAllPlayers(c))
+                if (now >= c.DiesTotalHours || Math.Abs(c.Strength) < MinStrength
+                    || (hasPlayers && IsTooFarFromAllPlayers(c)))
                 {
                     field.Cells.RemoveAt(i);
                     Dirty = true;
@@ -561,16 +568,14 @@ public class WindFieldSimulation
     /// effective radius toward that player from the cell's centre — a system that's drifted this far off
     /// nobody's business isn't going to be seen or felt, so let it despawn rather than simulate it
     /// forever. The radius term means a large cell's edge (not just its centre) has to clear the margin
-    /// before it despawns. No online players at all is NOT "too far" (nothing to cull against yet).
-    /// Reads the lock-free <see cref="playerSnapshot"/> rather than <see cref="IWorldAccessor.AllOnlinePlayers"/>
-    /// directly, since this runs on the dedicated sim thread and that collection can mutate concurrently
-    /// as players join/leave on the main thread.
+    /// before it despawns. Only called from <see cref="Expire"/> after a <see cref="HasPlayers"/> guard,
+    /// so an empty player list never reaches here. Reads the lock-free <see cref="playerSnapshot"/> rather
+    /// than <see cref="IWorldAccessor.AllOnlinePlayers"/> directly, since this runs on the dedicated sim
+    /// thread and that collection can mutate concurrently as players join/leave on the main thread.
     /// </summary>
     private bool IsTooFarFromAllPlayers(PressureCell c)
     {
-        PlayerPos[] snap = playerSnapshot;
-        if (snap.Length == 0) return false;
-        foreach (PlayerPos p in snap)
+        foreach (PlayerPos p in playerSnapshot)
         {
             double dx = p.X - c.X;
             double dz = p.Z - c.Z;
@@ -605,7 +610,7 @@ public class WindFieldSimulation
 
     private void MaybeSpawn(double now, double dGameHours)
     {
-        if (dGameHours <= 0) return;
+        if (dGameHours <= 0 || !HasPlayers) return; // nobody to spawn near — nothing else to do this tick
         lock (field.CellsLock) { if (field.Cells.Count >= config.MaxActiveCells) return; }
         // Expected count scales with elapsed GAME time, so pressure systems evolve on the world clock —
         // and speed up while a player sleeps (the calendar fast-forwards → larger dGameHours per tick).
@@ -725,7 +730,7 @@ public class WindFieldSimulation
     /// </summary>
     private void MaybeSeedThermal(double now, double dGameHours)
     {
-        if (dGameHours <= 0) return;
+        if (dGameHours <= 0 || !HasPlayers) return; // nobody to seed near — nothing else to do this tick
         if (!config.ThermalSeeding || field.ThermalPressureFunc == null) return;
         lock (field.CellsLock) { if (field.Cells.Count >= config.MaxActiveCells) return; }
 
@@ -781,7 +786,7 @@ public class WindFieldSimulation
     /// </summary>
     private void MaybeSeedHeatColdWave(double now, double dGameHours)
     {
-        if (dGameHours <= 0) return;
+        if (dGameHours <= 0 || !HasPlayers) return; // nobody to seed near — nothing else to do this tick
         if (!config.HeatColdWaveEnabled || field.ThermalPressureFunc == null) return;
         lock (field.CellsLock) { if (field.Cells.Count >= config.MaxActiveCells) return; }
 
