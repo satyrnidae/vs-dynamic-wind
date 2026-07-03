@@ -91,134 +91,137 @@ public static class FrontComputer
     {
         markers.Clear();
         lines.Clear();
-        if (field.Cells.Count == 0) return;
-
-        double elapsed = totalHours - field.AnchorHours;
-
-        // First pass: effective positions + which cells are significant (needed up front so the
-        // neighbour lookups below can see every cell regardless of its index in the list).
-        var ex = new double[field.Cells.Count];
-        var ez = new double[field.Cells.Count];
-        // Every marker-eligible cell (lows AND highs) — an occluded low's cold front may have caught
-        // either, so its catch-target lookup below needs the full set, not just lows.
-        var significantIndices = new List<int>();
-        var lowIndices = new List<int>();
-        // Subset of lowIndices eligible as a JOIN target: MOVING, open-wave lows only. A Stationary
-        // system already draws its own full closed loop, so a curve marching INTO it would either
-        // duplicate that loop or read as attaching to the wrong kind of boundary — those systems still
-        // get markers/their own contour, they're just excluded from other lows' neighbour search. An
-        // Occluded low, though, is itself drawn as an open curve now (see Compute below) so it's a fine
-        // JOIN target and stays in this set.
-        var movingLowIndices = new List<int>();
-        for (int i = 0; i < field.Cells.Count; i++)
+        lock (field.CellsLock)
         {
-            PressureCell c = field.Cells[i];
-            if (Math.Abs(c.Strength) < MarkerMinStrength) continue;
-            ex[i] = c.X + c.VelX * elapsed;
-            ez[i] = c.Z + c.VelZ * elapsed;
-            markers.Add(new FrontMarker { X = ex[i], Z = ez[i], IsHigh = !c.IsLow });
-            significantIndices.Add(i);
-            if (!c.IsLow) continue;
-            lowIndices.Add(i);
-            double spd = Math.Sqrt(c.VelX * c.VelX + c.VelZ * c.VelZ);
-            if (spd >= StationarySpeed) movingLowIndices.Add(i);
-        }
+            if (field.Cells.Count == 0) return;
 
-        foreach (int i in lowIndices)
-        {
-            PressureCell c = field.Cells[i];
-            float strength = Math.Abs(c.Strength);
-            double speed = Math.Sqrt(c.VelX * c.VelX + c.VelZ * c.VelZ);
+            double elapsed = totalHours - field.AnchorHours;
 
-            double centre = field.CellPressureAt(ex[i], ez[i], totalHours);
-            if (Math.Abs(centre) < MarkerMinStrength) continue;
-
-            if (totalHours < c.OccludedUntilTotalHours)
+            // First pass: effective positions + which cells are significant (needed up front so the
+            // neighbour lookups below can see every cell regardless of its index in the list).
+            var ex = new double[field.Cells.Count];
+            var ez = new double[field.Cells.Count];
+            // Every marker-eligible cell (lows AND highs) — an occluded low's cold front may have caught
+            // either, so its catch-target lookup below needs the full set, not just lows.
+            var significantIndices = new List<int>();
+            var lowIndices = new List<int>();
+            // Subset of lowIndices eligible as a JOIN target: MOVING, open-wave lows only. A Stationary
+            // system already draws its own full closed loop, so a curve marching INTO it would either
+            // duplicate that loop or read as attaching to the wrong kind of boundary — those systems still
+            // get markers/their own contour, they're just excluded from other lows' neighbour search. An
+            // Occluded low, though, is itself drawn as an open curve now (see Compute below) so it's a fine
+            // JOIN target and stays in this set.
+            var movingLowIndices = new List<int>();
+            for (int i = 0; i < field.Cells.Count; i++)
             {
-                // OCCLUDED: the cold front physically caught another pressure cell on the equatorward
-                // side (see WindFieldSimulation.ApplyOcclusion) — a directed catch, not a system encircling
-                // itself, so this renders a single open curve heading toward whatever was caught (a JOIN
-                // curve if that cell is still there and significant, otherwise a FREE march in the same
-                // direction), using the cold/warm symbol per PressureCell.OcclusionKind (0/unset falls back
-                // to the generic occluded symbol, e.g. for saves migrated from before OcclusionKind existed).
-                FrontType occType = c.OcclusionKind switch
+                PressureCell c = field.Cells[i];
+                if (Math.Abs(c.Strength) < MarkerMinStrength) continue;
+                ex[i] = c.X + c.VelX * elapsed;
+                ez[i] = c.Z + c.VelZ * elapsed;
+                markers.Add(new FrontMarker { X = ex[i], Z = ez[i], IsHigh = !c.IsLow });
+                significantIndices.Add(i);
+                if (!c.IsLow) continue;
+                lowIndices.Add(i);
+                double spd = Math.Sqrt(c.VelX * c.VelX + c.VelZ * c.VelZ);
+                if (spd >= StationarySpeed) movingLowIndices.Add(i);
+            }
+
+            foreach (int i in lowIndices)
+            {
+                PressureCell c = field.Cells[i];
+                float strength = Math.Abs(c.Strength);
+                double speed = Math.Sqrt(c.VelX * c.VelX + c.VelZ * c.VelZ);
+
+                double centre = field.CellPressureAt(ex[i], ez[i], totalHours);
+                if (Math.Abs(centre) < MarkerMinStrength) continue;
+
+                if (totalHours < c.OccludedUntilTotalHours)
                 {
-                    1 => FrontType.ColdOcclusion,
-                    2 => FrontType.WarmOcclusion,
-                    _ => FrontType.Occluded
-                };
+                    // OCCLUDED: the cold front physically caught another pressure cell on the equatorward
+                    // side (see WindFieldSimulation.ApplyOcclusion) — a directed catch, not a system encircling
+                    // itself, so this renders a single open curve heading toward whatever was caught (a JOIN
+                    // curve if that cell is still there and significant, otherwise a FREE march in the same
+                    // direction), using the cold/warm symbol per PressureCell.OcclusionKind (0/unset falls back
+                    // to the generic occluded symbol, e.g. for saves migrated from before OcclusionKind existed).
+                    FrontType occType = c.OcclusionKind switch
+                    {
+                        1 => FrontType.ColdOcclusion,
+                        2 => FrontType.WarmOcclusion,
+                        _ => FrontType.Occluded
+                    };
 
-                double occPoleAngle = field.PolewardZSign(ez[i]) > 0 ? Math.PI / 2.0 : -Math.PI / 2.0;
-                double coldAngle = occPoleAngle + Math.PI; // equatorward — the catching side
-                FindSidedNeighbour(significantIndices, i, ex, ez, Math.Cos(coldAngle), Math.Sin(coldAngle),
-                    out int catchTarget, out _);
+                    double occPoleAngle = field.PolewardZSign(ez[i]) > 0 ? Math.PI / 2.0 : -Math.PI / 2.0;
+                    double coldAngle = occPoleAngle + Math.PI; // equatorward — the catching side
+                    FindSidedNeighbour(significantIndices, i, ex, ez, Math.Cos(coldAngle), Math.Sin(coldAngle),
+                        out int catchTarget, out _);
 
-                Vec2d[] occPts = MarchOrJoin(field, i, ex[i], ez[i], centre, c.Radius, coldAngle, c.ColdFrontReach,
-                    c.VelX, c.VelZ, catchTarget >= 0, catchTarget >= 0 ? ex[catchTarget] : 0, catchTarget >= 0 ? ez[catchTarget] : 0,
+                    Vec2d[] occPts = MarchOrJoin(field, i, ex[i], ez[i], centre, c.Radius, coldAngle, c.ColdFrontReach,
+                        c.VelX, c.VelZ, catchTarget >= 0, catchTarget >= 0 ? ex[catchTarget] : 0, catchTarget >= 0 ? ez[catchTarget] : 0,
+                        totalHours);
+
+                    // Own travel direction where it's meaningful; an occluded low can be near-stationary, so
+                    // fall back to the catch direction itself rather than dividing by a near-zero speed.
+                    NormalizeOrFallback(c.VelX, c.VelZ, speed, coldAngle, out double occRefX, out double occRefZ);
+
+                    lines.Add(MakeLine(occType, c.BornTotalHours, strength, occPts, occRefX, occRefZ));
+                    continue;
+                }
+
+                if (speed < StationarySpeed)
+                {
+                    // STATIONARY: a real stationary front sits on the (non-advancing) boundary between two
+                    // systems, not a closed loop encircling one — so this renders a single open curve toward
+                    // this low's nearest significant neighbour (a JOIN curve, or a FREE march in a fallback
+                    // direction if truly isolated). Its facing follows how that connecting line is actually
+                    // moving — the neighbour's velocity RELATIVE to this low's own, since a stationary low's
+                    // own velocity is by definition near zero and useless as a facing reference on its own.
+                    int neighbour = FindNearestSignificantCell(significantIndices, i, ex, ez);
+                    double fallbackAngle = field.PolewardZSign(ez[i]) > 0 ? Math.PI / 2.0 : -Math.PI / 2.0;
+                    double bearingAngle = neighbour >= 0
+                        ? Math.Atan2(ez[neighbour] - ez[i], ex[neighbour] - ex[i])
+                        : fallbackAngle;
+                    float statReach = (c.ColdFrontReach + c.WarmFrontReach) * 0.5f;
+
+                    Vec2d[] statPts = MarchOrJoin(field, i, ex[i], ez[i], centre, c.Radius, bearingAngle, statReach,
+                        c.VelX, c.VelZ, neighbour >= 0, neighbour >= 0 ? ex[neighbour] : 0, neighbour >= 0 ? ez[neighbour] : 0,
+                        totalHours);
+
+                    double relVelX = neighbour >= 0 ? field.Cells[neighbour].VelX - c.VelX : Math.Cos(bearingAngle);
+                    double relVelZ = neighbour >= 0 ? field.Cells[neighbour].VelZ - c.VelZ : Math.Sin(bearingAngle);
+                    double relSpeed = Math.Sqrt(relVelX * relVelX + relVelZ * relVelZ);
+                    NormalizeOrFallback(relVelX, relVelZ, relSpeed, bearingAngle, out double statRefX, out double statRefZ);
+
+                    lines.Add(MakeLine(FrontType.Stationary, c.BornTotalHours, strength, statPts, statRefX, statRefZ));
+                    continue;
+                }
+
+                // MOVING, open wave: split by real geography, not the system's own direction of travel — the
+                // warm front heads out the POLEWARD side (warm air overruns, advancing poleward into cold
+                // territory), the cold front out the EQUATORWARD side (cold air digs in, advancing equatorward
+                // into warm territory) — matches the classic open-wave cyclone model (warm front leads toward
+                // the pole side, cold front trails toward the equator side). See WindField.PolewardZSign.
+                double poleAngle = field.PolewardZSign(ez[i]) > 0 ? Math.PI / 2.0 : -Math.PI / 2.0;
+                double poleX = Math.Cos(poleAngle), poleZ = Math.Sin(poleAngle);
+
+                // A real neighbouring low strictly on the poleward side becomes this low's Warm JOIN target;
+                // one strictly on the equatorward side becomes the Cold JOIN target — the nearest in each
+                // direction, regardless of what type of front the neighbour itself ends up drawing. With no
+                // neighbour on a side, that curve FREE-marches instead (see MarchOrJoin).
+                FindSidedNeighbour(movingLowIndices, i, ex, ez, poleX, poleZ, out int poleNeighbour, out _);
+                FindSidedNeighbour(movingLowIndices, i, ex, ez, -poleX, -poleZ, out int equatorNeighbour, out _);
+
+                Vec2d[] warmPts = MarchOrJoin(field, i, ex[i], ez[i], centre, c.Radius, poleAngle, c.WarmFrontReach,
+                    c.VelX, c.VelZ, poleNeighbour >= 0, poleNeighbour >= 0 ? ex[poleNeighbour] : 0, poleNeighbour >= 0 ? ez[poleNeighbour] : 0,
+                    totalHours);
+                Vec2d[] coldPts = MarchOrJoin(field, i, ex[i], ez[i], centre, c.Radius, poleAngle + Math.PI, c.ColdFrontReach,
+                    c.VelX, c.VelZ, equatorNeighbour >= 0, equatorNeighbour >= 0 ? ex[equatorNeighbour] : 0, equatorNeighbour >= 0 ? ez[equatorNeighbour] : 0,
                     totalHours);
 
-                // Own travel direction where it's meaningful; an occluded low can be near-stationary, so
-                // fall back to the catch direction itself rather than dividing by a near-zero speed.
-                NormalizeOrFallback(c.VelX, c.VelZ, speed, coldAngle, out double occRefX, out double occRefZ);
+                double refX = c.VelX / speed, refZ = c.VelZ / speed; // speed >= StationarySpeed here, never zero
 
-                lines.Add(MakeLine(occType, c.BornTotalHours, strength, occPts, occRefX, occRefZ));
-                continue;
+                lines.Add(MakeLine(FrontType.Warm, c.BornTotalHours, strength, warmPts, refX, refZ));
+                lines.Add(MakeLine(FrontType.Cold, c.BornTotalHours, strength, coldPts, refX, refZ));
             }
-
-            if (speed < StationarySpeed)
-            {
-                // STATIONARY: a real stationary front sits on the (non-advancing) boundary between two
-                // systems, not a closed loop encircling one — so this renders a single open curve toward
-                // this low's nearest significant neighbour (a JOIN curve, or a FREE march in a fallback
-                // direction if truly isolated). Its facing follows how that connecting line is actually
-                // moving — the neighbour's velocity RELATIVE to this low's own, since a stationary low's
-                // own velocity is by definition near zero and useless as a facing reference on its own.
-                int neighbour = FindNearestSignificantCell(significantIndices, i, ex, ez);
-                double fallbackAngle = field.PolewardZSign(ez[i]) > 0 ? Math.PI / 2.0 : -Math.PI / 2.0;
-                double bearingAngle = neighbour >= 0
-                    ? Math.Atan2(ez[neighbour] - ez[i], ex[neighbour] - ex[i])
-                    : fallbackAngle;
-                float statReach = (c.ColdFrontReach + c.WarmFrontReach) * 0.5f;
-
-                Vec2d[] statPts = MarchOrJoin(field, i, ex[i], ez[i], centre, c.Radius, bearingAngle, statReach,
-                    c.VelX, c.VelZ, neighbour >= 0, neighbour >= 0 ? ex[neighbour] : 0, neighbour >= 0 ? ez[neighbour] : 0,
-                    totalHours);
-
-                double relVelX = neighbour >= 0 ? field.Cells[neighbour].VelX - c.VelX : Math.Cos(bearingAngle);
-                double relVelZ = neighbour >= 0 ? field.Cells[neighbour].VelZ - c.VelZ : Math.Sin(bearingAngle);
-                double relSpeed = Math.Sqrt(relVelX * relVelX + relVelZ * relVelZ);
-                NormalizeOrFallback(relVelX, relVelZ, relSpeed, bearingAngle, out double statRefX, out double statRefZ);
-
-                lines.Add(MakeLine(FrontType.Stationary, c.BornTotalHours, strength, statPts, statRefX, statRefZ));
-                continue;
-            }
-
-            // MOVING, open wave: split by real geography, not the system's own direction of travel — the
-            // warm front heads out the POLEWARD side (warm air overruns, advancing poleward into cold
-            // territory), the cold front out the EQUATORWARD side (cold air digs in, advancing equatorward
-            // into warm territory) — matches the classic open-wave cyclone model (warm front leads toward
-            // the pole side, cold front trails toward the equator side). See WindField.PolewardZSign.
-            double poleAngle = field.PolewardZSign(ez[i]) > 0 ? Math.PI / 2.0 : -Math.PI / 2.0;
-            double poleX = Math.Cos(poleAngle), poleZ = Math.Sin(poleAngle);
-
-            // A real neighbouring low strictly on the poleward side becomes this low's Warm JOIN target;
-            // one strictly on the equatorward side becomes the Cold JOIN target — the nearest in each
-            // direction, regardless of what type of front the neighbour itself ends up drawing. With no
-            // neighbour on a side, that curve FREE-marches instead (see MarchOrJoin).
-            FindSidedNeighbour(movingLowIndices, i, ex, ez, poleX, poleZ, out int poleNeighbour, out _);
-            FindSidedNeighbour(movingLowIndices, i, ex, ez, -poleX, -poleZ, out int equatorNeighbour, out _);
-
-            Vec2d[] warmPts = MarchOrJoin(field, i, ex[i], ez[i], centre, c.Radius, poleAngle, c.WarmFrontReach,
-                c.VelX, c.VelZ, poleNeighbour >= 0, poleNeighbour >= 0 ? ex[poleNeighbour] : 0, poleNeighbour >= 0 ? ez[poleNeighbour] : 0,
-                totalHours);
-            Vec2d[] coldPts = MarchOrJoin(field, i, ex[i], ez[i], centre, c.Radius, poleAngle + Math.PI, c.ColdFrontReach,
-                c.VelX, c.VelZ, equatorNeighbour >= 0, equatorNeighbour >= 0 ? ex[equatorNeighbour] : 0, equatorNeighbour >= 0 ? ez[equatorNeighbour] : 0,
-                totalHours);
-
-            double refX = c.VelX / speed, refZ = c.VelZ / speed; // speed >= StationarySpeed here, never zero
-
-            lines.Add(MakeLine(FrontType.Warm, c.BornTotalHours, strength, warmPts, refX, refZ));
-            lines.Add(MakeLine(FrontType.Cold, c.BornTotalHours, strength, coldPts, refX, refZ));
         }
     }
 

@@ -235,64 +235,67 @@ public class WindFieldSimulation
     /// </summary>
     private void Advect(double now, double dGameHours)
     {
-        int n = field.Cells.Count;
-        if (n == 0) return;
-
-        DynamicWindConfig pd = config; // settings are flat on the config now
-        double elapsed = now - field.AnchorHours; // effective-position extrapolation (≈ dGameHours)
-
-        var newX = new double[n];
-        var newZ = new double[n];
-        var newVX = new double[n];
-        var newVZ = new double[n];
-        var speed = new double[n];
-
-        // Pass 1: sample the background flow at each cell's current effective position.
-        for (int i = 0; i < n; i++)
+        lock (field.CellsLock)
         {
-            PressureCell c = field.Cells[i];
-            double ex = c.X + c.VelX * elapsed;
-            double ez = c.Z + c.VelZ * elapsed;
-            newX[i] = ex;
-            newZ[i] = ez;
+            int n = field.Cells.Count;
+            if (n == 0) return;
 
-            if (pd.AdvectWithWind || pd.BernoulliStrength > 0f)
+            DynamicWindConfig pd = config; // settings are flat on the config now
+            double elapsed = now - field.AnchorHours; // effective-position extrapolation (≈ dGameHours)
+
+            var newX = new double[n];
+            var newZ = new double[n];
+            var newVX = new double[n];
+            var newVZ = new double[n];
+            var speed = new double[n];
+
+            // Pass 1: sample the background flow at each cell's current effective position.
+            for (int i = 0; i < n; i++)
             {
-                Vec2d w = field.WindAt(ex, ez, now, i); // background only (excludes this cell)
-                speed[i] = w.Length();
-                if (pd.AdvectWithWind)
+                PressureCell c = field.Cells[i];
+                double ex = c.X + c.VelX * elapsed;
+                double ez = c.Z + c.VelZ * elapsed;
+                newX[i] = ex;
+                newZ[i] = ez;
+
+                if (pd.AdvectWithWind || pd.BernoulliStrength > 0f)
                 {
-                    // Ease toward the local wind rather than snapping to it — see VelocityEaseRatePerHour.
-                    // A heat/cold-wave high eases far slower (a lot of inertia — see HeatColdWaveVelocityEaseRatePerHour).
-                    double targetVX = w.X * pd.AdvectionSpeed;
-                    double targetVZ = w.Y * pd.AdvectionSpeed;
-                    double easeRate = c.IsHeatColdWave ? HeatColdWaveVelocityEaseRatePerHour : VelocityEaseRatePerHour;
-                    double ease = 1.0 - Math.Exp(-easeRate * dGameHours);
-                    newVX[i] = c.VelX + (targetVX - c.VelX) * ease;
-                    newVZ[i] = c.VelZ + (targetVZ - c.VelZ) * ease;
+                    Vec2d w = field.WindAt(ex, ez, now, i); // background only (excludes this cell)
+                    speed[i] = w.Length();
+                    if (pd.AdvectWithWind)
+                    {
+                        // Ease toward the local wind rather than snapping to it — see VelocityEaseRatePerHour.
+                        // A heat/cold-wave high eases far slower (a lot of inertia — see HeatColdWaveVelocityEaseRatePerHour).
+                        double targetVX = w.X * pd.AdvectionSpeed;
+                        double targetVZ = w.Y * pd.AdvectionSpeed;
+                        double easeRate = c.IsHeatColdWave ? HeatColdWaveVelocityEaseRatePerHour : VelocityEaseRatePerHour;
+                        double ease = 1.0 - Math.Exp(-easeRate * dGameHours);
+                        newVX[i] = c.VelX + (targetVX - c.VelX) * ease;
+                        newVZ[i] = c.VelZ + (targetVZ - c.VelZ) * ease;
+                    }
+                    else { newVX[i] = c.VelX; newVZ[i] = c.VelZ; }
                 }
-                else { newVX[i] = c.VelX; newVZ[i] = c.VelZ; }
+                else { newVX[i] = c.VelX; newVZ[i] = c.VelZ; speed[i] = 1.0; }
             }
-            else { newVX[i] = c.VelX; newVZ[i] = c.VelZ; speed[i] = 1.0; }
+
+            // Pass 2: write positions/velocities and evolve strength + radius.
+            for (int i = 0; i < n; i++)
+            {
+                PressureCell c = field.Cells[i];
+                c.X = newX[i] + newVX[i] * dGameHours;
+                c.Z = newZ[i] + newVZ[i] * dGameHours;
+                c.VelX = newVX[i];
+                c.VelZ = newVZ[i];
+
+                ApplyDispersal(c, pd, dGameHours);
+                ApplyBernoulli(c, pd, speed[i], dGameHours);
+                GrowStormLikelihood(c, dGameHours);
+                EaseOrientation(c, newVX[i], newVZ[i], dGameHours);
+            }
+
+            field.AnchorHours = now;
+            Dirty = true;
         }
-
-        // Pass 2: write positions/velocities and evolve strength + radius.
-        for (int i = 0; i < n; i++)
-        {
-            PressureCell c = field.Cells[i];
-            c.X = newX[i] + newVX[i] * dGameHours;
-            c.Z = newZ[i] + newVZ[i] * dGameHours;
-            c.VelX = newVX[i];
-            c.VelZ = newVZ[i];
-
-            ApplyDispersal(c, pd, dGameHours);
-            ApplyBernoulli(c, pd, speed[i], dGameHours);
-            GrowStormLikelihood(c, dGameHours);
-            EaseOrientation(c, newVX[i], newVZ[i], dGameHours);
-        }
-
-        field.AnchorHours = now;
-        Dirty = true;
     }
 
     /// <summary>Radius/strength dispersal — see DispersalRate/DispersalSpreadPerHour/DispersalDecayPerHour.</summary>
@@ -364,38 +367,41 @@ public class WindFieldSimulation
     private void ApplyOcclusion(double now, double dGameHours)
     {
         if (dGameHours <= 0) return;
-        for (int i = 0; i < field.Cells.Count; i++)
+        lock (field.CellsLock)
         {
-            PressureCell c = field.Cells[i];
-            if (!c.IsLow) continue; // highs don't occlude
+            for (int i = 0; i < field.Cells.Count; i++)
+            {
+                PressureCell c = field.Cells[i];
+                if (!c.IsLow) continue; // highs don't occlude
 
-            double poleSign = field.PolewardZSign(c.Z);
-            int coldTarget = FindNearestCellOnSide(i, 0.0, -poleSign, OcclusionNeighbourMinStrength);
-            int warmTarget = FindNearestCellOnSide(i, 0.0, poleSign, OcclusionNeighbourMinStrength);
+                double poleSign = field.PolewardZSign(c.Z);
+                int coldTarget = FindNearestCellOnSide(i, 0.0, -poleSign, OcclusionNeighbourMinStrength);
+                int warmTarget = FindNearestCellOnSide(i, 0.0, poleSign, OcclusionNeighbourMinStrength);
 
-            double coldMult = ReachGrowthMult(c, coldTarget);
-            double warmMult = ReachGrowthMult(c, warmTarget);
+                double coldMult = ReachGrowthMult(c, coldTarget);
+                double warmMult = ReachGrowthMult(c, warmTarget);
 
-            c.ColdFrontReach = (float)Math.Min(MaxFrontReach, c.ColdFrontReach + ColdReachGrowthPerHour * coldMult * dGameHours);
-            c.WarmFrontReach = (float)Math.Min(MaxFrontReach, c.WarmFrontReach + WarmReachGrowthPerHour * warmMult * dGameHours);
+                c.ColdFrontReach = (float)Math.Min(MaxFrontReach, c.ColdFrontReach + ColdReachGrowthPerHour * coldMult * dGameHours);
+                c.WarmFrontReach = (float)Math.Min(MaxFrontReach, c.WarmFrontReach + WarmReachGrowthPerHour * warmMult * dGameHours);
 
-            if (c.OccludedUntilTotalHours > 0) continue; // one-shot latch: already occluded once
-            if (coldTarget < 0 || c.ColdFrontReach < OcclusionCatchMinReach) continue;
+                if (c.OccludedUntilTotalHours > 0) continue; // one-shot latch: already occluded once
+                if (coldTarget < 0 || c.ColdFrontReach < OcclusionCatchMinReach) continue;
 
-            PressureCell target = field.Cells[coldTarget];
-            double dx = target.X - c.X, dz = target.Z - c.Z;
-            double dist = Math.Sqrt(dx * dx + dz * dz);
-            double catchDist = OcclusionCatchRadiusFactor * c.ColdFrontReach * c.Radius + OcclusionCatchTargetRadiusFactor * target.Radius;
-            if (dist > catchDist) continue; // not caught yet
+                PressureCell target = field.Cells[coldTarget];
+                double dx = target.X - c.X, dz = target.Z - c.Z;
+                double dist = Math.Sqrt(dx * dx + dz * dz);
+                double catchDist = OcclusionCatchRadiusFactor * c.ColdFrontReach * c.Radius + OcclusionCatchTargetRadiusFactor * target.Radius;
+                if (dist > catchDist) continue; // not caught yet
 
-            c.OcclusionKind = c.AirMassTemp <= target.AirMassTemp ? (byte)1 : (byte)2; // 1 = cold, 2 = warm
-            c.StormLikelihood = OcclusionAftermathStormLikelihood; // storm winds down once occluded
-            c.OccludedUntilTotalHours = now + OccludedVisualHours;
+                c.OcclusionKind = c.AirMassTemp <= target.AirMassTemp ? (byte)1 : (byte)2; // 1 = cold, 2 = warm
+                c.StormLikelihood = OcclusionAftermathStormLikelihood; // storm winds down once occluded
+                c.OccludedUntilTotalHours = now + OccludedVisualHours;
 
-            double remaining = c.DiesTotalHours - now;
-            if (remaining > 0) c.DiesTotalHours = now + remaining * OcclusionDeathSpeedup;
+                double remaining = c.DiesTotalHours - now;
+                if (remaining > 0) c.DiesTotalHours = now + remaining * OcclusionDeathSpeedup;
 
-            Dirty = true;
+                Dirty = true;
+            }
         }
     }
 
@@ -433,44 +439,50 @@ public class WindFieldSimulation
     private void ApplyWeatherFeedback(double now, double dGameHours)
     {
         if (dGameHours <= 0 || config.WeatherPressureCoupling <= 0f) return;
-        int n = field.Cells.Count;
-        if (n == 0) return;
-
-        int y = sapi.World.SeaLevel;
-        double totalDays = sapi.World.Calendar.TotalDays;
-        double elapsed = now - field.AnchorHours;
-        var pos = new BlockPos(0, y, 0, 0);
-
-        for (int i = 0; i < n; i++)
+        lock (field.CellsLock)
         {
-            PressureCell c = field.Cells[i];
-            pos.X = (int)(c.X + c.VelX * elapsed);
-            pos.Z = (int)(c.Z + c.VelZ * elapsed);
-            ClimateCondition cc = sapi.World.BlockAccessor.GetClimateAt(pos, EnumGetClimateMode.NowValues, totalDays);
-            if (cc == null) continue;
+            int n = field.Cells.Count;
+            if (n == 0) return;
 
-            double cloud = GameMath.Clamp(cc.RainCloudOverlay, 0f, 1f);
-            double precip = GameMath.Clamp(cc.Rainfall, 0f, 1f);
-            // Clear (cloud below threshold) → negative (toward high); cloudy → positive (toward low);
-            // storms add a strong extra low-ward push (storms deepen the low that's producing them).
-            double forcing = (cloud - ClearCloudThreshold) + StormForcingGain * precip;
+            int y = sapi.World.SeaLevel;
+            double totalDays = sapi.World.Calendar.TotalDays;
+            double elapsed = now - field.AnchorHours;
+            var pos = new BlockPos(0, y, 0, 0);
 
-            c.Strength += (float)(config.WeatherPressureCoupling * forcing * dGameHours);
-            if (c.Strength > MaxStrength) c.Strength = (float)MaxStrength;
-            else if (c.Strength < -MaxStrength) c.Strength = -(float)MaxStrength;
+            for (int i = 0; i < n; i++)
+            {
+                PressureCell c = field.Cells[i];
+                pos.X = (int)(c.X + c.VelX * elapsed);
+                pos.Z = (int)(c.Z + c.VelZ * elapsed);
+                ClimateCondition cc = sapi.World.BlockAccessor.GetClimateAt(pos, EnumGetClimateMode.NowValues, totalDays);
+                if (cc == null) continue;
+
+                double cloud = GameMath.Clamp(cc.RainCloudOverlay, 0f, 1f);
+                double precip = GameMath.Clamp(cc.Rainfall, 0f, 1f);
+                // Clear (cloud below threshold) → negative (toward high); cloudy → positive (toward low);
+                // storms add a strong extra low-ward push (storms deepen the low that's producing them).
+                double forcing = (cloud - ClearCloudThreshold) + StormForcingGain * precip;
+
+                c.Strength += (float)(config.WeatherPressureCoupling * forcing * dGameHours);
+                if (c.Strength > MaxStrength) c.Strength = (float)MaxStrength;
+                else if (c.Strength < -MaxStrength) c.Strength = -(float)MaxStrength;
+            }
+            Dirty = true;
         }
-        Dirty = true;
     }
 
     private void Expire(double now)
     {
-        for (int i = field.Cells.Count - 1; i >= 0; i--)
+        lock (field.CellsLock)
         {
-            PressureCell c = field.Cells[i];
-            if (now >= c.DiesTotalHours || Math.Abs(c.Strength) < MinStrength || IsTooFarFromAllPlayers(c))
+            for (int i = field.Cells.Count - 1; i >= 0; i--)
             {
-                field.Cells.RemoveAt(i);
-                Dirty = true;
+                PressureCell c = field.Cells[i];
+                if (now >= c.DiesTotalHours || Math.Abs(c.Strength) < MinStrength || IsTooFarFromAllPlayers(c))
+                {
+                    field.Cells.RemoveAt(i);
+                    Dirty = true;
+                }
             }
         }
     }
@@ -550,7 +562,7 @@ public class WindFieldSimulation
     private void MaybeSpawn(double now, double dGameHours)
     {
         if (dGameHours <= 0) return;
-        if (field.Cells.Count >= config.MaxActiveCells) return;
+        lock (field.CellsLock) { if (field.Cells.Count >= config.MaxActiveCells) return; }
         // Expected count scales with elapsed GAME time, so pressure systems evolve on the world clock —
         // and speed up while a player sleeps (the calendar fast-forwards → larger dGameHours per tick).
         SpawnExpected(now, config.LowSpawnRatePerDay / 24.0 * dGameHours, isLow: true);
@@ -569,68 +581,71 @@ public class WindFieldSimulation
 
     private void Spawn(double now, bool isLow)
     {
-        if (field.Cells.Count >= config.MaxActiveCells) return;
-        if (!TryGetSpawnAnchor(out double cx, out double cz)) return;
-
-        // Size cells to a fraction of the spawn range so neighbours overlap into broad blobs that span
-        // the visible map. Config radii (CellRadiusMin/Max, user-set) are the only clamp.
-        float radius = GameMath.Clamp((float)((0.15 + rand.NextDouble() * 0.2) * SpawnRangeBlocks), config.CellRadiusMin, config.CellRadiusMax);
-
-        // Mean jetstream bearing (seasonally tilted N/S). Systems spawn UPWIND of this bearing (± a
-        // scatter spread) so they drift back down the jet THROUGH the player's area rather than being
-        // carried off to the north/south when the stream tilts with the season — the old due-west lean
-        // made seasonally-tilted systems sail past the player.
-        double jetAng = field.SeasonalBiasMaxAngle * field.SeasonalBiasZ;
-        double fx = Math.Cos(jetAng), fz = Math.Sin(jetAng); // downwind unit vector
-
-        // Advection speed in blocks/hour along the bearing, scaled by base strength.
-        double advect = (300.0 + rand.NextDouble() * 300.0) * Math.Max(0.2, config.BaseJetstreamStrength);
-        double velX = fx * advect;
-        double velZ = fz * advect;
-
-        // Lifetime: lows are shorter-lived/sharper than highs.
-        double durationHours = isLow ? (12 + rand.NextDouble() * 24) : (24 + rand.NextDouble() * 48);
-
-        double upwindAngle = jetAng + Math.PI; // opposite the downwind jet bearing
-        double bearing = upwindAngle + (rand.NextDouble() - 0.5) * 2.0 * SpawnAngleSpreadRad;
-        double dirX = Math.Cos(bearing), dirZ = Math.Sin(bearing);
-
-        double dist = SpawnDistanceBlocks + (rand.NextDouble() - 0.5) * 2.0 * SpawnDistanceJitter;
-        double maxSafeDist = DespawnMargin + radius - SpawnDespawnSafetyMargin;
-        if (dist > maxSafeDist) dist = maxSafeDist;
-
-        double startX = cx + dirX * dist;
-        double startZ = cz + dirZ * dist;
-
-        // Don't spawn directly on top of ANY online player (the anchor is only one randomly-picked
-        // player — the scatter above could still land near a different one) — push further upwind
-        // instead of just discarding the attempt.
-        double nearestPlayerDist = NearestOnlinePlayerDistance(startX, startZ);
-        if (nearestPlayerDist < SpawnPlayerAvoidRadius)
+        lock (field.CellsLock)
         {
-            double extra = SpawnPlayerAvoidRadius - nearestPlayerDist + SpawnPlayerAvoidPush;
-            startX += dirX * extra;
-            startZ += dirZ * extra;
+            if (field.Cells.Count >= config.MaxActiveCells) return;
+            if (!TryGetSpawnAnchor(out double cx, out double cz)) return;
+
+            // Size cells to a fraction of the spawn range so neighbours overlap into broad blobs that span
+            // the visible map. Config radii (CellRadiusMin/Max, user-set) are the only clamp.
+            float radius = GameMath.Clamp((float)((0.15 + rand.NextDouble() * 0.2) * SpawnRangeBlocks), config.CellRadiusMin, config.CellRadiusMax);
+
+            // Mean jetstream bearing (seasonally tilted N/S). Systems spawn UPWIND of this bearing (± a
+            // scatter spread) so they drift back down the jet THROUGH the player's area rather than being
+            // carried off to the north/south when the stream tilts with the season — the old due-west lean
+            // made seasonally-tilted systems sail past the player.
+            double jetAng = field.SeasonalBiasMaxAngle * field.SeasonalBiasZ;
+            double fx = Math.Cos(jetAng), fz = Math.Sin(jetAng); // downwind unit vector
+
+            // Advection speed in blocks/hour along the bearing, scaled by base strength.
+            double advect = (300.0 + rand.NextDouble() * 300.0) * Math.Max(0.2, config.BaseJetstreamStrength);
+            double velX = fx * advect;
+            double velZ = fz * advect;
+
+            // Lifetime: lows are shorter-lived/sharper than highs.
+            double durationHours = isLow ? (12 + rand.NextDouble() * 24) : (24 + rand.NextDouble() * 48);
+
+            double upwindAngle = jetAng + Math.PI; // opposite the downwind jet bearing
+            double bearing = upwindAngle + (rand.NextDouble() - 0.5) * 2.0 * SpawnAngleSpreadRad;
+            double dirX = Math.Cos(bearing), dirZ = Math.Sin(bearing);
+
+            double dist = SpawnDistanceBlocks + (rand.NextDouble() - 0.5) * 2.0 * SpawnDistanceJitter;
+            double maxSafeDist = DespawnMargin + radius - SpawnDespawnSafetyMargin;
+            if (dist > maxSafeDist) dist = maxSafeDist;
+
+            double startX = cx + dirX * dist;
+            double startZ = cz + dirZ * dist;
+
+            // Don't spawn directly on top of ANY online player (the anchor is only one randomly-picked
+            // player — the scatter above could still land near a different one) — push further upwind
+            // instead of just discarding the attempt.
+            double nearestPlayerDist = NearestOnlinePlayerDistance(startX, startZ);
+            if (nearestPlayerDist < SpawnPlayerAvoidRadius)
+            {
+                double extra = SpawnPlayerAvoidRadius - nearestPlayerDist + SpawnPlayerAvoidPush;
+                startX += dirX * extra;
+                startZ += dirZ * extra;
+            }
+
+            // Highs are spawned as strong as lows: a high starts upwind and must travel (and slowly decay)
+            // across the populated area before it can pair with a low into a front. Starting them weak (the
+            // old -0.3..-1.0) left them below the marker/front threshold by the time they arrived, so the
+            // overlay showed only lows and never drew a front line.
+            // Widened from the old 0.6..1.6 (only a 2.67x weak-to-strong spread against the MaxStrength=3.0
+            // clamp) — too narrow to make front wind visibly track pressure strength. 0.4..2.6 gives a 6.5x
+            // spread so weak and intense systems actually feel different.
+            float strength = isLow
+                ? (float)(0.4 + rand.NextDouble() * 2.2)
+                : (float)-(0.4 + rand.NextDouble() * 2.2);
+
+            double minorRatio = SpawnMinorRatioMin + rand.NextDouble() * (SpawnMinorRatioMax - SpawnMinorRatioMin);
+
+            field.Cells.Add(BuildCell(startX, startZ, strength, radius, velX, velZ, now, durationHours,
+                (float)minorRatio, (float)rand.NextDouble(), ComputeAirMassTemp(startX, startZ)));
+            // Re-anchor so the new cell's stored X/Z are valid at the shared anchor.
+            field.AnchorHours = now;
+            Dirty = true;
         }
-
-        // Highs are spawned as strong as lows: a high starts upwind and must travel (and slowly decay)
-        // across the populated area before it can pair with a low into a front. Starting them weak (the
-        // old -0.3..-1.0) left them below the marker/front threshold by the time they arrived, so the
-        // overlay showed only lows and never drew a front line.
-        // Widened from the old 0.6..1.6 (only a 2.67x weak-to-strong spread against the MaxStrength=3.0
-        // clamp) — too narrow to make front wind visibly track pressure strength. 0.4..2.6 gives a 6.5x
-        // spread so weak and intense systems actually feel different.
-        float strength = isLow
-            ? (float)(0.4 + rand.NextDouble() * 2.2)
-            : (float)-(0.4 + rand.NextDouble() * 2.2);
-
-        double minorRatio = SpawnMinorRatioMin + rand.NextDouble() * (SpawnMinorRatioMax - SpawnMinorRatioMin);
-
-        field.Cells.Add(BuildCell(startX, startZ, strength, radius, velX, velZ, now, durationHours,
-            (float)minorRatio, (float)rand.NextDouble(), ComputeAirMassTemp(startX, startZ)));
-        // Re-anchor so the new cell's stored X/Z are valid at the shared anchor.
-        field.AnchorHours = now;
-        Dirty = true;
     }
 
     /// <summary>Builds a newly-spawned cell's common fields — shared by <see cref="Spawn"/>,
@@ -668,7 +683,7 @@ public class WindFieldSimulation
     {
         if (dGameHours <= 0) return;
         if (!config.ThermalSeeding || field.ThermalPressureFunc == null) return;
-        if (field.Cells.Count >= config.MaxActiveCells) return;
+        lock (field.CellsLock) { if (field.Cells.Count >= config.MaxActiveCells) return; }
 
         // Expected seed attempts scale with elapsed game time (so seeding also speeds up during sleep).
         double expected = ThermalSeedRatePerDay / 24.0 * dGameHours;
@@ -680,36 +695,39 @@ public class WindFieldSimulation
 
     private void TrySeedOne(double now)
     {
-        if (field.Cells.Count >= config.MaxActiveCells) return;
-        if (!TryGetSpawnAnchor(out double cx, out double cz)) return;
-
-        double sx = cx + (rand.NextDouble() - 0.5) * 2.0 * SeedScanRadius;
-        double sz = cz + (rand.NextDouble() - 0.5) * 2.0 * SeedScanRadius;
-        double th = field.ThermalPressureFunc!(sx, sz, now);
-        if (Math.Abs(th) < SeedThreshold) return;
-
-        // Don't pile a new cell on top of an existing one.
-        double elapsed = now - field.AnchorHours;
-        foreach (PressureCell c in field.Cells)
+        lock (field.CellsLock)
         {
-            double dx = (c.X + c.VelX * elapsed) - sx;
-            double dz = (c.Z + c.VelZ * elapsed) - sz;
-            if (dx * dx + dz * dz < SeedMinSeparation * SeedMinSeparation) return;
+            if (field.Cells.Count >= config.MaxActiveCells) return;
+            if (!TryGetSpawnAnchor(out double cx, out double cz)) return;
+
+            double sx = cx + (rand.NextDouble() - 0.5) * 2.0 * SeedScanRadius;
+            double sz = cz + (rand.NextDouble() - 0.5) * 2.0 * SeedScanRadius;
+            double th = field.ThermalPressureFunc!(sx, sz, now);
+            if (Math.Abs(th) < SeedThreshold) return;
+
+            // Don't pile a new cell on top of an existing one.
+            double elapsed = now - field.AnchorHours;
+            foreach (PressureCell c in field.Cells)
+            {
+                double dx = (c.X + c.VelX * elapsed) - sx;
+                double dz = (c.Z + c.VelZ * elapsed) - sz;
+                if (dx * dx + dz * dz < SeedMinSeparation * SeedMinSeparation) return;
+            }
+
+            float radius = GameMath.Clamp((float)(0.12 * SpawnRangeBlocks), config.CellRadiusMin, config.CellRadiusMax);
+            float strength = (float)Math.Max(-2.0, Math.Min(2.0, th * SeedGain));
+            double durationHours = 8 + rand.NextDouble() * 16;
+            // Born stationary — a thermal hotspot itself isn't moving, so the cell it seeds shouldn't either.
+            // With AdvectWithWind on, Advect's velocity easing (VelocityEaseRatePerHour) then lets it speed
+            // up gradually as nearby cells' circulation and the base jetstream act on it, rather than jumping
+            // to full jet speed on its very first tick.
+            double minorRatio = SpawnMinorRatioMin + rand.NextDouble() * (SpawnMinorRatioMax - SpawnMinorRatioMin);
+
+            field.Cells.Add(BuildCell(sx, sz, strength, radius, velX: 0.0, velZ: 0.0, now, durationHours,
+                (float)minorRatio, (float)rand.NextDouble(), ComputeAirMassTemp(sx, sz)));
+            field.AnchorHours = now;
+            Dirty = true;
         }
-
-        float radius = GameMath.Clamp((float)(0.12 * SpawnRangeBlocks), config.CellRadiusMin, config.CellRadiusMax);
-        float strength = (float)Math.Max(-2.0, Math.Min(2.0, th * SeedGain));
-        double durationHours = 8 + rand.NextDouble() * 16;
-        // Born stationary — a thermal hotspot itself isn't moving, so the cell it seeds shouldn't either.
-        // With AdvectWithWind on, Advect's velocity easing (VelocityEaseRatePerHour) then lets it speed
-        // up gradually as nearby cells' circulation and the base jetstream act on it, rather than jumping
-        // to full jet speed on its very first tick.
-        double minorRatio = SpawnMinorRatioMin + rand.NextDouble() * (SpawnMinorRatioMax - SpawnMinorRatioMin);
-
-        field.Cells.Add(BuildCell(sx, sz, strength, radius, velX: 0.0, velZ: 0.0, now, durationHours,
-            (float)minorRatio, (float)rand.NextDouble(), ComputeAirMassTemp(sx, sz)));
-        field.AnchorHours = now;
-        Dirty = true;
     }
 
     /// <summary>
@@ -721,7 +739,7 @@ public class WindFieldSimulation
     {
         if (dGameHours <= 0) return;
         if (!config.HeatColdWaveEnabled || field.ThermalPressureFunc == null) return;
-        if (field.Cells.Count >= config.MaxActiveCells) return;
+        lock (field.CellsLock) { if (field.Cells.Count >= config.MaxActiveCells) return; }
 
         double expected = HeatColdWaveRatePerDay / 24.0 * dGameHours;
         int attempts = expected >= 1.0 ? 1 : 0;
@@ -741,51 +759,54 @@ public class WindFieldSimulation
     /// </summary>
     private void TrySeedHeatColdWave(double now)
     {
-        if (field.Cells.Count >= config.MaxActiveCells) return;
-        if (!TryGetSpawnAnchor(out double cx, out double cz)) return;
-
-        double sx = cx + (rand.NextDouble() - 0.5) * 2.0 * SeedScanRadius;
-        double sz = cz + (rand.NextDouble() - 0.5) * 2.0 * SeedScanRadius;
-        double th = field.ThermalPressureFunc!(sx, sz, now);
-        if (Math.Abs(th) < SeedThreshold) return; // needs a genuine terrain thermal condition to anchor to
-
-        // Don't pile onto an existing cell (same guard as TrySeedOne).
-        double elapsed = now - field.AnchorHours;
-        foreach (PressureCell c in field.Cells)
+        lock (field.CellsLock)
         {
-            double dx = (c.X + c.VelX * elapsed) - sx;
-            double dz = (c.Z + c.VelZ * elapsed) - sz;
-            if (dx * dx + dz * dz < SeedMinSeparation * SeedMinSeparation) return;
+            if (field.Cells.Count >= config.MaxActiveCells) return;
+            if (!TryGetSpawnAnchor(out double cx, out double cz)) return;
+
+            double sx = cx + (rand.NextDouble() - 0.5) * 2.0 * SeedScanRadius;
+            double sz = cz + (rand.NextDouble() - 0.5) * 2.0 * SeedScanRadius;
+            double th = field.ThermalPressureFunc!(sx, sz, now);
+            if (Math.Abs(th) < SeedThreshold) return; // needs a genuine terrain thermal condition to anchor to
+
+            // Don't pile onto an existing cell (same guard as TrySeedOne).
+            double elapsed = now - field.AnchorHours;
+            foreach (PressureCell c in field.Cells)
+            {
+                double dx = (c.X + c.VelX * elapsed) - sx;
+                double dz = (c.Z + c.VelZ * elapsed) - sz;
+                if (dx * dx + dz * dz < SeedMinSeparation * SeedMinSeparation) return;
+            }
+
+            double seasonWarmth;
+            try
+            {
+                var pos = new BlockPos((int)sx, sapi.World.SeaLevel, (int)sz, 0);
+                float seasonRel = sapi.World.Calendar.GetSeasonRel(pos); // hemisphere-aware
+                seasonWarmth = Math.Cos(2.0 * Math.PI * (seasonRel - SummerPeakRel)); // +1 midsummer, −1 midwinter
+            }
+            catch { return; } // season not ready yet — safer to skip this rare event than guess a side
+
+            bool isHeatWave = seasonWarmth >= 0;
+            double waveDelta = (HeatColdWaveTempMin + rand.NextDouble() * (HeatColdWaveTempMax - HeatColdWaveTempMin))
+                * (isHeatWave ? 1.0 : -1.0);
+
+            float radius = GameMath.Clamp((float)(0.15 * SpawnRangeBlocks), config.CellRadiusMin, config.CellRadiusMax);
+            float strength = -(float)(HeatColdWaveStrengthMin + rand.NextDouble() * (HeatColdWaveStrengthMax - HeatColdWaveStrengthMin)); // always a strong HIGH
+            double durationHours = HeatColdWaveDurationMinHours + rand.NextDouble() * (HeatColdWaveDurationMaxHours - HeatColdWaveDurationMinHours);
+            double minorRatio = SpawnMinorRatioMin + rand.NextDouble() * (SpawnMinorRatioMax - SpawnMinorRatioMin);
+
+            // highs never front/storm — StormLikelihood 0 is irrelevant, keep it inert.
+            PressureCell cell = BuildCell(sx, sz, strength, radius, velX: 0.0, velZ: 0.0, now, durationHours,
+                (float)minorRatio, stormLikelihood: 0f, airMassTemp: (float)(isHeatWave ? 1.0 : -1.0));
+            cell.IsHeatColdWave = true;
+            cell.WaveTemperatureDelta = (float)waveDelta;
+            field.Cells.Add(cell);
+            field.AnchorHours = now;
+            Dirty = true;
+            sapi.Logger.Notification("[dynamicwind] {0} forming near ({1:0}, {2:0}): {3:+0.0;-0.0}°C, ~{4:0.0} day(s).",
+                isHeatWave ? "Heat wave" : "Cold wave", sx, sz, waveDelta, durationHours / 24.0);
         }
-
-        double seasonWarmth;
-        try
-        {
-            var pos = new BlockPos((int)sx, sapi.World.SeaLevel, (int)sz, 0);
-            float seasonRel = sapi.World.Calendar.GetSeasonRel(pos); // hemisphere-aware
-            seasonWarmth = Math.Cos(2.0 * Math.PI * (seasonRel - SummerPeakRel)); // +1 midsummer, −1 midwinter
-        }
-        catch { return; } // season not ready yet — safer to skip this rare event than guess a side
-
-        bool isHeatWave = seasonWarmth >= 0;
-        double waveDelta = (HeatColdWaveTempMin + rand.NextDouble() * (HeatColdWaveTempMax - HeatColdWaveTempMin))
-            * (isHeatWave ? 1.0 : -1.0);
-
-        float radius = GameMath.Clamp((float)(0.15 * SpawnRangeBlocks), config.CellRadiusMin, config.CellRadiusMax);
-        float strength = -(float)(HeatColdWaveStrengthMin + rand.NextDouble() * (HeatColdWaveStrengthMax - HeatColdWaveStrengthMin)); // always a strong HIGH
-        double durationHours = HeatColdWaveDurationMinHours + rand.NextDouble() * (HeatColdWaveDurationMaxHours - HeatColdWaveDurationMinHours);
-        double minorRatio = SpawnMinorRatioMin + rand.NextDouble() * (SpawnMinorRatioMax - SpawnMinorRatioMin);
-
-        // highs never front/storm — StormLikelihood 0 is irrelevant, keep it inert.
-        PressureCell cell = BuildCell(sx, sz, strength, radius, velX: 0.0, velZ: 0.0, now, durationHours,
-            (float)minorRatio, stormLikelihood: 0f, airMassTemp: (float)(isHeatWave ? 1.0 : -1.0));
-        cell.IsHeatColdWave = true;
-        cell.WaveTemperatureDelta = (float)waveDelta;
-        field.Cells.Add(cell);
-        field.AnchorHours = now;
-        Dirty = true;
-        sapi.Logger.Notification("[dynamicwind] {0} forming near ({1:0}, {2:0}): {3:+0.0;-0.0}°C, ~{4:0.0} day(s).",
-            isHeatWave ? "Heat wave" : "Cold wave", sx, sz, waveDelta, durationHours / 24.0);
     }
 
     /// <summary>
@@ -844,15 +865,18 @@ public class WindFieldSimulation
     public WindFieldState Snapshot()
     {
         Dirty = false;
-        return new WindFieldState
+        lock (field.CellsLock)
         {
-            Cells = field.Cells.ToArray(),
-            BaseStrength = field.BaseStrength,
-            MeanderAmplitude = field.MeanderAmplitude,
-            CyclonicInflowAngle = field.CyclonicInflowAngle,
-            SeasonalBiasZ = field.SeasonalBiasZ,
-            TotalHoursAnchor = field.AnchorHours
-        };
+            return new WindFieldState
+            {
+                Cells = field.Cells.ToArray(),
+                BaseStrength = field.BaseStrength,
+                MeanderAmplitude = field.MeanderAmplitude,
+                CyclonicInflowAngle = field.CyclonicInflowAngle,
+                SeasonalBiasZ = field.SeasonalBiasZ,
+                TotalHoursAnchor = field.AnchorHours
+            };
+        }
     }
 
     public void Save()
@@ -887,43 +911,46 @@ public class WindFieldSimulation
                 sapi.Logger.Warning("[dynamicwind] Saved wind field deserialized to null cells — fresh start.");
                 return;
             }
-            field.Cells.Clear();
-            field.Cells.AddRange(s.Cells);
-
-            // Migrate cells saved before RadiusMinor/Orientation existed: protobuf defaults a missing
-            // field to 0, and the per-tick dispersal growth in Advect ADDS to that rather than resetting
-            // it, so without this fixup an old-save cell would render as a near-needle-thin ellipse for
-            // its first several in-game hours. Reset to circular (rad1 = rad2) and orient along the
-            // current jetstream bearing (the same formula Spawn() uses) rather than the arbitrary default.
-            double jetOrientation = field.SeasonalBiasMaxAngle * field.SeasonalBiasZ + Math.PI / 2.0;
-            foreach (PressureCell c in field.Cells)
+            lock (field.CellsLock)
             {
-                if (c.RadiusMinor > 1e-3f) continue;
-                c.RadiusMinor = c.Radius;
-                c.Orientation = (float)jetOrientation;
-            }
+                field.Cells.Clear();
+                field.Cells.AddRange(s.Cells);
 
-            // Migrate cells saved before StormLikelihood existed: protobuf defaults a missing field to
-            // 0, which would otherwise read as "will never storm" instead of the intended "unknown, so
-            // assume the worst" default for pre-existing systems.
-            foreach (PressureCell c in field.Cells)
-            {
-                if (c.StormLikelihood <= 0f) c.StormLikelihood = 1f;
-            }
+                // Migrate cells saved before RadiusMinor/Orientation existed: protobuf defaults a missing
+                // field to 0, and the per-tick dispersal growth in Advect ADDS to that rather than resetting
+                // it, so without this fixup an old-save cell would render as a near-needle-thin ellipse for
+                // its first several in-game hours. Reset to circular (rad1 = rad2) and orient along the
+                // current jetstream bearing (the same formula Spawn() uses) rather than the arbitrary default.
+                double jetOrientation = field.SeasonalBiasMaxAngle * field.SeasonalBiasZ + Math.PI / 2.0;
+                foreach (PressureCell c in field.Cells)
+                {
+                    if (c.RadiusMinor > 1e-3f) continue;
+                    c.RadiusMinor = c.Radius;
+                    c.Orientation = (float)jetOrientation;
+                }
 
-            // Migrate cells saved before ColdFrontReach/WarmFrontReach existed: protobuf defaults a
-            // missing field to 0, which would collapse the front contour to nothing instead of the
-            // intended neutral 1 (matches the base ellipse, no asymmetry yet).
-            foreach (PressureCell c in field.Cells)
-            {
-                if (c.ColdFrontReach <= 0f) c.ColdFrontReach = 1f;
-                if (c.WarmFrontReach <= 0f) c.WarmFrontReach = 1f;
-            }
+                // Migrate cells saved before StormLikelihood existed: protobuf defaults a missing field to
+                // 0, which would otherwise read as "will never storm" instead of the intended "unknown, so
+                // assume the worst" default for pre-existing systems.
+                foreach (PressureCell c in field.Cells)
+                {
+                    if (c.StormLikelihood <= 0f) c.StormLikelihood = 1f;
+                }
 
-            field.AnchorHours = s.TotalHoursAnchor; // provisional; re-anchored to the live clock next tick
-            loadedPendingReanchor = true;           // defer time baseline to the first live tick (see OnTick)
-            sapi.Logger.Notification("[dynamicwind] Loaded {0} pressure cells (saved anchor {1:0.0}h); re-anchoring to live clock.",
-                field.Cells.Count, field.AnchorHours);
+                // Migrate cells saved before ColdFrontReach/WarmFrontReach existed: protobuf defaults a
+                // missing field to 0, which would collapse the front contour to nothing instead of the
+                // intended neutral 1 (matches the base ellipse, no asymmetry yet).
+                foreach (PressureCell c in field.Cells)
+                {
+                    if (c.ColdFrontReach <= 0f) c.ColdFrontReach = 1f;
+                    if (c.WarmFrontReach <= 0f) c.WarmFrontReach = 1f;
+                }
+
+                field.AnchorHours = s.TotalHoursAnchor; // provisional; re-anchored to the live clock next tick
+                loadedPendingReanchor = true;           // defer time baseline to the first live tick (see OnTick)
+                sapi.Logger.Notification("[dynamicwind] Loaded {0} pressure cells (saved anchor {1:0.0}h); re-anchoring to live clock.",
+                    field.Cells.Count, field.AnchorHours);
+            }
         }
         catch (Exception e)
         {

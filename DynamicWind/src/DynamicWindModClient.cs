@@ -97,13 +97,19 @@ public class DynamicWindModClient : DynamicWindModCommon
     private void OnStateReceived(WindFieldState s)
     {
         if (s?.Cells == null) return;
-        Field.Cells.Clear();
-        Field.Cells.AddRange(s.Cells);
+        // Cells and AnchorHours must update together: WindAt combines them (elapsed = totalHours -
+        // AnchorHours) to extrapolate each cell's effective position, so a reader must never see new
+        // cells paired with a stale anchor (or vice versa).
+        lock (Field.CellsLock)
+        {
+            Field.Cells.Clear();
+            Field.Cells.AddRange(s.Cells);
+            Field.AnchorHours = s.TotalHoursAnchor;
+        }
         Field.BaseStrength = s.BaseStrength;
         Field.MeanderAmplitude = s.MeanderAmplitude;
         Field.CyclonicInflowAngle = s.CyclonicInflowAngle;
         Field.SeasonalBiasZ = s.SeasonalBiasZ;
-        Field.AnchorHours = s.TotalHoursAnchor;
     }
 
     /// <summary>
