@@ -264,6 +264,20 @@ public class WindFieldSimulation
         lastGameHours = now;
         if (dGameHours < 0) dGameHours = 0; // calendar reset safety
 
+        if (!HasPlayers)
+        {
+            // Pause the sim entirely when nobody's online — same idea as the world tick itself pausing:
+            // no advection, occlusion, weather feedback, spawning, or despawning happens. Still re-anchor
+            // so the stale gap doesn't accumulate: without this, once the field's anchor sat idle for a
+            // long real-world stretch, the next Advect would extrapolate every cell's effective position
+            // across that entire gap using its last-known velocity, then jump it there in one tick — the
+            // same "teleporting on reload" failure loadedPendingReanchor exists to avoid, just for an
+            // empty-server gap instead of a save/load gap. Cells keep their frozen X/Z; only the anchor
+            // moves, so nothing actually appears to move until the sim resumes.
+            lock (field.CellsLock) { field.AnchorHours = now; }
+            return;
+        }
+
         Advect(now, dGameHours);
         ApplyOcclusion(now, dGameHours);
         ApplyWeatherFeedback(now, dGameHours);
