@@ -51,7 +51,10 @@ internal static class WindmillDirectionality
             harmony.Patch(checkWind, postfix: new HarmonyMethod(typeof(WindmillDirectionality), nameof(CheckWindSpeedPostfix)));
             harmony.Patch(getTorque,
                 prefix: new HarmonyMethod(typeof(WindmillDirectionality), nameof(GetTorquePrefix)),
-                postfix: new HarmonyMethod(typeof(WindmillDirectionality), nameof(GetTorquePostfix)));
+                // Finalizer, not postfix: must restore propagationDir even if GetTorque throws, or the
+                // rotor is left permanently wind-reversed.
+                finalizer: new HarmonyMethod(typeof(WindmillDirectionality), nameof(GetTorqueFinalizer)));
+            logger.Notification("[dynamicwind] Windmill directionality enabled.");
         }
         catch (Exception e)
         {
@@ -129,7 +132,7 @@ internal static class WindmillDirectionality
         }
     }
 
-    private static void GetTorquePostfix(BEBehaviorMPRotor __instance, object? __state)
+    private static void GetTorqueFinalizer(BEBehaviorMPRotor __instance, object? __state)
     {
         if (__state is BlockFacing dir && fPropagationDir != null)
             fPropagationDir.SetValue(__instance, dir);

@@ -40,7 +40,7 @@ public class PressureCell
     /// spawn and slowly builds over the cell's lifetime (see WindFieldSimulation.Advect) until its cold
     /// front catches another pressure cell and it occludes (see WindFieldSimulation.ApplyOcclusion),
     /// after which it drops hard — the storm winds down once occluded. Feeds
-    /// <see cref="WindField.StormBiasAt"/>. Cells saved before this field existed deserialize it to the
+    /// <see cref="DynamicWind.WindSystem.WindField.StormBiasAt"/>. Cells saved before this field existed deserialize it to the
     /// protobuf default 0; WindFieldSimulation.Load migrates those to 1.0 (see the requirement that
     /// migrated cells default to full storm likelihood).</summary>
     public float StormLikelihood;

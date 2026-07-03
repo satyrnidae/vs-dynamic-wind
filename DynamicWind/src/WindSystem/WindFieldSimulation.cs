@@ -285,48 +285,59 @@ public class WindFieldSimulation
             c.VelX = newVX[i];
             c.VelZ = newVZ[i];
 
-            if (pd.DispersalRate > 0f && dGameHours > 0)
-            {
-                c.Radius += (float)(pd.DispersalRate * DispersalSpreadPerHour * dGameHours);
-                if (c.Radius > MaxRadius) c.Radius = (float)MaxRadius;
-
-                float minor = c.RadiusMinor > 1e-3f ? c.RadiusMinor : c.Radius;
-                minor += (float)(pd.DispersalRate * DispersalSpreadPerHour * MinorDispersalFactor * dGameHours);
-                c.RadiusMinor = Math.Min(minor, c.Radius); // never overtake the major axis
-
-                c.Strength *= (float)Math.Exp(-pd.DispersalRate * DispersalDecayPerHour * dGameHours);
-            }
-
-            if (pd.BernoulliStrength > 0f && dGameHours > 0)
-            {
-                // Faster-than-nominal flow lowers pressure (toward low, +); stagnant air raises it.
-                c.Strength += (float)(pd.BernoulliStrength * BernoulliPerHour * (speed[i] - 1.0) * dGameHours);
-                if (c.Strength > MaxStrength) c.Strength = (float)MaxStrength;
-                else if (c.Strength < -MaxStrength) c.Strength = -(float)MaxStrength;
-            }
-
-            if (dGameHours > 0)
-            {
-                c.StormLikelihood = Math.Min(1f, c.StormLikelihood + (float)(StormLikelihoodGrowthPerHour * dGameHours));
-            }
-
-            // Ease the ellipse's stored orientation toward the cell's own travel bearing, rather than
-            // snapping, so the shape rotates smoothly. Frozen (not chased) at near-zero own speed to avoid
-            // tracking a numerically noisy direction — common for slow/stalled systems, not a rare case.
-            if (dGameHours > 0)
-            {
-                double ownSpeed = Math.Sqrt(newVX[i] * newVX[i] + newVZ[i] * newVZ[i]);
-                if (ownSpeed > MinSpeedForOrientation)
-                {
-                    double target = Math.Atan2(newVZ[i], newVX[i]) + Math.PI / 2.0;
-                    double t = 1.0 - Math.Exp(-OrientationEaseRate * dGameHours);
-                    c.Orientation = (float)AngleMath.AngleLerp(c.Orientation, target, t);
-                }
-            }
+            ApplyDispersal(c, pd, dGameHours);
+            ApplyBernoulli(c, pd, speed[i], dGameHours);
+            GrowStormLikelihood(c, dGameHours);
+            EaseOrientation(c, newVX[i], newVZ[i], dGameHours);
         }
 
         field.AnchorHours = now;
         Dirty = true;
+    }
+
+    /// <summary>Radius/strength dispersal — see DispersalRate/DispersalSpreadPerHour/DispersalDecayPerHour.</summary>
+    private static void ApplyDispersal(PressureCell c, DynamicWindConfig pd, double dGameHours)
+    {
+        if (pd.DispersalRate <= 0f || dGameHours <= 0) return;
+
+        c.Radius += (float)(pd.DispersalRate * DispersalSpreadPerHour * dGameHours);
+        if (c.Radius > MaxRadius) c.Radius = (float)MaxRadius;
+
+        float minor = c.RadiusMinor > 1e-3f ? c.RadiusMinor : c.Radius;
+        minor += (float)(pd.DispersalRate * DispersalSpreadPerHour * MinorDispersalFactor * dGameHours);
+        c.RadiusMinor = Math.Min(minor, c.Radius); // never overtake the major axis
+
+        c.Strength *= (float)Math.Exp(-pd.DispersalRate * DispersalDecayPerHour * dGameHours);
+    }
+
+    /// <summary>Faster-than-nominal flow lowers pressure (toward low, +); stagnant air raises it.</summary>
+    private static void ApplyBernoulli(PressureCell c, DynamicWindConfig pd, double speed, double dGameHours)
+    {
+        if (pd.BernoulliStrength <= 0f || dGameHours <= 0) return;
+
+        c.Strength += (float)(pd.BernoulliStrength * BernoulliPerHour * (speed - 1.0) * dGameHours);
+        if (c.Strength > MaxStrength) c.Strength = (float)MaxStrength;
+        else if (c.Strength < -MaxStrength) c.Strength = -(float)MaxStrength;
+    }
+
+    private static void GrowStormLikelihood(PressureCell c, double dGameHours)
+    {
+        if (dGameHours <= 0) return;
+        c.StormLikelihood = Math.Min(1f, c.StormLikelihood + (float)(StormLikelihoodGrowthPerHour * dGameHours));
+    }
+
+    /// <summary>Eases the ellipse's stored orientation toward the cell's own travel bearing, rather than
+    /// snapping, so the shape rotates smoothly. Frozen (not chased) at near-zero own speed to avoid
+    /// tracking a numerically noisy direction — common for slow/stalled systems, not a rare case.</summary>
+    private static void EaseOrientation(PressureCell c, double velX, double velZ, double dGameHours)
+    {
+        if (dGameHours <= 0) return;
+        double ownSpeed = Math.Sqrt(velX * velX + velZ * velZ);
+        if (ownSpeed <= MinSpeedForOrientation) return;
+
+        double target = OrientationFromVelocity(velX, velZ);
+        double t = 1.0 - Math.Exp(-OrientationEaseRate * dGameHours);
+        c.Orientation = (float)AngleMath.AngleLerp(c.Orientation, target, t);
     }
 
     /// <summary>
@@ -342,6 +353,14 @@ public class WindFieldSimulation
     /// front (kind = warm) — matching real synoptic classification. Storm likelihood then drops hard and
     /// remaining lifetime is cut short, same as before.
     /// </summary>
+    /// <summary>Reach-growth multiplier against whichever cell sits on a side (see DeltaTSlowdownScale
+    /// above): a similar air mass (<paramref name="targetIndex"/>'s <see cref="PressureCell.AirMassTemp"/>
+    /// close to <paramref name="c"/>'s own) offers little resistance and the base rate applies almost
+    /// unmodified; a starkly different one slows it. No cell on that side ⇒ unmodified base rate.</summary>
+    private double ReachGrowthMult(PressureCell c, int targetIndex) => targetIndex >= 0
+        ? 1.0 / (1.0 + DeltaTSlowdownScale * Math.Abs(c.AirMassTemp - field.Cells[targetIndex].AirMassTemp))
+        : 1.0;
+
     private void ApplyOcclusion(double now, double dGameHours)
     {
         if (dGameHours <= 0) return;
@@ -354,12 +373,8 @@ public class WindFieldSimulation
             int coldTarget = FindNearestCellOnSide(i, 0.0, -poleSign, OcclusionNeighbourMinStrength);
             int warmTarget = FindNearestCellOnSide(i, 0.0, poleSign, OcclusionNeighbourMinStrength);
 
-            double coldMult = coldTarget >= 0
-                ? 1.0 / (1.0 + DeltaTSlowdownScale * Math.Abs(c.AirMassTemp - field.Cells[coldTarget].AirMassTemp))
-                : 1.0;
-            double warmMult = warmTarget >= 0
-                ? 1.0 / (1.0 + DeltaTSlowdownScale * Math.Abs(c.AirMassTemp - field.Cells[warmTarget].AirMassTemp))
-                : 1.0;
+            double coldMult = ReachGrowthMult(c, coldTarget);
+            double warmMult = ReachGrowthMult(c, warmTarget);
 
             c.ColdFrontReach = (float)Math.Min(MaxFrontReach, c.ColdFrontReach + ColdReachGrowthPerHour * coldMult * dGameHours);
             c.WarmFrontReach = (float)Math.Min(MaxFrontReach, c.WarmFrontReach + WarmReachGrowthPerHour * warmMult * dGameHours);
@@ -483,7 +498,7 @@ public class WindFieldSimulation
                 double dx = e.Pos.X - c.X;
                 double dz = e.Pos.Z - c.Z;
                 double distSq = dx * dx + dz * dz;
-                double threshold = DespawnMargin + EllipseRadiusToward(c, dx, dz);
+                double threshold = DespawnMargin + EllipseGeometry.RadiusToward(c, dx, dz);
                 if (distSq <= threshold * threshold) return false;
             }
             return anyPlayer;
@@ -495,7 +510,7 @@ public class WindFieldSimulation
 
         double ndx = nearestEntity.Pos.X - c.X;
         double ndz = nearestEntity.Pos.Z - c.Z;
-        double nThreshold = DespawnMargin + EllipseRadiusToward(c, ndx, ndz);
+        double nThreshold = DespawnMargin + EllipseGeometry.RadiusToward(c, ndx, ndz);
         return ndx * ndx + ndz * ndz > nThreshold * nThreshold;
     }
 
@@ -526,26 +541,6 @@ public class WindFieldSimulation
         if (nearestEntity == null) return best;
         double ndx = nearestEntity.Pos.X - x, ndz = nearestEntity.Pos.Z - z;
         return Math.Sqrt(ndx * ndx + ndz * ndz);
-    }
-
-    /// <summary>
-    /// The cell's elliptical footprint radius in the direction of (<paramref name="dx"/>, <paramref name="dz"/>)
-    /// (a vector from the cell's centre outward, not necessarily normalized) — same ellipse geometry as
-    /// <see cref="WindField"/>'s EllipseNorm2, evaluated along this one direction rather than at a point.
-    /// </summary>
-    private static double EllipseRadiusToward(PressureCell c, double dx, double dz)
-    {
-        double dist = Math.Sqrt(dx * dx + dz * dz);
-        if (dist < 1e-6) return c.Radius;
-        double ux = dx / dist, uz = dz / dist;
-        double crossX = Math.Cos(c.Orientation), crossZ = Math.Sin(c.Orientation);
-        double alongX = -crossZ, alongZ = crossX;
-        double along = ux * alongX + uz * alongZ;
-        double cross = ux * crossX + uz * crossZ;
-        double rMinor = c.RadiusMinor > 1e-3f ? c.RadiusMinor : c.Radius;
-        double rMajor = c.Radius;
-        double f = (along * along) / (rMinor * rMinor) + (cross * cross) / (rMajor * rMajor);
-        return f > 1e-9 ? 1.0 / Math.Sqrt(f) : rMajor;
     }
 
     // Cap spawns/seeds per tick so a huge calendar jump (e.g. sleeping through several days) can't
@@ -631,25 +626,38 @@ public class WindFieldSimulation
 
         double minorRatio = SpawnMinorRatioMin + rand.NextDouble() * (SpawnMinorRatioMax - SpawnMinorRatioMin);
 
-        field.Cells.Add(new PressureCell
-        {
-            X = startX,
-            Z = startZ,
-            Strength = strength,
-            Radius = radius,
-            VelX = velX,
-            VelZ = velZ,
-            BornTotalHours = now,
-            DiesTotalHours = now + durationHours,
-            RadiusMinor = (float)(radius * minorRatio),
-            Orientation = (float)(Math.Atan2(velZ, velX) + Math.PI / 2.0),
-            StormLikelihood = (float)rand.NextDouble(),
-            AirMassTemp = ComputeAirMassTemp(startX, startZ)
-        });
+        field.Cells.Add(BuildCell(startX, startZ, strength, radius, velX, velZ, now, durationHours,
+            (float)minorRatio, (float)rand.NextDouble(), ComputeAirMassTemp(startX, startZ)));
         // Re-anchor so the new cell's stored X/Z are valid at the shared anchor.
         field.AnchorHours = now;
         Dirty = true;
     }
+
+    /// <summary>Builds a newly-spawned cell's common fields — shared by <see cref="Spawn"/>,
+    /// <see cref="TrySeedOne"/>, and <see cref="TrySeedHeatColdWave"/>, which each add their own
+    /// spawn-specific fields (e.g. heat/cold-wave flags) on top.</summary>
+    private static PressureCell BuildCell(double x, double z, float strength, float radius,
+        double velX, double velZ, double now, double durationHours,
+        float minorRatio, float stormLikelihood, float airMassTemp) => new()
+    {
+        X = x,
+        Z = z,
+        Strength = strength,
+        Radius = radius,
+        VelX = velX,
+        VelZ = velZ,
+        BornTotalHours = now,
+        DiesTotalHours = now + durationHours,
+        RadiusMinor = radius * minorRatio,
+        Orientation = OrientationFromVelocity(velX, velZ),
+        StormLikelihood = stormLikelihood,
+        AirMassTemp = airMassTemp
+    };
+
+    /// <summary>World-space orientation angle (radians) of a cell's major/cross-stream axis derived from
+    /// its velocity bearing — see <see cref="PressureCell.Orientation"/>.</summary>
+    private static float OrientationFromVelocity(double velX, double velZ)
+        => (float)(Math.Atan2(velZ, velX) + Math.PI / 2.0);
 
     /// <summary>
     /// Spawn a mobile, dispersing pressure cell from a terrain thermal hotspot (hot dry land → low,
@@ -696,25 +704,10 @@ public class WindFieldSimulation
         // With AdvectWithWind on, Advect's velocity easing (VelocityEaseRatePerHour) then lets it speed
         // up gradually as nearby cells' circulation and the base jetstream act on it, rather than jumping
         // to full jet speed on its very first tick.
-        double velX = 0.0;
-        double velZ = 0.0;
         double minorRatio = SpawnMinorRatioMin + rand.NextDouble() * (SpawnMinorRatioMax - SpawnMinorRatioMin);
 
-        field.Cells.Add(new PressureCell
-        {
-            X = sx,
-            Z = sz,
-            Strength = strength,
-            Radius = radius,
-            VelX = velX,
-            VelZ = velZ,
-            BornTotalHours = now,
-            DiesTotalHours = now + durationHours,
-            RadiusMinor = (float)(radius * minorRatio),
-            Orientation = (float)(Math.Atan2(velZ, velX) + Math.PI / 2.0),
-            StormLikelihood = (float)rand.NextDouble(),
-            AirMassTemp = ComputeAirMassTemp(sx, sz)
-        });
+        field.Cells.Add(BuildCell(sx, sz, strength, radius, velX: 0.0, velZ: 0.0, now, durationHours,
+            (float)minorRatio, (float)rand.NextDouble(), ComputeAirMassTemp(sx, sz)));
         field.AnchorHours = now;
         Dirty = true;
     }
@@ -783,23 +776,12 @@ public class WindFieldSimulation
         double durationHours = HeatColdWaveDurationMinHours + rand.NextDouble() * (HeatColdWaveDurationMaxHours - HeatColdWaveDurationMinHours);
         double minorRatio = SpawnMinorRatioMin + rand.NextDouble() * (SpawnMinorRatioMax - SpawnMinorRatioMin);
 
-        field.Cells.Add(new PressureCell
-        {
-            X = sx,
-            Z = sz,
-            Strength = strength,
-            Radius = radius,
-            VelX = 0.0,
-            VelZ = 0.0,
-            BornTotalHours = now,
-            DiesTotalHours = now + durationHours,
-            RadiusMinor = (float)(radius * minorRatio),
-            Orientation = (float)(Math.PI / 2.0),
-            StormLikelihood = 0f, // highs never front/storm — irrelevant, keep it inert
-            AirMassTemp = (float)(isHeatWave ? 1.0 : -1.0),
-            IsHeatColdWave = true,
-            WaveTemperatureDelta = (float)waveDelta
-        });
+        // highs never front/storm — StormLikelihood 0 is irrelevant, keep it inert.
+        PressureCell cell = BuildCell(sx, sz, strength, radius, velX: 0.0, velZ: 0.0, now, durationHours,
+            (float)minorRatio, stormLikelihood: 0f, airMassTemp: (float)(isHeatWave ? 1.0 : -1.0));
+        cell.IsHeatColdWave = true;
+        cell.WaveTemperatureDelta = (float)waveDelta;
+        field.Cells.Add(cell);
         field.AnchorHours = now;
         Dirty = true;
         sapi.Logger.Notification("[dynamicwind] {0} forming near ({1:0}, {2:0}): {3:+0.0;-0.0}°C, ~{4:0.0} day(s).",
@@ -810,7 +792,7 @@ public class WindFieldSimulation
     /// Intrinsic air-mass character in [-1, 1] a cell is born with (see
     /// <see cref="PressureCell.AirMassTemp"/>): colder toward a real pole (via <see cref="WindField.LatitudeFunc"/>,
     /// a proxy for poleward birth), warmer/colder with the birth position's own season (via
-    /// <see cref="ICalendar.GetSeasonRel"/>, which already accounts for hemisphere), plus random jitter
+    /// <see cref="IGameCalendar.GetSeasonRel"/>, which already accounts for hemisphere), plus random jitter
     /// so same-latitude, same-season systems still vary — real air masses aren't perfectly uniform.
     /// </summary>
     private float ComputeAirMassTemp(double x, double z)

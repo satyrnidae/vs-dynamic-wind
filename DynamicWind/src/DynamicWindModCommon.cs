@@ -84,6 +84,22 @@ public abstract class DynamicWindModCommon : ModSystem
         Field.ThermalPressureFunc = thermalCache.Get;
     }
 
+    /// <summary>Sets <see cref="WindField.SeaLevel"/>/<see cref="WindField.WorldHeight"/>/<see cref="WindField.MapCenterZ"/>
+    /// and wires <see cref="WindField.LatitudeFunc"/> to the real climate latitude (repeating triangle wave —
+    /// see "Real latitude" in CLAUDE.md). Re-checked per call rather than captured once, since
+    /// <c>Calendar.OnGetLatitude</c> is wired up by world-gen and may not be assigned yet at this exact moment.
+    /// Falls back to the old map-midline heuristic until it is. Shared by both sides; call once world geometry
+    /// is available (server: <c>SaveGameLoaded</c>, client: <c>LevelFinalize</c>).</summary>
+    protected void SetupWorldGeometry(ICoreAPI api)
+    {
+        Field.SeaLevel = api.World.SeaLevel;
+        Field.WorldHeight = api.World.BlockAccessor.MapSizeY;
+        Field.MapCenterZ = api.World.BlockAccessor.MapSizeZ / 2.0;
+        Field.LatitudeFunc = z => api.World.Calendar.OnGetLatitude != null
+            ? api.World.Calendar.OnGetLatitude(z)
+            : (z < Field.MapCenterZ ? 1.0 : -1.0);
+    }
+
     /// <summary>Copy the scalar field parameters from the config into the shared WindField. Cells untouched.</summary>
     public void ApplyConfigToField()
     {
@@ -201,7 +217,7 @@ public abstract class DynamicWindModCommon : ModSystem
     /// Both the room BFS and the light lookup touch chunk data, so skip both entirely outside loaded
     /// terrain (fully open) — otherwise the world-map wind overlay pays this cost every sampled cell at
     /// high zoom-out, most of which land in unloaded chunks it can't usefully occlude anyway
-    /// (<see cref="WindArrowMapLayer"/> intentionally samples everywhere via <c>RequireChunkLoaded = false</c>).
+    /// (<see cref="DynamicWind.Client.MapLayers.WindArrowMapLayer"/> intentionally samples everywhere via <c>RequireChunkLoaded = false</c>).
     /// </summary>
     private double OcclusionFactor(Vec3d pos)
     {

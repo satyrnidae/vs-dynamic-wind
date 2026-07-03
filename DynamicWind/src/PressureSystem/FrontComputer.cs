@@ -159,19 +159,9 @@ public static class FrontComputer
 
                 // Own travel direction where it's meaningful; an occluded low can be near-stationary, so
                 // fall back to the catch direction itself rather than dividing by a near-zero speed.
-                double occRefX = speed > 1e-6 ? c.VelX / speed : Math.Cos(coldAngle);
-                double occRefZ = speed > 1e-6 ? c.VelZ / speed : Math.Sin(coldAngle);
+                NormalizeOrFallback(c.VelX, c.VelZ, speed, coldAngle, out double occRefX, out double occRefZ);
 
-                lines.Add(new FrontLine
-                {
-                    Type = occType,
-                    Seed = c.BornTotalHours,
-                    Strength = strength,
-                    Points = occPts,
-                    CumulativeLength = BuildCumulative(occPts),
-                    RefX = occRefX,
-                    RefZ = occRefZ
-                });
+                lines.Add(MakeLine(occType, c.BornTotalHours, strength, occPts, occRefX, occRefZ));
                 continue;
             }
 
@@ -197,19 +187,9 @@ public static class FrontComputer
                 double relVelX = neighbour >= 0 ? field.Cells[neighbour].VelX - c.VelX : Math.Cos(bearingAngle);
                 double relVelZ = neighbour >= 0 ? field.Cells[neighbour].VelZ - c.VelZ : Math.Sin(bearingAngle);
                 double relSpeed = Math.Sqrt(relVelX * relVelX + relVelZ * relVelZ);
-                double statRefX = relSpeed > 1e-6 ? relVelX / relSpeed : Math.Cos(bearingAngle);
-                double statRefZ = relSpeed > 1e-6 ? relVelZ / relSpeed : Math.Sin(bearingAngle);
+                NormalizeOrFallback(relVelX, relVelZ, relSpeed, bearingAngle, out double statRefX, out double statRefZ);
 
-                lines.Add(new FrontLine
-                {
-                    Type = FrontType.Stationary,
-                    Seed = c.BornTotalHours,
-                    Strength = strength,
-                    Points = statPts,
-                    CumulativeLength = BuildCumulative(statPts),
-                    RefX = statRefX,
-                    RefZ = statRefZ
-                });
+                lines.Add(MakeLine(FrontType.Stationary, c.BornTotalHours, strength, statPts, statRefX, statRefZ));
                 continue;
             }
 
@@ -237,28 +217,34 @@ public static class FrontComputer
 
             double refX = c.VelX / speed, refZ = c.VelZ / speed; // speed >= StationarySpeed here, never zero
 
-            lines.Add(new FrontLine
-            {
-                Type = FrontType.Warm,
-                Seed = c.BornTotalHours,
-                Strength = strength,
-                Points = warmPts,
-                CumulativeLength = BuildCumulative(warmPts),
-                RefX = refX,
-                RefZ = refZ
-            });
-            lines.Add(new FrontLine
-            {
-                Type = FrontType.Cold,
-                Seed = c.BornTotalHours,
-                Strength = strength,
-                Points = coldPts,
-                CumulativeLength = BuildCumulative(coldPts),
-                RefX = refX,
-                RefZ = refZ
-            });
+            lines.Add(MakeLine(FrontType.Warm, c.BornTotalHours, strength, warmPts, refX, refZ));
+            lines.Add(MakeLine(FrontType.Cold, c.BornTotalHours, strength, coldPts, refX, refZ));
         }
     }
+
+    /// <summary>Normalizes (vx, vz) of known length <paramref name="len"/> to a unit vector, or falls back
+    /// to the unit vector at <paramref name="fallbackAngle"/> when too near zero to normalize safely
+    /// (a front's own reference velocity can be near-stationary — see the Occluded/Stationary branches
+    /// above).</summary>
+    private static void NormalizeOrFallback(double vx, double vz, double len, double fallbackAngle,
+        out double nx, out double nz)
+    {
+        if (len > 1e-6) { nx = vx / len; nz = vz / len; }
+        else { nx = Math.Cos(fallbackAngle); nz = Math.Sin(fallbackAngle); }
+    }
+
+    /// <summary>Builds a computed <see cref="FrontLine"/> from its traced points — shared by all four
+    /// branches in <see cref="Compute"/> (Occluded, Stationary, Warm, Cold).</summary>
+    private static FrontLine MakeLine(FrontType type, double seed, float strength, Vec2d[] pts, double refX, double refZ) => new()
+    {
+        Type = type,
+        Seed = seed,
+        Strength = strength,
+        Points = pts,
+        CumulativeLength = BuildCumulative(pts),
+        RefX = refX,
+        RefZ = refZ
+    };
 
     /// <summary>Precomputes cumulative arc-length along an open curve's points, for O(1) reuse by
     /// <see cref="SampleAt"/> instead of rebuilding it on every sample.</summary>

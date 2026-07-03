@@ -52,15 +52,7 @@ public class DynamicWindModServer : DynamicWindModCommon
 
         api.Event.SaveGameLoaded += () =>
         {
-            Field.SeaLevel = api.World.SeaLevel;
-            Field.WorldHeight = api.WorldManager.MapSizeY;
-            Field.MapCenterZ = api.WorldManager.MapSizeZ / 2.0;
-            // Real climate latitude (repeating triangle wave, see WindField.LatitudeFunc) — re-checked
-            // per call rather than captured once, since Calendar.OnGetLatitude is wired up by world-gen
-            // and may not be assigned yet at this exact moment.
-            Field.LatitudeFunc = z => api.World.Calendar.OnGetLatitude != null
-                ? api.World.Calendar.OnGetLatitude(z)
-                : (z < Field.MapCenterZ ? 1.0 : -1.0);
+            SetupWorldGeometry(api);
             sim.Load();
         };
         api.Event.GameWorldSave += () => sim.Save();
@@ -74,7 +66,7 @@ public class DynamicWindModServer : DynamicWindModCommon
 
         harmony = new Harmony("dynamicwind.server");
         WindmillDirectionality.Apply(harmony, Mod.Logger);
-        SailboatWind.Apply(harmony, api, Mod.Logger);
+        SailboatWind.Apply(harmony, Mod.Logger);
         WeatherCoupling.Apply(harmony, Mod.Logger);
 
         DynamicWindCommands.Register(api, Field, Config);
@@ -100,6 +92,9 @@ public class DynamicWindModServer : DynamicWindModCommon
 
     private void OnPlayerJoin(IServerPlayer player)
     {
+        // Order matters: OnStateReceived's BaseStrength/MeanderAmplitude/etc. overwrite whatever
+        // ApplyConfigToField set from OnConfigReceived, so Config must arrive first. The channel
+        // delivers packets in send order, so sending in this order is sufficient — don't reorder.
         ServerChannel.SendPacket(Config, player);
         ServerChannel.SendPacket(sim.Snapshot(), player);
     }
