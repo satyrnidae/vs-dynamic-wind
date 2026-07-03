@@ -35,7 +35,10 @@ public class BlockMapleLeaves : BlockLeaves
     private const float CrimsonFallStart = 0.62f, CrimsonFallEnd = 0.78f;     // late August → early October
 
     // Marker passed through the random-tick so OnServerGameTick knows this is our drop check, not decay.
-    private static readonly object MapleDropMarker = new();
+    // A boxed string (matching vanilla BlockLeaves' own "melt" sentinel convention, not a bare reference
+    // object) so the check is a value comparison and survives the off-thread -> main-thread tick dispatch
+    // with no ambiguity.
+    private const string MapleDropMarker = "mapledrop";
 
     // Per-position drop cooldown (server, main-thread only). Key = (x, y, z); value = last drop game-hour.
     private static readonly Dictionary<(int, int, int), double> lastDropHour = new();
@@ -69,7 +72,7 @@ public class BlockMapleLeaves : BlockLeaves
 
     public override void OnServerGameTick(IWorldAccessor world, BlockPos pos, object? extra = null)
     {
-        if (ReferenceEquals(extra, MapleDropMarker))
+        if (extra is string marker && marker == MapleDropMarker)
         {
             TryWindDrop(world, pos);
             return;
