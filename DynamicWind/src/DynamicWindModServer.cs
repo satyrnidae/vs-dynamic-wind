@@ -54,6 +54,10 @@ public class DynamicWindModServer : DynamicWindModCommon
         {
             SetupWorldGeometry(api);
             sim.Load();
+            // Prime the player snapshot before the sim thread's very first tick so it doesn't run
+            // despawn/spawn logic against an empty player list.
+            sim.CapturePlayerSnapshot();
+            sim.Start();
         };
         api.Event.GameWorldSave += () => sim.Save();
         api.Event.PlayerJoin += OnPlayerJoin;
@@ -74,9 +78,13 @@ public class DynamicWindModServer : DynamicWindModCommon
         Mod.Logger.Notification("[dynamicwind] Server started.");
     }
 
+    // The actual simulation now runs on its own dedicated thread (see WindFieldSimulation.Start); this
+    // main-thread tick only refreshes the player-position snapshot the sim thread reads (main-thread-only
+    // safe, since AllOnlinePlayers can mutate concurrently with player join/leave) and broadcasts the
+    // synced state to clients.
     private void OnServerTick(float dt)
     {
-        sim.OnTick(dt);
+        sim.CapturePlayerSnapshot();
         double now = sapi.World.Calendar.TotalHours;
 
         // Fronts are a pure, deterministic function of the synced pressure cells, so the client computes
@@ -121,6 +129,7 @@ public class DynamicWindModServer : DynamicWindModCommon
 
     public override void Dispose()
     {
+        sim?.Stop();
         if (sapi != null)
         {
             sapi.Event.PlayerJoin -= OnPlayerJoin;

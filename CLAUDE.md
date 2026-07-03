@@ -201,9 +201,19 @@ Three-class ModSystem split (modelled on `D:\satyrnidae\vs-balladeer-class`):
 - `DynamicWindModCommon` (`ShouldLoad => false`) — loads/validates config, registers the single
   dedicated `"dynamicwind"` network channel + message types, owns the shared `WindField` and the
   `OnGetWindSpeed` hook (with a virtual orographic step).
-- `DynamicWindModServer` (`ShouldLoad => Server`) — runs `WindFieldSimulation`, is the authoritative
+- `DynamicWindModServer` (`ShouldLoad => Server`) — owns `WindFieldSimulation`, is the authoritative
   config + field source, syncs both (on `PlayerJoin` and on change), applies the server Harmony patches
   (windmill, sailboat) + `WeatherCoupling`, orographic via the sampler, and the `/dynamicwind` command.
+  `WindFieldSimulation` itself runs on its own dedicated thread (`WindFieldSimulation.Start`/`Stop`,
+  spun up via `TyronThreadPool.CreateDedicatedThread` once `SaveGameLoaded` fires), ticking independently
+  of the main server tick — its per-cell math (advection, occlusion's O(n²) neighbour search,
+  weather-feedback climate sampling) is this mod's dominant cost and has no reason to compete with the
+  main tick for CPU time. The main-thread `RegisterGameTickListener` (still 2s) now only refreshes a
+  lock-free player-position snapshot (`WindFieldSimulation.CapturePlayerSnapshot`, an immutable array
+  swap) the sim thread reads for spawn/despawn distance checks — enumerating `AllOnlinePlayers`/
+  `NearestPlayer` directly from the sim thread would race with players joining/leaving on the main
+  thread — and broadcasts the synced state. All cell-list mutation is already behind `field.CellsLock`,
+  so `Save`/`Load`/`Snapshot` (called from the main thread) stay safe against the sim thread.
 - `DynamicWindModClient` (`ShouldLoad => Client`) — mirrors config + field, runs the hook, patches the
   cloud renderer, and wires the optional ConfigLib GUI.
 

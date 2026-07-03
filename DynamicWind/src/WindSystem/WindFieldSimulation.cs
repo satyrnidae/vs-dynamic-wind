@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Threading;
 using DynamicWind.Config;
 using DynamicWind.Network;
 using DynamicWind.PressureSystem;
@@ -15,6 +17,17 @@ namespace DynamicWind.WindSystem;
 /// Server-authoritative pressure-system simulation. Spawns low/high cells to the west of players,
 /// advects them west-to-east on the jetstream, expires old ones, and persists the set across saves.
 /// Writes directly into the shared <see cref="WindField"/> the hook reads.
+///
+/// Runs on its own dedicated thread (see <see cref="Start"/>/<see cref="Stop"/>) rather than the main
+/// server tick — the per-cell math (advection, occlusion's O(n^2) neighbour search, weather-feedback
+/// climate sampling) is the dominant cost of this mod and has no reason to compete with the main tick
+/// for CPU time. World queries here (Calendar, GetClimateAt via ThermalCache, the terrain sampler) are
+/// already tolerated off the main thread elsewhere in this mod (see ThermalCache's own thread-safety
+/// note — item physics already queries wind, and therefore these same lookups, off-thread). The one
+/// genuinely unsafe piece — enumerating <c>IWorldAccessor.AllOnlinePlayers</c>/<c>NearestPlayer</c>
+/// concurrently with players joining/leaving on the main thread — is avoided by having the main thread
+/// snapshot player positions once per tick (see <see cref="CapturePlayerSnapshot"/>) into an immutable
+/// array the sim thread reads lock-free.
 /// </summary>
 public class WindFieldSimulation
 {
@@ -135,20 +148,33 @@ public class WindFieldSimulation
     // (a big local background-wind term) will noticeably nudge it before then.
     private const double HeatColdWaveVelocityEaseRatePerHour = 0.02;
 
-    // Synergy leaves the position index NearestPlayer relies on unpopulated, so its result can't be
-    // trusted with it installed — fall back to the exhaustive AllOnlinePlayers entity scan instead.
-    private const string SynergyModId = "synergy";
+    // How often the dedicated sim thread ticks — matches the old main-thread tick listener interval.
+    private const int SimIntervalMs = 2000;
 
     private readonly ICoreServerAPI sapi;
     private readonly WindField field;
     private readonly DynamicWindConfig config;
     private readonly Random rand;
-    private readonly bool synergyInstalled;
 
     private double lastGameHours;
     private bool initialized;
     private bool loadedPendingReanchor;
-    public bool Dirty { get; private set; }
+    private volatile bool dirty;
+    public bool Dirty { get => dirty; private set => dirty = value; }
+
+    // Immutable snapshot of online-player X/Z positions, refreshed once per main-thread tick (see
+    // CapturePlayerSnapshot) and read lock-free by the sim thread — the array reference swap is the only
+    // publication needed since the array itself is never mutated after being built.
+    private volatile PlayerPos[] playerSnapshot = Array.Empty<PlayerPos>();
+
+    private readonly struct PlayerPos
+    {
+        public readonly double X, Z;
+        public PlayerPos(double x, double z) { X = x; Z = z; }
+    }
+
+    private Thread? simThread;
+    private volatile bool running;
 
     public WindFieldSimulation(ICoreServerAPI sapi, WindField field, DynamicWindConfig config)
     {
@@ -156,11 +182,54 @@ public class WindFieldSimulation
         this.field = field;
         this.config = config;
         rand = new Random();
-        synergyInstalled = sapi.ModLoader.IsModEnabled(SynergyModId);
         // NOTE: Calendar is not available yet during StartServerSide; initialize lazily on first tick.
     }
 
-    public void OnTick(float dt)
+    /// <summary>Main-thread only: refreshes the player-position snapshot the sim thread reads. Call once
+    /// per main server tick.</summary>
+    public void CapturePlayerSnapshot()
+    {
+        var list = new List<PlayerPos>();
+        foreach (IServerPlayer plr in sapi.World.AllOnlinePlayers)
+        {
+            Entity e = plr.Entity;
+            if (e != null) list.Add(new PlayerPos(e.Pos.X, e.Pos.Z));
+        }
+        playerSnapshot = list.ToArray();
+    }
+
+    /// <summary>Starts the dedicated sim thread. Call once, after the first <see cref="CapturePlayerSnapshot"/>
+    /// / <see cref="Load"/> so it doesn't run its first tick against an empty player snapshot or a
+    /// not-yet-restored cell list.</summary>
+    public void Start()
+    {
+        if (simThread != null) return;
+        running = true;
+        simThread = TyronThreadPool.CreateDedicatedThread(SimLoop, "dynamicwind-sim");
+        simThread.Start();
+    }
+
+    public void Stop()
+    {
+        running = false;
+        simThread?.Join(SimIntervalMs * 2);
+        simThread = null;
+    }
+
+    private void SimLoop()
+    {
+        while (running)
+        {
+            try { OnTick(); }
+            catch (Exception e)
+            {
+                sapi.Logger.Error("[dynamicwind] Sim tick threw, skipping this tick: {0}", e);
+            }
+            Thread.Sleep(SimIntervalMs);
+        }
+    }
+
+    public void OnTick()
     {
         double now = sapi.World.Calendar.TotalHours;
         UpdateSeasonalBias();
@@ -493,66 +562,41 @@ public class WindFieldSimulation
     /// nobody's business isn't going to be seen or felt, so let it despawn rather than simulate it
     /// forever. The radius term means a large cell's edge (not just its centre) has to clear the margin
     /// before it despawns. No online players at all is NOT "too far" (nothing to cull against yet).
-    /// Normally uses <see cref="IWorldAccessor.NearestPlayer"/> — a fast, thread-safe position-index
-    /// lookup that avoids an entity scan — but Synergy leaves that index unpopulated, so with it
-    /// installed we fall back to checking every online player's entity instead.
+    /// Reads the lock-free <see cref="playerSnapshot"/> rather than <see cref="IWorldAccessor.AllOnlinePlayers"/>
+    /// directly, since this runs on the dedicated sim thread and that collection can mutate concurrently
+    /// as players join/leave on the main thread.
     /// </summary>
     private bool IsTooFarFromAllPlayers(PressureCell c)
     {
-        if (synergyInstalled)
+        PlayerPos[] snap = playerSnapshot;
+        if (snap.Length == 0) return false;
+        foreach (PlayerPos p in snap)
         {
-            bool anyPlayer = false;
-            foreach (IServerPlayer plr in sapi.World.AllOnlinePlayers)
-            {
-                Entity e = plr.Entity;
-                if (e == null) continue;
-                anyPlayer = true;
-                double dx = e.Pos.X - c.X;
-                double dz = e.Pos.Z - c.Z;
-                double distSq = dx * dx + dz * dz;
-                double threshold = DespawnMargin + EllipseGeometry.RadiusToward(c, dx, dz);
-                if (distSq <= threshold * threshold) return false;
-            }
-            return anyPlayer;
+            double dx = p.X - c.X;
+            double dz = p.Z - c.Z;
+            double distSq = dx * dx + dz * dz;
+            double threshold = DespawnMargin + EllipseGeometry.RadiusToward(c, dx, dz);
+            if (distSq <= threshold * threshold) return false;
         }
-
-        IPlayer? nearest = sapi.World.NearestPlayer(c.X, sapi.World.SeaLevel, c.Z);
-        Entity? nearestEntity = nearest?.Entity;
-        if (nearestEntity == null) return false;
-
-        double ndx = nearestEntity.Pos.X - c.X;
-        double ndz = nearestEntity.Pos.Z - c.Z;
-        double nThreshold = DespawnMargin + EllipseGeometry.RadiusToward(c, ndx, ndz);
-        return ndx * ndx + ndz * ndz > nThreshold * nThreshold;
+        return true;
     }
 
     /// <summary>
     /// Distance from (<paramref name="x"/>, <paramref name="z"/>) to the nearest online player, or
     /// <see cref="double.MaxValue"/> if nobody's online — used by <see cref="Spawn"/> to keep a new
-    /// front from landing directly on top of a player. Same Synergy-aware fallback as
-    /// <see cref="IsTooFarFromAllPlayers"/> (its position index goes unpopulated with Synergy installed).
+    /// front from landing directly on top of a player. Reads the same <see cref="playerSnapshot"/> as
+    /// <see cref="IsTooFarFromAllPlayers"/>, for the same off-main-thread safety reason.
     /// </summary>
     private double NearestOnlinePlayerDistance(double x, double z)
     {
         double best = double.MaxValue;
-        if (synergyInstalled)
+        foreach (PlayerPos p in playerSnapshot)
         {
-            foreach (IServerPlayer plr in sapi.World.AllOnlinePlayers)
-            {
-                Entity e = plr.Entity;
-                if (e == null) continue;
-                double dx = e.Pos.X - x, dz = e.Pos.Z - z;
-                double dist = Math.Sqrt(dx * dx + dz * dz);
-                if (dist < best) best = dist;
-            }
-            return best;
+            double dx = p.X - x, dz = p.Z - z;
+            double dist = Math.Sqrt(dx * dx + dz * dz);
+            if (dist < best) best = dist;
         }
-
-        IPlayer? nearest = sapi.World.NearestPlayer(x, sapi.World.SeaLevel, z);
-        Entity? nearestEntity = nearest?.Entity;
-        if (nearestEntity == null) return best;
-        double ndx = nearestEntity.Pos.X - x, ndz = nearestEntity.Pos.Z - z;
-        return Math.Sqrt(ndx * ndx + ndz * ndz);
+        return best;
     }
 
     // Cap spawns/seeds per tick so a huge calendar jump (e.g. sleeping through several days) can't
@@ -840,26 +884,17 @@ public class WindFieldSimulation
     /// Pick a RANDOM online player's position as the anchor for one spawn/seed. Averaging all players
     /// into a single centre would, in multiplayer, drop systems in the empty middle between distant
     /// players; choosing a random player each call instead scatters systems around every player's area
-    /// over time (and is identical to "the player" in singleplayer).
+    /// over time (and is identical to "the player" in singleplayer). Reads <see cref="playerSnapshot"/>
+    /// rather than <see cref="IWorldAccessor.AllOnlinePlayers"/> directly — see its doc comment.
     /// </summary>
     private bool TryGetSpawnAnchor(out double x, out double z)
     {
-        x = 0; z = 0;
-        int count = 0;
-        foreach (IServerPlayer plr in sapi.World.AllOnlinePlayers)
-            if (plr.Entity != null) count++;
-        if (count == 0) return false;
+        PlayerPos[] snap = playerSnapshot;
+        if (snap.Length == 0) { x = 0; z = 0; return false; }
 
-        int pick = rand.Next(count);
-        int i = 0;
-        foreach (IServerPlayer plr in sapi.World.AllOnlinePlayers)
-        {
-            Entity e = plr.Entity;
-            if (e == null) continue;
-            if (i == pick) { x = e.Pos.X; z = e.Pos.Z; return true; }
-            i++;
-        }
-        return false;
+        PlayerPos p = snap[rand.Next(snap.Length)];
+        x = p.X; z = p.Z;
+        return true;
     }
 
     public WindFieldState Snapshot()
