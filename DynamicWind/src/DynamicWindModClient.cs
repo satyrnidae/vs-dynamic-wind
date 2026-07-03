@@ -31,18 +31,7 @@ public class DynamicWindModClient : DynamicWindModCommon
         DynamicWindRuntime.ClientField = Field;
         DynamicWindRuntime.ClientConfig = Config;
         DynamicWindRuntime.ClientModSystem = this;
-        api.Event.LevelFinalize += () =>
-        {
-            Field.SeaLevel = api.World.SeaLevel;
-            Field.WorldHeight = api.World.BlockAccessor.MapSizeY;
-            Field.MapCenterZ = api.World.BlockAccessor.MapSizeZ / 2.0;
-            // Real climate latitude (repeating triangle wave, see WindField.LatitudeFunc) — re-checked
-            // per call rather than captured once, since Calendar.OnGetLatitude is wired up by world-gen
-            // and may not be assigned yet at this exact moment.
-            Field.LatitudeFunc = z => api.World.Calendar.OnGetLatitude != null
-                ? api.World.Calendar.OnGetLatitude(z)
-                : (z < Field.MapCenterZ ? 1.0 : -1.0);
-        };
+        api.Event.LevelFinalize += () => SetupWorldGeometry(api);
 
         SetupThermalPressureFunc(api);
         // Client has no terrain sampler; use the rain-map height (loaded chunks) so the minimap shows
@@ -103,16 +92,24 @@ public class DynamicWindModClient : DynamicWindModCommon
         ApplyConfigToField();
     }
 
+    // Overwrites BaseStrength/MeanderAmplitude/CyclonicInflowAngle/SeasonalBiasZ set by OnConfigReceived's
+    // ApplyConfigToField — relies on DynamicWindModServer.OnPlayerJoin sending Config before this snapshot.
     private void OnStateReceived(WindFieldState s)
     {
         if (s?.Cells == null) return;
-        Field.Cells.Clear();
-        Field.Cells.AddRange(s.Cells);
+        // Cells and AnchorHours must update together: WindAt combines them (elapsed = totalHours -
+        // AnchorHours) to extrapolate each cell's effective position, so a reader must never see new
+        // cells paired with a stale anchor (or vice versa).
+        lock (Field.CellsLock)
+        {
+            Field.Cells.Clear();
+            Field.Cells.AddRange(s.Cells);
+            Field.AnchorHours = s.TotalHoursAnchor;
+        }
         Field.BaseStrength = s.BaseStrength;
         Field.MeanderAmplitude = s.MeanderAmplitude;
         Field.CyclonicInflowAngle = s.CyclonicInflowAngle;
         Field.SeasonalBiasZ = s.SeasonalBiasZ;
-        Field.AnchorHours = s.TotalHoursAnchor;
     }
 
     /// <summary>

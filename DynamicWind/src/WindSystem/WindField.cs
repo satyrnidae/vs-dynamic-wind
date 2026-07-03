@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using DynamicWind.Network;
 using DynamicWind.PressureSystem;
+using DynamicWind.Utils;
 using Vintagestory.API.MathTools;
 
 namespace DynamicWind.WindSystem;
@@ -51,6 +52,13 @@ public class WindField
     public double AnchorHours;
 
     public readonly List<PressureCell> Cells = new();
+
+    /// <summary>Guards every read and mutation of <see cref="Cells"/>: item-physics entities may query
+    /// wind (and therefore iterate <see cref="Cells"/>) off the main thread (same concern as
+    /// <see cref="TerrainSystem.ThermalCache"/>), while the server tick / network receive / render /
+    /// command-handler threads all read or mutate it too. <c>lock</c> is reentrant per-thread, so nested
+    /// calls that already hold this lock (e.g. WindAt's gradient sampling calling PressureAt) are safe.</summary>
+    public readonly object CellsLock = new();
 
     /// <summary>
     /// Optional terrain-driven thermal pressure contribution at (x, z, totalHours). Set per side
@@ -130,7 +138,7 @@ public class WindField
 
     /// <summary>|velocity| (blocks/hour) below which a low is treated as "stationary" rather than a
     /// moving open-wave system — shared by <see cref="FrontRegimeBiasAt"/>, the storm-bias neighbour
-    /// search below, and <see cref="DynamicWind.Client.MapLayers.FrontComputer"/> (which renders the
+    /// search below, and <see cref="DynamicWind.PressureSystem.FrontComputer"/> (which renders the
     /// closed encircling contour for exactly this regime), so all three agree on the same threshold.</summary>
     public const double StationarySpeed = 60.0;
 
@@ -142,46 +150,8 @@ public class WindField
     private const double OroWakeMinRise = 8.0; // upwind terrain must be this much higher to count
     private const double OroWakeScale = 40.0;  // rise over this → full wake
 
-    /// <summary>
-    /// Elliptical-gaussian normalized squared distance from a cell's centre to a (dx, dz) offset (already
-    /// relative to the cell's advected position): 1.0 sits on the 1/e falloff contour. <c>(dx,dz)</c> is
-    /// projected onto the cell's along-stream (<see cref="PressureCell.RadiusMinor"/>) and cross-stream
-    /// (<see cref="PressureCell.Radius"/>) axes, derived from <see cref="PressureCell.Orientation"/>.
-    /// Reduces to the familiar circular <c>dist²/Radius²</c> when <c>RadiusMinor == Radius</c>.
-    /// </summary>
-    private static double EllipseNorm2(PressureCell cell, double dx, double dz)
-    {
-        double crossX = Math.Cos(cell.Orientation), crossZ = Math.Sin(cell.Orientation);
-        double alongX = -crossZ, alongZ = crossX;
-        double along = dx * alongX + dz * alongZ;
-        double cross = dx * crossX + dz * crossZ;
-        double rMinor = cell.RadiusMinor > 1e-3f ? cell.RadiusMinor : cell.Radius;
-        double rMajor = cell.Radius;
-        double au = along / rMinor;
-        double cu = cross / rMajor;
-        return au * au + cu * cu;
-    }
-
-    /// <summary>
-    /// Outward "radial" unit direction at a (dx, dz) offset from a cell's centre, generalized to the
-    /// cell's elliptical footprint: the normalized gradient of <see cref="EllipseNorm2"/>'s squared norm.
-    /// Reduces exactly to the circular radial direction <c>(dx,dz)/dist</c> when <c>RadiusMinor == Radius</c>,
-    /// so swirl direction follows the ellipse's edge instead of a plain circle once a cell has elongated.
-    /// </summary>
-    private static void EllipseRadial(PressureCell cell, double dx, double dz, out double nx, out double nz)
-    {
-        double crossX = Math.Cos(cell.Orientation), crossZ = Math.Sin(cell.Orientation);
-        double alongX = -crossZ, alongZ = crossX;
-        double along = dx * alongX + dz * alongZ;
-        double cross = dx * crossX + dz * crossZ;
-        double rMinor = cell.RadiusMinor > 1e-3f ? cell.RadiusMinor : cell.Radius;
-        double rMajor = cell.Radius;
-        double gx = along / (rMinor * rMinor) * alongX + cross / (rMajor * rMajor) * crossX;
-        double gz = along / (rMinor * rMinor) * alongZ + cross / (rMajor * rMajor) * crossZ;
-        double glen = Math.Sqrt(gx * gx + gz * gz);
-        if (glen < 1e-9) { nx = crossX; nz = crossZ; }
-        else { nx = gx / glen; nz = gz / glen; }
-    }
+    // Elliptical-footprint math (falloff/gradient sampling against a cell's along-stream/cross-stream
+    // axes) is shared with WindFieldSimulation via EllipseGeometry.Norm2/Radial/RadiusToward.
 
     /// <summary>
     /// Slow jet-streak multiplier in [1−<see cref="JetNoiseAmplitude"/>, 1+…]: a multiplied sinusoidal
@@ -248,61 +218,65 @@ public class WindField
     /// <c>out</c> overload above).</summary>
     public Vec2d WindAt(double x, double z, double totalHours, int excludeCell, out double orographicFactor)
     {
-        // Base jetstream: due-East flow with a slow meandering bearing, tilted N/S by the season
-        // (poleward in summer → −Z, equatorward in winter → +Z; sign is in SeasonalBiasZ).
-        double meander = MeanderAmplitude * Meander(x, z, totalHours, MeanderFrequency);
-        double angle = meander + SeasonalBiasMaxAngle * SeasonalBiasZ;
-        double wx = BaseStrength * Math.Cos(angle);
-        double wz = BaseStrength * Math.Sin(angle);
-
-        double cosIn = Math.Cos(CyclonicInflowAngle);
-        double sinIn = Math.Sin(CyclonicInflowAngle);
-        double elapsed = totalHours - AnchorHours;
-
-        for (int i = 0; i < Cells.Count; i++)
+        double wx, wz;
+        lock (CellsLock)
         {
-            if (i == excludeCell) continue;
-            PressureCell cell = Cells[i];
-            double cellX = cell.X + cell.VelX * elapsed;
-            double cellZ = cell.Z + cell.VelZ * elapsed;
-            double dx = x - cellX;
-            double dz = z - cellZ;
+            // Base jetstream: due-East flow with a slow meandering bearing, tilted N/S by the season
+            // (poleward in summer → −Z, equatorward in winter → +Z; sign is in SeasonalBiasZ).
+            double meander = MeanderAmplitude * Meander(x, z, totalHours, MeanderFrequency);
+            double angle = meander + SeasonalBiasMaxAngle * SeasonalBiasZ;
+            wx = BaseStrength * Math.Cos(angle);
+            wz = BaseStrength * Math.Sin(angle);
 
-            double norm2 = EllipseNorm2(cell, dx, dz);
-            double falloff = Math.Exp(-norm2); // elliptical gaussian
-            if (falloff < 1e-4) continue;
+            double cosIn = Math.Cos(CyclonicInflowAngle);
+            double sinIn = Math.Sin(CyclonicInflowAngle);
+            double elapsed = totalHours - AnchorHours;
 
-            // Radial unit (center → sample, generalized to the cell's elliptical footprint) and tangent.
-            // With +X=East, +Z=South (north-up map view), (rz, -rx) is the COUNTER-clockwise tangent on
-            // screen — so a low (s>0) circulates CCW and a high (s<0) circulates CW, matching the
-            // (northern-hemisphere) real-world convention.
-            EllipseRadial(cell, dx, dz, out double rx, out double rz);
-            double tx = rz;
-            double tz = -rx;
+            for (int i = 0; i < Cells.Count; i++)
+            {
+                if (i == excludeCell) continue;
+                PressureCell cell = Cells[i];
+                double cellX = cell.X + cell.VelX * elapsed;
+                double cellZ = cell.Z + cell.VelZ * elapsed;
+                double dx = x - cellX;
+                double dz = z - cellZ;
 
-            // windCell = s * falloff * (cos(inflow)*tangent - sin(inflow)*radial)
-            //   low  (s>0): CCW tangent + inflow toward center  (cyclonic)
-            //   high (s<0): CW tangent  + outflow from center   (anticyclonic)
-            double scale = cell.Strength * falloff * CirculationStrength;
-            wx += scale * (cosIn * tx - sinIn * rx);
-            wz += scale * (cosIn * tz - sinIn * rz);
+                double norm2 = EllipseGeometry.Norm2(cell, dx, dz);
+                double falloff = Math.Exp(-norm2); // elliptical gaussian
+                if (falloff < 1e-4) continue;
+
+                // Radial unit (center → sample, generalized to the cell's elliptical footprint) and tangent.
+                // With +X=East, +Z=South (north-up map view), (rz, -rx) is the COUNTER-clockwise tangent on
+                // screen — so a low (s>0) circulates CCW and a high (s<0) circulates CW, matching the
+                // (northern-hemisphere) real-world convention.
+                EllipseGeometry.Radial(cell, dx, dz, out double rx, out double rz);
+                double tx = rz;
+                double tz = -rx;
+
+                // windCell = s * falloff * (cos(inflow)*tangent - sin(inflow)*radial)
+                //   low  (s>0): CCW tangent + inflow toward center  (cyclonic)
+                //   high (s<0): CW tangent  + outflow from center   (anticyclonic)
+                double scale = cell.Strength * falloff * CirculationStrength;
+                wx += scale * (cosIn * tx - sinIn * rx);
+                wz += scale * (cosIn * tz - sinIn * rz);
+            }
+
+            // 3. Down-gradient flow: air bleeds from high toward low pressure (+∇P points to lows).
+            if (GradientWindScale > 0)
+            {
+                double d = GradSampleDist;
+                double gx = (PressureAt(x + d, z, totalHours, excludeCell) - PressureAt(x - d, z, totalHours, excludeCell)) / (2 * d);
+                double gz = (PressureAt(x, z + d, totalHours, excludeCell) - PressureAt(x, z - d, totalHours, excludeCell)) / (2 * d);
+                double gwx = GradientWindScale * gx;
+                double gwz = GradientWindScale * gz;
+                double gm = Math.Sqrt(gwx * gwx + gwz * gwz);
+                if (gm > GradMaxWind) { double s = GradMaxWind / gm; gwx *= s; gwz *= s; }
+                wx += gwx;
+                wz += gwz;
+            }
         }
 
-        // 3. Down-gradient flow: air bleeds from high toward low pressure (+∇P points to lows).
-        if (GradientWindScale > 0)
-        {
-            double d = GradSampleDist;
-            double gx = (PressureAt(x + d, z, totalHours, excludeCell) - PressureAt(x - d, z, totalHours, excludeCell)) / (2 * d);
-            double gz = (PressureAt(x, z + d, totalHours, excludeCell) - PressureAt(x, z - d, totalHours, excludeCell)) / (2 * d);
-            double gwx = GradientWindScale * gx;
-            double gwz = GradientWindScale * gz;
-            double gm = Math.Sqrt(gwx * gwx + gwz * gwz);
-            if (gm > GradMaxWind) { double s = GradMaxWind / gm; gwx *= s; gwz *= s; }
-            wx += gwx;
-            wz += gwz;
-        }
-
-        // 4. Orographic interaction with terrain.
+        // 4. Orographic interaction with terrain — doesn't touch Cells, so runs outside the lock.
         orographicFactor = 1.0;
         if (OrographicEnabled && TerrainHeightFunc != null)
         {
@@ -385,18 +359,21 @@ public class WindField
     /// </summary>
     public double CellPressureAt(double x, double z, double totalHours, int excludeCell)
     {
-        double p = 0;
-        double elapsed = totalHours - AnchorHours;
-        for (int i = 0; i < Cells.Count; i++)
+        lock (CellsLock)
         {
-            if (i == excludeCell) continue;
-            PressureCell cell = Cells[i];
-            double dx = x - (cell.X + cell.VelX * elapsed);
-            double dz = z - (cell.Z + cell.VelZ * elapsed);
-            double norm2 = EllipseNorm2(cell, dx, dz);
-            p += cell.Strength * Math.Exp(-norm2);
+            double p = 0;
+            double elapsed = totalHours - AnchorHours;
+            for (int i = 0; i < Cells.Count; i++)
+            {
+                if (i == excludeCell) continue;
+                PressureCell cell = Cells[i];
+                double dx = x - (cell.X + cell.VelX * elapsed);
+                double dz = z - (cell.Z + cell.VelZ * elapsed);
+                double norm2 = EllipseGeometry.Norm2(cell, dx, dz);
+                p += cell.Strength * Math.Exp(-norm2);
+            }
+            return p;
         }
-        return p;
     }
 
     // Storm-band narrowing when a low has a real JOIN neighbour on a side — mirrors
@@ -414,7 +391,7 @@ public class WindField
     /// <see cref="PressureCell.StormLikelihood"/>, with a synergy bonus near the low's centre where the
     /// two sides' influence overlaps (strongest weather sits close to the low itself). When a side has a
     /// real neighbouring low (the same JOIN a front curve would connect to — see
-    /// <see cref="DynamicWind.Client.MapLayers.FrontComputer"/>'s BuildJoinCurve), that side's bias is
+    /// <see cref="DynamicWind.PressureSystem.FrontComputer"/>'s BuildJoinCurve), that side's bias is
     /// narrowed into a band hugging the axis toward the neighbour's midpoint instead of spread across the
     /// whole half-plane, so storminess visibly develops ALONG the same connecting line the map draws
     /// rather than just somewhere in that general direction. Independent of
@@ -423,36 +400,39 @@ public class WindField
     /// </summary>
     public double StormBiasAt(double x, double z, double totalHours)
     {
-        double warm = 0, cold = 0;
-        double elapsed = totalHours - AnchorHours;
-        for (int i = 0; i < Cells.Count; i++)
+        lock (CellsLock)
         {
-            PressureCell c = Cells[i];
-            if (!c.IsLow || c.StormLikelihood <= 0f) continue; // highs are fair weather; no front bias
+            double warm = 0, cold = 0;
+            double elapsed = totalHours - AnchorHours;
+            for (int i = 0; i < Cells.Count; i++)
+            {
+                PressureCell c = Cells[i];
+                if (!c.IsLow || c.StormLikelihood <= 0f) continue; // highs are fair weather; no front bias
 
-            double cx = c.X + c.VelX * elapsed;
-            double cz = c.Z + c.VelZ * elapsed;
-            double dx = x - cx, dz = z - cz;
-            double falloff = Math.Exp(-EllipseNorm2(c, dx, dz));
-            if (falloff < 1e-4) continue;
+                double cx = c.X + c.VelX * elapsed;
+                double cz = c.Z + c.VelZ * elapsed;
+                double dx = x - cx, dz = z - cz;
+                double falloff = Math.Exp(-EllipseGeometry.Norm2(c, dx, dz));
+                if (falloff < 1e-4) continue;
 
-            double poleSign = PolewardZSign(cz);
-            double bandWidth = Math.Max(1.0, c.Radius) * StormBandWidthFactor;
+                double poleSign = PolewardZSign(cz);
+                double bandWidth = Math.Max(1.0, c.Radius) * StormBandWidthFactor;
 
-            FindSidedLowNeighbourAxis(i, cx, cz, elapsed, totalHours, -poleSign, out double coldAxisX, out double coldAxisZ, out bool coldJoined);
-            double coldAlong = dx * coldAxisX + dz * coldAxisZ;
-            double coldPerp = dx * -coldAxisZ + dz * coldAxisX;
-            double coldBand = coldJoined ? Math.Exp(-(coldPerp * coldPerp) / (bandWidth * bandWidth)) : 1.0;
-            cold += Math.Max(0.0, coldAlong) * falloff * c.StormLikelihood * coldBand;
+                FindSidedLowNeighbourAxis(i, cx, cz, elapsed, totalHours, -poleSign, out double coldAxisX, out double coldAxisZ, out bool coldJoined);
+                double coldAlong = dx * coldAxisX + dz * coldAxisZ;
+                double coldPerp = dx * -coldAxisZ + dz * coldAxisX;
+                double coldBand = coldJoined ? Math.Exp(-(coldPerp * coldPerp) / (bandWidth * bandWidth)) : 1.0;
+                cold += Math.Max(0.0, coldAlong) * falloff * c.StormLikelihood * coldBand;
 
-            FindSidedLowNeighbourAxis(i, cx, cz, elapsed, totalHours, poleSign, out double warmAxisX, out double warmAxisZ, out bool warmJoined);
-            double warmAlong = dx * warmAxisX + dz * warmAxisZ;
-            double warmPerp = dx * -warmAxisZ + dz * warmAxisX;
-            double warmBand = warmJoined ? Math.Exp(-(warmPerp * warmPerp) / (bandWidth * bandWidth)) : 1.0;
-            warm += Math.Max(0.0, warmAlong) * falloff * c.StormLikelihood * warmBand;
+                FindSidedLowNeighbourAxis(i, cx, cz, elapsed, totalHours, poleSign, out double warmAxisX, out double warmAxisZ, out bool warmJoined);
+                double warmAlong = dx * warmAxisX + dz * warmAxisZ;
+                double warmPerp = dx * -warmAxisZ + dz * warmAxisX;
+                double warmBand = warmJoined ? Math.Exp(-(warmPerp * warmPerp) / (bandWidth * bandWidth)) : 1.0;
+                warm += Math.Max(0.0, warmAlong) * falloff * c.StormLikelihood * warmBand;
+            }
+            // Strongest near the low's own centre, where the warm and cold side biases overlap.
+            return warm + cold + 2.0 * Math.Min(warm, cold);
         }
-        // Strongest near the low's own centre, where the warm and cold side biases overlap.
-        return warm + cold + 2.0 * Math.Min(warm, cold);
     }
 
     /// <summary>
@@ -525,40 +505,43 @@ public class WindField
     /// <summary>See <see cref="FrontRegimeBias"/>. Real fronts trail a LOW; highs contribute nothing.</summary>
     public FrontRegimeBias FrontRegimeBiasAt(double x, double z, double totalHours)
     {
-        var result = new FrontRegimeBias();
-        double elapsed = totalHours - AnchorHours;
-        for (int i = 0; i < Cells.Count; i++)
+        lock (CellsLock)
         {
-            PressureCell c = Cells[i];
-            if (!c.IsLow || c.StormLikelihood <= 0f) continue;
+            var result = new FrontRegimeBias();
+            double elapsed = totalHours - AnchorHours;
+            for (int i = 0; i < Cells.Count; i++)
+            {
+                PressureCell c = Cells[i];
+                if (!c.IsLow || c.StormLikelihood <= 0f) continue;
 
-            double cx = c.X + c.VelX * elapsed;
-            double cz = c.Z + c.VelZ * elapsed;
-            double dx = x - cx, dz = z - cz;
-            double falloff = Math.Exp(-EllipseNorm2(c, dx, dz));
-            if (falloff < 1e-4) continue;
+                double cx = c.X + c.VelX * elapsed;
+                double cz = c.Z + c.VelZ * elapsed;
+                double dx = x - cx, dz = z - cz;
+                double falloff = Math.Exp(-EllipseGeometry.Norm2(c, dx, dz));
+                if (falloff < 1e-4) continue;
 
-            // Weighted by the cell's own pressure strength too (same pattern as CellTemperatureAt) —
-            // otherwise a barely-significant low sitting at the same distance as an intense one would
-            // sway the Cold/Warm/Occluded/Stationary wind-character mix just as much, decorrelating the
-            // chosen gust multiplier from how strong the system actually pushing the wind is.
-            double weight = falloff * c.StormLikelihood * Math.Max(0.2, Math.Abs(c.Strength));
+                // Weighted by the cell's own pressure strength too (same pattern as CellTemperatureAt) —
+                // otherwise a barely-significant low sitting at the same distance as an intense one would
+                // sway the Cold/Warm/Occluded/Stationary wind-character mix just as much, decorrelating the
+                // chosen gust multiplier from how strong the system actually pushing the wind is.
+                double weight = falloff * c.StormLikelihood * Math.Max(0.2, Math.Abs(c.Strength));
 
-            if (totalHours < c.OccludedUntilTotalHours) { result.Occluded += weight; continue; }
+                if (totalHours < c.OccludedUntilTotalHours) { result.Occluded += weight; continue; }
 
-            double speed = Math.Sqrt(c.VelX * c.VelX + c.VelZ * c.VelZ);
-            if (speed < StationarySpeed) { result.Stationary += weight; continue; }
+                double speed = Math.Sqrt(c.VelX * c.VelX + c.VelZ * c.VelZ);
+                if (speed < StationarySpeed) { result.Stationary += weight; continue; }
 
-            // Moving open-wave low: poleward side is the warm front, equatorward the cold front — same
-            // convention as StormBiasAt/FrontComputer, but apportioned smoothly across a band straddling
-            // the low's own latitude line rather than switched abruptly at it.
-            double poleSign = PolewardZSign(cz);
-            double blendWidth = Math.Max(1.0, c.Radius) * RegimeBlendWidthFactor;
-            double warmFrac = 0.5 * (1.0 + Math.Tanh(dz * poleSign / blendWidth));
-            result.Warm += weight * warmFrac;
-            result.Cold += weight * (1.0 - warmFrac);
+                // Moving open-wave low: poleward side is the warm front, equatorward the cold front — same
+                // convention as StormBiasAt/FrontComputer, but apportioned smoothly across a band straddling
+                // the low's own latitude line rather than switched abruptly at it.
+                double poleSign = PolewardZSign(cz);
+                double blendWidth = Math.Max(1.0, c.Radius) * RegimeBlendWidthFactor;
+                double warmFrac = 0.5 * (1.0 + Math.Tanh(dz * poleSign / blendWidth));
+                result.Warm += weight * warmFrac;
+                result.Cold += weight * (1.0 - warmFrac);
+            }
+            return result;
         }
-        return result;
     }
 
     /// <summary>
@@ -570,20 +553,23 @@ public class WindField
     /// </summary>
     public double CellTemperatureAt(double x, double z, double totalHours)
     {
-        double wSum = 0, tSum = 0;
-        double elapsed = totalHours - AnchorHours;
-        for (int i = 0; i < Cells.Count; i++)
+        lock (CellsLock)
         {
-            PressureCell cell = Cells[i];
-            double dx = x - (cell.X + cell.VelX * elapsed);
-            double dz = z - (cell.Z + cell.VelZ * elapsed);
-            double falloff = Math.Exp(-EllipseNorm2(cell, dx, dz));
-            if (falloff < 1e-4) continue;
-            double w = falloff * Math.Max(0.05, Math.Abs(cell.Strength));
-            wSum += w;
-            tSum += w * cell.AirMassTemp;
+            double wSum = 0, tSum = 0;
+            double elapsed = totalHours - AnchorHours;
+            for (int i = 0; i < Cells.Count; i++)
+            {
+                PressureCell cell = Cells[i];
+                double dx = x - (cell.X + cell.VelX * elapsed);
+                double dz = z - (cell.Z + cell.VelZ * elapsed);
+                double falloff = Math.Exp(-EllipseGeometry.Norm2(cell, dx, dz));
+                if (falloff < 1e-4) continue;
+                double w = falloff * Math.Max(0.05, Math.Abs(cell.Strength));
+                wSum += w;
+                tSum += w * cell.AirMassTemp;
+            }
+            return wSum > 1e-6 ? tSum / wSum : 0.0;
         }
-        return wSum > 1e-6 ? tSum / wSum : 0.0;
     }
 
     /// <summary>
@@ -596,19 +582,22 @@ public class WindField
     /// </summary>
     public double HeatColdWaveDeltaAt(double x, double z, double totalHours)
     {
-        double sum = 0;
-        double elapsed = totalHours - AnchorHours;
-        for (int i = 0; i < Cells.Count; i++)
+        lock (CellsLock)
         {
-            PressureCell cell = Cells[i];
-            if (!cell.IsHeatColdWave) continue;
-            double dx = x - (cell.X + cell.VelX * elapsed);
-            double dz = z - (cell.Z + cell.VelZ * elapsed);
-            double falloff = Math.Exp(-EllipseNorm2(cell, dx, dz));
-            if (falloff < 1e-4) continue;
-            sum += falloff * cell.WaveTemperatureDelta;
+            double sum = 0;
+            double elapsed = totalHours - AnchorHours;
+            for (int i = 0; i < Cells.Count; i++)
+            {
+                PressureCell cell = Cells[i];
+                if (!cell.IsHeatColdWave) continue;
+                double dx = x - (cell.X + cell.VelX * elapsed);
+                double dz = z - (cell.Z + cell.VelZ * elapsed);
+                double falloff = Math.Exp(-EllipseGeometry.Norm2(cell, dx, dz));
+                if (falloff < 1e-4) continue;
+                sum += falloff * cell.WaveTemperatureDelta;
+            }
+            return sum;
         }
-        return sum;
     }
 
     /// <summary>
@@ -619,17 +608,7 @@ public class WindField
     /// </summary>
     private double PressureAt(double x, double z, double totalHours, int excludeCell)
     {
-        double p = 0;
-        double elapsed = totalHours - AnchorHours;
-        for (int i = 0; i < Cells.Count; i++)
-        {
-            if (i == excludeCell) continue;
-            PressureCell cell = Cells[i];
-            double dx = x - (cell.X + cell.VelX * elapsed);
-            double dz = z - (cell.Z + cell.VelZ * elapsed);
-            double norm2 = EllipseNorm2(cell, dx, dz);
-            p += cell.Strength * Math.Exp(-norm2);
-        }
+        double p = CellPressureAt(x, z, totalHours, excludeCell);
         if (ThermalStaticScale > 0)
             p += ThermalStaticScale * (ThermalPressureFunc?.Invoke(x, z, totalHours) ?? 0.0);
         return p;

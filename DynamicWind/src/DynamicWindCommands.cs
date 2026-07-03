@@ -47,25 +47,28 @@ internal static class DynamicWindCommands
         sb.AppendLine(Lang.Get("dynamicwind:command-debug-pressure", $"{pressure:0.000}", pressureDesc));
         string biasDesc = Lang.Get(field.SeasonalBiasZ < -0.05 ? "dynamicwind:command-bias-sw" : field.SeasonalBiasZ > 0.05 ? "dynamicwind:command-bias-nw" : "dynamicwind:command-bias-w");
         sb.AppendLine(Lang.Get("dynamicwind:command-debug-bias", $"{field.SeasonalBiasZ:0.00}", biasDesc));
-        sb.Append(Lang.Get("dynamicwind:command-debug-active-cells", field.Cells.Count));
+        lock (field.CellsLock) { sb.Append(Lang.Get("dynamicwind:command-debug-active-cells", field.Cells.Count)); }
         return TextCommandResult.Success(sb.ToString());
     }
 
     private static TextCommandResult Cells(TextCommandCallingArgs args, ICoreServerAPI api, WindField field)
     {
-        if (field.Cells.Count == 0) return TextCommandResult.Success(Lang.Get("dynamicwind:command-cells-none"));
         double th = api.World.Calendar.TotalHours;
-        double elapsed = th - field.AnchorHours;
         var sb = new StringBuilder();
-        sb.AppendLine(Lang.Get("dynamicwind:command-cells-header", field.Cells.Count));
-        foreach (PressureCell c in field.Cells)
+        lock (field.CellsLock)
         {
-            double cx = c.X + c.VelX * elapsed;
-            double cz = c.Z + c.VelZ * elapsed;
-            string typeDesc = c.IsHeatColdWave
-                ? Lang.Get(c.WaveTemperatureDelta > 0 ? "dynamicwind:command-cell-heatwave" : "dynamicwind:command-cell-coldwave")
-                : Lang.Get(c.IsLow ? "dynamicwind:command-cell-low" : "dynamicwind:command-cell-high");
-            sb.AppendLine(Lang.Get("dynamicwind:command-cells-row", typeDesc, $"{c.Strength:0.00}", $"{c.Radius:0}", $"{c.RadiusMinor:0}", $"{cx:0}", $"{cz:0}", $"{Math.Max(0, c.DiesTotalHours - th):0.0}", $"{c.AirMassTemp:+0.00;-0.00}"));
+            if (field.Cells.Count == 0) return TextCommandResult.Success(Lang.Get("dynamicwind:command-cells-none"));
+            double elapsed = th - field.AnchorHours;
+            sb.AppendLine(Lang.Get("dynamicwind:command-cells-header", field.Cells.Count));
+            foreach (PressureCell c in field.Cells)
+            {
+                double cx = c.X + c.VelX * elapsed;
+                double cz = c.Z + c.VelZ * elapsed;
+                string typeDesc = c.IsHeatColdWave
+                    ? Lang.Get(c.WaveTemperatureDelta > 0 ? "dynamicwind:command-cell-heatwave" : "dynamicwind:command-cell-coldwave")
+                    : Lang.Get(c.IsLow ? "dynamicwind:command-cell-low" : "dynamicwind:command-cell-high");
+                sb.AppendLine(Lang.Get("dynamicwind:command-cells-row", typeDesc, $"{c.Strength:0.00}", $"{c.Radius:0}", $"{c.RadiusMinor:0}", $"{cx:0}", $"{cz:0}", $"{Math.Max(0, c.DiesTotalHours - th):0.0}", $"{c.AirMassTemp:+0.00;-0.00}"));
+            }
         }
         return TextCommandResult.Success(sb.ToString().TrimEnd());
     }

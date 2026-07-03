@@ -18,7 +18,7 @@ namespace DynamicWind.Patches;
 /// </summary>
 internal static class SailboatWind
 {
-    public static void Apply(Harmony harmony, ICoreAPI api, ILogger logger)
+    public static void Apply(Harmony harmony, ILogger logger)
     {
         try
         {
@@ -38,6 +38,7 @@ internal static class SailboatWind
                 MethodInfo? swTarget = AccessTools.DeclaredMethod(shipwright, "SeatsToMotion");
                 if (swTarget != null) harmony.Patch(swTarget, postfix: postfix);
             }
+            logger.Notification("[dynamicwind] Sailboat wind response enabled.");
         }
         catch (Exception e)
         {
