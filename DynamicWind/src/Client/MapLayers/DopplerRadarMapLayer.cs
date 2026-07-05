@@ -46,12 +46,12 @@ public class DopplerRadarMapLayer : DynamicWindWorldMapLayerBase
     private static readonly Vec4f Orange = Rgb(0xFF, 0x90, 0x28);
     private static readonly Vec4f Red = Rgb(0xFF, 0x3F, 0x26);
 
-    private static readonly Vec4f LightSnow = Rgb(0x5F, 0xBE, 0xF5);
-    private static readonly Vec4f MedSnow = Rgb(0x34, 0x48, 0xCF);
-    private static readonly Vec4f DarkSnow = Rgb(0x42, 0x20, 0xA4);
+    private static readonly Vec4f SkyBlue = Rgb(0x5F, 0xBE, 0xF5);
+    private static readonly Vec4f Cerulean = Rgb(0x34, 0x48, 0xCF);
+    private static readonly Vec4f LightPurple = Rgb(0x42, 0x20, 0xA4);
 
     private static readonly Vec4f[] RainStops = { LightGreen, MedGreen, DarkGreen, DarkestGreen, Yellow, Orange, Red };
-    private static readonly Vec4f[] SnowStops = { LightSnow, MedSnow, DarkSnow };
+    private static readonly Vec4f[] SnowStops = { SkyBlue, Cerulean, LightPurple };
 
     private DynamicWindConfig? cfg;
     private ICoreClientAPI? capi;
