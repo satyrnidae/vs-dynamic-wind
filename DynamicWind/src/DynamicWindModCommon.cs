@@ -84,6 +84,15 @@ public abstract class DynamicWindModCommon : ModSystem
         Field.ThermalPressureFunc = thermalCache.Get;
     }
 
+    /// <summary>Wires <see cref="WindField.TerrainHumidityFunc"/> to a cached lookup of <see cref="TerrainHumidity.WorldgenBaselineAt"/>.
+    /// Shared by both sides — the worldgen rainfall map is stable, so a coarse tile + effectively-static
+    /// time bucket (mirrors the terrain-height caches) keeps this cheap on the wind hot path.</summary>
+    protected void SetupTerrainHumidityFunc(ICoreAPI api)
+    {
+        var humidityCache = new ThermalCache((x, z, _) => TerrainHumidity.WorldgenBaselineAt(api.World, x, z), tile: 32.0, bucketHours: 1e9);
+        Field.TerrainHumidityFunc = humidityCache.Get;
+    }
+
     /// <summary>Sets <see cref="WindField.SeaLevel"/>/<see cref="WindField.WorldHeight"/>/<see cref="WindField.MapCenterZ"/>
     /// and wires <see cref="WindField.LatitudeFunc"/> to the real climate latitude (repeating triangle wave —
     /// see "Real latitude" in CLAUDE.md). Re-checked per call rather than captured once, since
@@ -118,6 +127,9 @@ public abstract class DynamicWindModCommon : ModSystem
         Field.OroWake = Config.OrographicWakeFactor;
         Field.AltitudeMaxDrop = Config.AltitudePressureDrop;
         Field.ThermalStaticScale = Config.ThermalStaticScale;
+        Field.HumidityWaterProximityStrength = Config.HumidityWaterProximityStrength;
+        Field.HumidityPressureStrength = Config.HumidityPressureStrength;
+        Field.HumidityNoiseAmplitude = Config.HumidityNoiseAmplitude;
     }
 
     /// <summary>
@@ -259,7 +271,8 @@ public abstract class DynamicWindModCommon : ModSystem
     {
         if (climate == null || mode == EnumGetClimateMode.WorldGenValues) return;
         if (inClimateHandler) return;
-        if (Config.FrontTemperatureMax <= 0f && Config.ThermalTemperatureMax <= 0f && !Config.HeatColdWaveEnabled) return;
+        bool humidityActive = Config.HumidityEnabled && Config.HumidityRainfallBlendWeight > 0f;
+        if (Config.FrontTemperatureMax <= 0f && Config.ThermalTemperatureMax <= 0f && !Config.HeatColdWaveEnabled && !humidityActive) return;
 
         inClimateHandler = true;
         try
@@ -283,6 +296,18 @@ public abstract class DynamicWindModCommon : ModSystem
             double waveDelta = Config.HeatColdWaveEnabled ? Field.HeatColdWaveDeltaAt(pos.X, pos.Z, totalHours) : 0.0;
 
             climate.Temperature += (float)(frontDelta + thermalDelta + waveDelta);
+
+            // Humidity: blend vanilla's own Rainfall toward our terrain/pressure/noise-derived value, so
+            // everything that already reads live Rainfall (crop growth, farmland moisture, third-party
+            // mods' climate lookups, HUD Clock's Rainfall line) picks up dynamic humidity for free — see
+            // WindField.HumidityAt and "Real latitude"/humidity design notes in CLAUDE.md.
+            if (humidityActive)
+            {
+                double humidity = Field.HumidityAt(pos.X, pos.Z, totalHours);
+                float w = Config.HumidityRainfallBlendWeight;
+                if (w > 1f) w = 1f;
+                climate.Rainfall = climate.Rainfall + (float)(w * (humidity - climate.Rainfall));
+            }
         }
         finally
         {

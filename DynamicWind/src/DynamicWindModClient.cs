@@ -34,6 +34,7 @@ public class DynamicWindModClient : DynamicWindModCommon
         api.Event.LevelFinalize += () => SetupWorldGeometry(api);
 
         SetupThermalPressureFunc(api);
+        SetupTerrainHumidityFunc(api);
         // Client has no terrain sampler; use the rain-map height (loaded chunks) so the minimap shows
         // orographic curving around terrain near the player.
         var heightCache = new ThermalCache((x, z, _) => api.World.BlockAccessor.GetRainMapHeightAt((int)x, (int)z), tile: 8.0, bucketHours: 1e9);
@@ -57,6 +58,9 @@ public class DynamicWindModClient : DynamicWindModCommon
         if (api.ModLoader.IsModEnabled(HudClockWindPatch.HudClockModId))
         {
             HudClockWindPatch.Apply(harmony, api, Mod.Logger);
+            // Config.HumidityHudClockLineEnabled is checked live inside the patch (a clientside-only
+            // setting, toggleable without restart), not gated here.
+            HudClockHumidityPatch.Apply(harmony, api, Mod.Logger);
         }
 
         // Wind-direction arrow overlay on the minimap + world map. Registered before the map manager

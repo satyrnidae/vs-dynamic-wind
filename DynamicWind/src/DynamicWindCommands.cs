@@ -47,6 +47,8 @@ internal static class DynamicWindCommands
         sb.AppendLine(Lang.Get("dynamicwind:command-debug-pressure", $"{pressure:0.000}", pressureDesc));
         string biasDesc = Lang.Get(field.SeasonalBiasZ < -0.05 ? "dynamicwind:command-bias-sw" : field.SeasonalBiasZ > 0.05 ? "dynamicwind:command-bias-nw" : "dynamicwind:command-bias-w");
         sb.AppendLine(Lang.Get("dynamicwind:command-debug-bias", $"{field.SeasonalBiasZ:0.00}", biasDesc));
+        double humidity = field.HumidityAt(e.Pos.X, e.Pos.Z, th);
+        sb.AppendLine(Lang.Get("dynamicwind:command-debug-humidity", $"{humidity * 100:0}"));
         lock (field.CellsLock) { sb.Append(Lang.Get("dynamicwind:command-debug-active-cells", field.Cells.Count)); }
         return TextCommandResult.Success(sb.ToString());
     }

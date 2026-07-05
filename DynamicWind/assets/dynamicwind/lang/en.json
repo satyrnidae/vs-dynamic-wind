@@ -43,6 +43,25 @@
     "description-HeatColdWaveEnabled": "Allow rare, strong, near-stationary heat-wave/cold-wave highs to form over terrain thermal hotspots, pushing local temperature 5-10°C outside the seasonal average for several days.",
     "setting-HeatColdWaveEnabled": "Heat/cold waves",
 
+    "description-HumidityEnabled": "Derive humidity from terrain (worldgen rainfall noise + water proximity), pressure systems, and fine noise, blending it into live Rainfall. 0/off leaves vanilla Rainfall untouched.",
+    "setting-HumidityEnabled": "Dynamic humidity",
+    "description-HumidityRainfallBlendWeight": "How strongly live Rainfall is pulled toward the computed humidity value. 0 = vanilla Rainfall untouched, 1 = fully replaced.",
+    "setting-HumidityRainfallBlendWeight": "Humidity/Rainfall blend weight",
+    "description-HumidityWaterProximityStrength": "How much closeness to open water (coasts, lakes, wide rivers) raises local humidity.",
+    "setting-HumidityWaterProximityStrength": "Water proximity strength",
+    "description-HumidityPressureStrength": "How much pressure systems shift humidity: low pressure raises it (converging moist air, storms), high pressure lowers it (dry subsidence).",
+    "setting-HumidityPressureStrength": "Pressure humidity strength",
+    "description-HumidityNoiseAmplitude": "Amplitude of fine deterministic noise added to humidity, for local variation beyond terrain/pressure.",
+    "setting-HumidityNoiseAmplitude": "Humidity noise amplitude",
+    "description-HumidityBodyTempCompatEnabled": "If the Immersive Body Temperature mod is installed, let dynamic humidity reduce its cooling effectiveness and slow outdoor wetness drying.",
+    "setting-HumidityBodyTempCompatEnabled": "Body temperature mod compat",
+    "description-HumidityDiscomfortMax": "Maximum °C of extra apparent warmth from humid air impairing evaporative cooling (Immersive Body Temperature compat only). 0 disables this effect.",
+    "setting-HumidityDiscomfortMax": "Humidity discomfort (max °C)",
+    "description-HumidityWetnessDryingSuppression": "How much high ambient humidity slows outdoor wetness drying (Immersive Body Temperature compat only). 0 = no suppression.",
+    "setting-HumidityWetnessDryingSuppression": "Humidity drying suppression",
+    "description-HumidityHudClockLineEnabled": "If the HUD Clock mod is installed, show a live relative-humidity (RH) line on its HUD.",
+    "setting-HumidityHudClockLineEnabled": "HUD Clock RH line",
+
     "description-CloudsFollowWind": "Make clouds drift along the true wind direction.",
     "setting-CloudsFollowWind": "Clouds follow wind",
 
@@ -117,6 +136,8 @@
     "blockinfo-windheading": "Wind heading: {0}",
     "blockinfo-windspeed": "Wind speed: {0}%",
 
+    "hudclock-humidity-line": "RH: {0}%",
+
     "command-description": "Inspect the dynamic wind field",
     "command-debug-description": "Print wind direction, speed multiplier and pressure at your position",
     "command-cells-description": "List active pressure systems",
@@ -131,6 +152,7 @@
     "command-bias-sw": "SW'ly (toward NE)",
     "command-bias-nw": "NW'ly (toward SE)",
     "command-bias-w": "due W'ly",
+    "command-debug-humidity": "Humidity: {0}%",
     "command-debug-active-cells": "Active cells: {0}",
     "command-cells-none": "No active pressure systems.",
     "command-cells-header": "{0} active pressure system(s):",
