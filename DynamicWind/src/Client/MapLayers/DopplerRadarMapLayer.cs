@@ -18,12 +18,15 @@ namespace DynamicWind.Client.MapLayers;
 /// the noise is gated by the local pressure from the synced wind field, so storms appear inside lows and
 /// the sky clears under highs (the radar is client-side, so it reads the client pressure field directly —
 /// the server-side rainfall coupling never reaches a client-side GetPrecipitation query).
-/// Colours ramp green → yellow → orange → red with a CONCAVE-UP (power) response: light rain and the
-/// outer fringe of a storm stay green, and only the high-precip storm core ramps through yellow/orange to
-/// red — so the overlay reads as "mostly green, red only at the epicentre" instead of painting the whole
-/// rain field hot. (An earlier logarithmic curve did the opposite — it lifted faint rain up toward red,
-/// turning entire cloud areas red — which is why this is a power curve, not a log.) Renders on world map +
-/// minimap; toggle in the map legend.
+/// Colours ramp through several greens (light → heavy rain) before reaching yellow/orange/red, which are
+/// reserved for storm-core intensity — matching real doppler radar convention — via a CONCAVE-UP (power)
+/// response: light rain and the outer fringe of a storm stay in the greens, and only the high-precip storm
+/// core ramps through yellow/orange to red — so the overlay reads as "mostly green, red only at the
+/// epicentre" instead of painting the whole rain field hot. (An earlier logarithmic curve did the
+/// opposite — it lifted faint rain up toward red, turning entire cloud areas red — which is why this is a
+/// power curve, not a log.) Cells cold enough for vanilla to render snow instead of rain (client climate
+/// temperature below <see cref="SnowThresholdTemp"/>, matching vanilla's own default snow/rain split) use
+/// a separate blue → purple ramp instead. Renders on world map + minimap; toggle in the map legend.
 /// </summary>
 public class DopplerRadarMapLayer : DynamicWindWorldMapLayerBase
 {
@@ -33,11 +36,22 @@ public class DopplerRadarMapLayer : DynamicWindWorldMapLayerBase
     private const float MinPrecip = 0.04f;
     private const double RampFullPrecip = 0.9;  // precip level mapped to the red (storm-core) end
     private const double RampExponent = 2.0;    // >1 keeps light/edge rain green; only intense precip → red
+    private const float SnowThresholdTemp = 4f; // °C; matches vanilla WeatherDataSnapshot.snowThresholdTemp default
 
-    private static readonly Vec4f Green = Rgb(0x3D, 0xFF, 0x87);
+    private static readonly Vec4f LightGreen = Rgb(0x86, 0xF4, 0x68);
+    private static readonly Vec4f MedGreen = Rgb(0x3C, 0x93, 0x25);
+    private static readonly Vec4f DarkGreen = Rgb(0x1C, 0x5D, 0x0A);
+    private static readonly Vec4f DarkestGreen = Rgb(0x0E, 0x41, 0x00);
     private static readonly Vec4f Yellow = Rgb(0xFF, 0xFB, 0x11);
     private static readonly Vec4f Orange = Rgb(0xFF, 0x90, 0x28);
     private static readonly Vec4f Red = Rgb(0xFF, 0x3F, 0x26);
+
+    private static readonly Vec4f SkyBlue = Rgb(0x5F, 0xBE, 0xF5);
+    private static readonly Vec4f Cerulean = Rgb(0x34, 0x48, 0xCF);
+    private static readonly Vec4f LightPurple = Rgb(0x42, 0x20, 0xA4);
+
+    private static readonly Vec4f[] RainStops = { LightGreen, MedGreen, DarkGreen, DarkestGreen, Yellow, Orange, Red };
+    private static readonly Vec4f[] SnowStops = { SkyBlue, Cerulean, LightPurple };
 
     private DynamicWindConfig? cfg;
     private ICoreClientAPI? capi;
@@ -140,17 +154,21 @@ public class DopplerRadarMapLayer : DynamicWindWorldMapLayerBase
                 double norm = precip / RampFullPrecip;
                 if (norm > 1) norm = 1;
                 double t = Math.Pow(norm, RampExponent);
-                cells.Add(new Cell { X = cx, Z = cz, Color = RampColor((float)t, (float)(0.3 + 0.5 * t)) });
+
+                var pos = new BlockPos((int)cx, (int)playerY, (int)cz, 0);
+                ClimateCondition? cc = capi.World.BlockAccessor.GetClimateAt(pos, EnumGetClimateMode.NowValues, th);
+                bool isSnow = cc != null && cc.Temperature < SnowThresholdTemp;
+                Vec4f color = RampColor(isSnow ? SnowStops : RainStops, (float)t, (float)(0.3 + 0.5 * t));
+                cells.Add(new Cell { X = cx, Z = cz, Color = color });
             }
         }
     }
 
-    private static Vec4f RampColor(float t, float alpha)
+    private static Vec4f RampColor(Vec4f[] stops, float t, float alpha)
     {
-        Vec4f c;
-        if (t < 1f / 3f) c = Lerp(Green, Yellow, t * 3f);
-        else if (t < 2f / 3f) c = Lerp(Yellow, Orange, (t - 1f / 3f) * 3f);
-        else c = Lerp(Orange, Red, (t - 2f / 3f) * 3f);
+        float scaled = t * (stops.Length - 1);
+        int i = Math.Min((int)scaled, stops.Length - 2);
+        Vec4f c = Lerp(stops[i], stops[i + 1], scaled - i);
         return new Vec4f(c.R, c.G, c.B, alpha);
     }
 
