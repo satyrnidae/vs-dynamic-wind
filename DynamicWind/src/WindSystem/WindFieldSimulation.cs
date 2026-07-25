@@ -49,6 +49,12 @@ public class WindFieldSimulation
     // its very first tick.
     private const double VelocityEaseRatePerHour = 0.15;
 
+    // Air-mass movement bias: a cell's own AirMassTemp rotates its target advection bearing toward the
+    // pole (warm) or equator (cold) side — the same shape as WindField.SeasonalBiasZ tilting the base
+    // jetstream angle, so "poleward"/"equatorward" stay meaningful relative to whatever the local flow is
+    // actually doing rather than a flat Z-axis push. See AirMassBiasedAngle.
+    private const double AirMassTempMoveBiasMaxAngle = 25.0 * Math.PI / 180.0; // ~25° at |AirMassTemp|=1
+
     // Ellipse shape: the along-stream (minor) axis grows slower than the cross-stream (major) one, so
     // cells get more eccentric as they age, and starts already mildly elliptical at spawn rather than a
     // perfect circle.
@@ -354,8 +360,13 @@ public class WindFieldSimulation
                     {
                         // Ease toward the local wind rather than snapping to it — see VelocityEaseRatePerHour.
                         // A heat/cold-wave high eases far slower (a lot of inertia — see HeatColdWaveVelocityEaseRatePerHour).
-                        double targetVX = w.X * pd.AdvectionSpeed;
-                        double targetVZ = w.Y * pd.AdvectionSpeed;
+                        // The target bearing is also rotated toward the pole (warm) or equator (cold) side by
+                        // this cell's own AirMassTemp — see AirMassBiasedAngle.
+                        double baseAngle = Math.Atan2(w.Y, w.X);
+                        double biasedAngle = AirMassBiasedAngle(baseAngle, ez, c.AirMassTemp);
+                        double mag = speed[i] * pd.AdvectionSpeed; // speed[i] == w.Length(), sampled just above
+                        double targetVX = Math.Cos(biasedAngle) * mag;
+                        double targetVZ = Math.Sin(biasedAngle) * mag;
                         double easeRate = c.IsHeatColdWave ? HeatColdWaveVelocityEaseRatePerHour : VelocityEaseRatePerHour;
                         double ease = 1.0 - Math.Exp(-easeRate * dGameHours);
                         newVX[i] = c.VelX + (targetVX - c.VelX) * ease;
@@ -416,6 +427,15 @@ public class WindFieldSimulation
         if (dGameHours <= 0) return;
         c.StormLikelihood = Math.Min(1f, c.StormLikelihood + (float)(StormLikelihoodGrowthPerHour * dGameHours));
     }
+
+    /// <summary>Rotates <paramref name="baseAngle"/> toward the pole (warm) or equator (cold) side, scaled
+    /// by <paramref name="airMassTemp"/> — shared by <see cref="Advect"/> (the cell's actual eased target
+    /// velocity) and <see cref="Spawn"/> (so a cell aims upwind of the path it will actually tend to drift,
+    /// not just the flat jetstream bearing). Mirrors how <see cref="WindField.SeasonalBiasZ"/> tilts the
+    /// base jetstream angle rather than pushing a raw Z velocity component, so the bias stays meaningful
+    /// relative to whatever the local flow is actually doing.</summary>
+    private double AirMassBiasedAngle(double baseAngle, double z, float airMassTemp)
+        => baseAngle + field.PolewardZSign(z) * airMassTemp * AirMassTempMoveBiasMaxAngle;
 
     /// <summary>Eases the ellipse's stored orientation toward the cell's own travel bearing, rather than
     /// snapping, so the shape rotates smoothly. Frozen (not chased) at near-zero own speed to avoid
@@ -656,9 +676,16 @@ public class WindFieldSimulation
             // Mean jetstream bearing (seasonally tilted N/S). Systems spawn UPWIND of this bearing (± a
             // scatter spread) so they drift back down the jet THROUGH the player's area rather than being
             // carried off to the north/south when the stream tilts with the season — the old due-west lean
-            // made seasonally-tilted systems sail past the player.
+            // made seasonally-tilted systems sail past the player. Also pre-biased by this cell's own
+            // (estimated) AirMassTemp lean — see AirMassBiasedAngle — since a systematically warm/cold cell
+            // drifts consistently one way once its lean eases in during Advect, and aiming purely upwind of
+            // the flat jet would otherwise under-account for that. The estimate is coarse (sampled at the
+            // anchor, not the cell's actual spawn position below) — good enough to correct the systematic
+            // lean; the cell's real, authoritative AirMassTemp is still computed at its true spawn position.
             double jetAng = field.SeasonalBiasMaxAngle * field.SeasonalBiasZ;
-            double fx = Math.Cos(jetAng), fz = Math.Sin(jetAng); // downwind unit vector
+            float estimatedAirMassTemp = ComputeAirMassTemp(cx, cz);
+            double travelAngle = AirMassBiasedAngle(jetAng, cz, estimatedAirMassTemp);
+            double fx = Math.Cos(travelAngle), fz = Math.Sin(travelAngle); // downwind unit vector along the EXPECTED path
 
             // Advection speed in blocks/hour along the bearing, scaled by base strength.
             double advect = (300.0 + rand.NextDouble() * 300.0) * Math.Max(0.2, config.BaseJetstreamStrength);
@@ -668,7 +695,7 @@ public class WindFieldSimulation
             // Lifetime: lows are shorter-lived/sharper than highs.
             double durationHours = isLow ? (12 + rand.NextDouble() * 24) : (24 + rand.NextDouble() * 48);
 
-            double upwindAngle = jetAng + Math.PI; // opposite the downwind jet bearing
+            double upwindAngle = travelAngle + Math.PI; // opposite the EXPECTED downwind bearing
             double bearing = upwindAngle + (rand.NextDouble() - 0.5) * 2.0 * SpawnAngleSpreadRad;
             double dirX = Math.Cos(bearing), dirZ = Math.Sin(bearing);
 

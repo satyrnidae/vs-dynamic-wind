@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using DynamicWind.Utils;
 using DynamicWind.WindSystem;
 using Vintagestory.API.MathTools;
 
@@ -17,9 +18,10 @@ public struct FrontMarker
 
 /// <summary>
 /// A weather front for one LOW pressure system (highs carry no fronts — see FrontComputer). Every front —
-/// Warm/Cold (a moving low's poleward/equatorward halves), Stationary (the connecting line to its nearest
-/// significant neighbour), and Occluded/ColdOcclusion/WarmOcclusion (the line toward whatever pressure
-/// cell its cold front caught) — is an open marched polyline (<see cref="Points"/>), never a closed loop:
+/// Warm/Cold (a moving low's SINGLE front line, poleward for a warm-natured low or equatorward for a
+/// cold-natured one), Stationary (the connecting line to its nearest significant neighbour), and
+/// Occluded/ColdOcclusion/WarmOcclusion (the line toward whatever pressure cell its cold front caught) —
+/// is an open marched polyline (<see cref="Points"/>), never a closed loop:
 /// on a flat, non-global map a front reads as a boundary sweeping across the land, not a ring, regardless
 /// of how little its own system is currently advancing. <see cref="Strength"/> (|cell strength|) scales
 /// how prominent the front is drawn.
@@ -30,7 +32,8 @@ public struct FrontLine
     public double Seed;
     public float Strength;
 
-    // Open marched polyline, world-space, ordered outward from the low's centre.
+    // Open marched polyline, world-space, ordered outward from the low's elliptical LEADING EDGE (not its
+    // centre — see FrontComputer.MarchOrJoin/EllipseGeometry.RadiusToward).
     public Vec2d[] Points;
     // Cumulative arc-length along Points (CumulativeLength[0] == 0, CumulativeLength[^1] == total length),
     // precomputed once alongside Points so SampleAt doesn't rebuild it on every call.
@@ -55,11 +58,12 @@ public struct FrontLine
 /// is stateful/side-dependent and was what made fronts jump on every reload).
 ///
 /// Only LOW cells carry fronts — a real high is fair-weather subsidence with no frontal boundary of its
-/// own. A moving low gets BOTH a warm front (its poleward half, where warm air overruns, advancing
-/// poleward) and a cold front (its equatorward half, where cold air digs in, advancing equatorward),
-/// split by real geography (<see cref="WindField.PolewardZSign"/>), not the system's own direction of
-/// travel, since a front's warm/cold sides are determined by which air mass is on which side of the
-/// boundary, not by which way the low happens to be moving. A near-stationary low instead renders one
+/// own. A moving low renders a SINGLE front line, chosen by its own <see cref="PressureCell.AirMassTemp"/>:
+/// a warm-natured low draws its warm front on the poleward side (where warm air overruns, advancing
+/// poleward); a cold-natured low draws its cold front on the equatorward side (where cold air digs in,
+/// advancing equatorward) — consistent with the poleward/equatorward advection bias AirMassTemp also
+/// drives (see WindFieldSimulation.Advect/AirMassBiasedAngle). Side is still split by real geography
+/// (<see cref="WindField.PolewardZSign"/>), not the system's own direction of travel. A near-stationary low instead renders one
 /// line toward its nearest significant neighbour — the "connecting line" a stationary front actually
 /// sits on — flagged Stationary, and a low mid-occlusion (see WindFieldSimulation.ApplyOcclusion) renders
 /// one line toward whatever pressure cell its cold front caught, flagged Occluded/ColdOcclusion/
@@ -80,7 +84,6 @@ public static class FrontComputer
     private const int OpenMarchStepCount = 40;           // steps per curve
     private const double MaxOpenCurveLengthFactor = 4.0; // FREE march length cap, × the cell radius
     private const double OpenContourFrac = 0.35;         // FREE march stop threshold, fraction of centre pressure
-    private const double InitialOffsetFrac = 0.15;       // start-point offset from centre, × cell radius
     private const double GradSampleDistFront = 64.0;     // central-difference probe distance
     private const double GradMinMag = 1e-6;              // below this, nothing nearby to deflect toward
     private const double PullGain = 400.0;               // background gradient magnitude -> deflection strength
@@ -155,7 +158,7 @@ public static class FrontComputer
                     FindSidedNeighbour(significantIndices, i, ex, ez, Math.Cos(coldAngle), Math.Sin(coldAngle),
                         out int catchTarget, out _);
 
-                    Vec2d[] occPts = MarchOrJoin(field, i, ex[i], ez[i], centre, c.Radius, coldAngle, c.ColdFrontReach,
+                    Vec2d[] occPts = MarchOrJoin(field, i, ex[i], ez[i], centre, c, coldAngle, c.ColdFrontReach,
                         c.VelX, c.VelZ, catchTarget >= 0, catchTarget >= 0 ? ex[catchTarget] : 0, catchTarget >= 0 ? ez[catchTarget] : 0,
                         totalHours);
 
@@ -182,7 +185,7 @@ public static class FrontComputer
                         : fallbackAngle;
                     float statReach = (c.ColdFrontReach + c.WarmFrontReach) * 0.5f;
 
-                    Vec2d[] statPts = MarchOrJoin(field, i, ex[i], ez[i], centre, c.Radius, bearingAngle, statReach,
+                    Vec2d[] statPts = MarchOrJoin(field, i, ex[i], ez[i], centre, c, bearingAngle, statReach,
                         c.VelX, c.VelZ, neighbour >= 0, neighbour >= 0 ? ex[neighbour] : 0, neighbour >= 0 ? ez[neighbour] : 0,
                         totalHours);
 
@@ -195,32 +198,32 @@ public static class FrontComputer
                     continue;
                 }
 
-                // MOVING, open wave: split by real geography, not the system's own direction of travel — the
-                // warm front heads out the POLEWARD side (warm air overruns, advancing poleward into cold
-                // territory), the cold front out the EQUATORWARD side (cold air digs in, advancing equatorward
-                // into warm territory) — matches the classic open-wave cyclone model (warm front leads toward
-                // the pole side, cold front trails toward the equator side). See WindField.PolewardZSign.
+                // MOVING, open wave: which SINGLE line is drawn depends on this low's own air-mass character
+                // (PressureCell.AirMassTemp), consistent with the poleward/equatorward advection bias it also
+                // drives (see WindFieldSimulation.Advect/AirMassBiasedAngle) — a warm-natured low's leading
+                // edge is its warm front, out the POLEWARD side (warm air overruns, advancing poleward into
+                // cold territory); a cold-natured low's leading edge is its cold front, out the EQUATORWARD
+                // side (cold air digs in, advancing equatorward into warm territory). Side is still split by
+                // real geography, not the system's own direction of travel. See WindField.PolewardZSign.
                 double poleAngle = field.PolewardZSign(ez[i]) > 0 ? Math.PI / 2.0 : -Math.PI / 2.0;
                 double poleX = Math.Cos(poleAngle), poleZ = Math.Sin(poleAngle);
+                bool warm = c.AirMassTemp >= 0f;
+                double sideAngle = warm ? poleAngle : poleAngle + Math.PI;
+                double sideX = warm ? poleX : -poleX, sideZ = warm ? poleZ : -poleZ;
+                float reach = warm ? c.WarmFrontReach : c.ColdFrontReach;
 
-                // A real neighbouring low strictly on the poleward side becomes this low's Warm JOIN target;
-                // one strictly on the equatorward side becomes the Cold JOIN target — the nearest in each
-                // direction, regardless of what type of front the neighbour itself ends up drawing. With no
-                // neighbour on a side, that curve FREE-marches instead (see MarchOrJoin).
-                FindSidedNeighbour(movingLowIndices, i, ex, ez, poleX, poleZ, out int poleNeighbour, out _);
-                FindSidedNeighbour(movingLowIndices, i, ex, ez, -poleX, -poleZ, out int equatorNeighbour, out _);
+                // A real neighbouring low strictly on this side becomes this front's JOIN target — the nearest
+                // in that direction, regardless of what type of front the neighbour itself ends up drawing.
+                // With no neighbour on this side, the curve FREE-marches instead (see MarchOrJoin).
+                FindSidedNeighbour(movingLowIndices, i, ex, ez, sideX, sideZ, out int sideNeighbour, out _);
 
-                Vec2d[] warmPts = MarchOrJoin(field, i, ex[i], ez[i], centre, c.Radius, poleAngle, c.WarmFrontReach,
-                    c.VelX, c.VelZ, poleNeighbour >= 0, poleNeighbour >= 0 ? ex[poleNeighbour] : 0, poleNeighbour >= 0 ? ez[poleNeighbour] : 0,
-                    totalHours);
-                Vec2d[] coldPts = MarchOrJoin(field, i, ex[i], ez[i], centre, c.Radius, poleAngle + Math.PI, c.ColdFrontReach,
-                    c.VelX, c.VelZ, equatorNeighbour >= 0, equatorNeighbour >= 0 ? ex[equatorNeighbour] : 0, equatorNeighbour >= 0 ? ez[equatorNeighbour] : 0,
+                Vec2d[] pts = MarchOrJoin(field, i, ex[i], ez[i], centre, c, sideAngle, reach,
+                    c.VelX, c.VelZ, sideNeighbour >= 0, sideNeighbour >= 0 ? ex[sideNeighbour] : 0, sideNeighbour >= 0 ? ez[sideNeighbour] : 0,
                     totalHours);
 
                 double refX = c.VelX / speed, refZ = c.VelZ / speed; // speed >= StationarySpeed here, never zero
 
-                lines.Add(MakeLine(FrontType.Warm, c.BornTotalHours, strength, warmPts, refX, refZ));
-                lines.Add(MakeLine(FrontType.Cold, c.BornTotalHours, strength, coldPts, refX, refZ));
+                lines.Add(MakeLine(warm ? FrontType.Warm : FrontType.Cold, c.BornTotalHours, strength, pts, refX, refZ));
             }
         }
     }
@@ -307,16 +310,19 @@ public static class FrontComputer
     /// Builds one front open curve: a FREE march outward if there's no candidate neighbour, blended
     /// toward an explicit Bezier JOIN to <paramref name="neighbourX"/>/<paramref name="neighbourZ"/> as
     /// that neighbour gets close enough (see <see cref="JoinBlend"/>) — eased in/out by distance rather
-    /// than switched abruptly the instant a neighbour becomes eligible. See
+    /// than switched abruptly the instant a neighbour becomes eligible. Starts at the cell's own elliptical
+    /// LEADING EDGE in the bias direction (<see cref="EllipseGeometry.RadiusToward"/>), not its centre. See
     /// <see cref="MarchFree"/>/<see cref="BuildJoinCurve"/>/<see cref="BlendCurves"/>.
     /// </summary>
     private static Vec2d[] MarchOrJoin(WindField field, int cellIndex, double ex, double ez, double centre,
-        double cellRadius, double biasAngle, float reach, double velX, double velZ,
+        PressureCell cell, double biasAngle, float reach, double velX, double velZ,
         bool hasNeighbour, double neighbourX, double neighbourZ, double totalHours)
     {
         double biasX = Math.Cos(biasAngle), biasZ = Math.Sin(biasAngle);
-        double startX = ex + biasX * InitialOffsetFrac * cellRadius;
-        double startZ = ez + biasZ * InitialOffsetFrac * cellRadius;
+        double edgeDist = EllipseGeometry.RadiusToward(cell, biasX, biasZ);
+        double startX = ex + biasX * edgeDist;
+        double startZ = ez + biasZ * edgeDist;
+        double cellRadius = cell.Radius; // still the scale reference for MarchFree's max-length cap + JOIN-blend fade distances
 
         Vec2d[] freePts = MarchFree(field, cellIndex, ex, ez, centre, startX, startZ, biasX, biasZ, cellRadius, reach, velX, velZ, totalHours);
         if (!hasNeighbour) return freePts;

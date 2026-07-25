@@ -57,8 +57,10 @@ public class PressureCell
     /// exist, same as a polar low or a subtropical high in reality. Set once at spawn from the cell's
     /// birth latitude + season + random jitter (see WindFieldSimulation.ComputeAirMassTemp) and carried
     /// for the cell's lifetime. Drives the real temperature shift in DynamicWindModCommon.OnGetClimate
-    /// via <see cref="DynamicWind.WindSystem.WindField.CellTemperatureAt"/>; independent of the front warm/cold SYMBOL choice,
-    /// which is purely geometric (poleward vs equatorward side of a moving low).</summary>
+    /// via <see cref="DynamicWind.WindSystem.WindField.CellTemperatureAt"/>; also drives which SINGLE front
+    /// symbol a moving low draws (warm → poleward/Warm, cold → equatorward/Cold — see
+    /// DynamicWind.PressureSystem.FrontComputer) and biases the cell's own advection bearing toward the
+    /// pole (warm) or equator (cold) side (see WindFieldSimulation.Advect/AirMassBiasedAngle).</summary>
     public float AirMassTemp;
 
     /// <summary>Radial reach multiplier for this (low) cell's COLD/equatorward front contour, on top of the

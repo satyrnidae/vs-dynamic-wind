@@ -384,10 +384,14 @@ public class WindField
 
     /// <summary>
     /// Extra storm-likelihood forcing at a position. Real fronts trail a LOW, not a high — a high is
-    /// fair-weather subsidence and contributes nothing here. Each low carries both a warm front (its
-    /// POLEWARD side, where warm air overruns, advancing poleward) and a cold front (its EQUATORWARD
-    /// side, where cold air digs in, advancing equatorward) — real geography, not the system's own
-    /// direction of travel — scaled by that cell's own
+    /// fair-weather subsidence and contributes nothing here. Each low is treated as carrying both a warm
+    /// front (its POLEWARD side, where warm air overruns, advancing poleward) and a cold front (its
+    /// EQUATORWARD side, where cold air digs in, advancing equatorward) — real geography, not the system's
+    /// own direction of travel — regardless of which single side <see
+    /// cref="DynamicWind.PressureSystem.FrontComputer"/> actually renders for that low (chosen by its own
+    /// AirMassTemp): storminess is a genuinely independent calculation that still legitimately biases
+    /// toward both sides of the synoptic pattern, not just whichever one is drawn — scaled by that cell's
+    /// own
     /// <see cref="PressureCell.StormLikelihood"/>, with a synergy bonus near the low's centre where the
     /// two sides' influence overlaps (strongest weather sits close to the low itself). When a side has a
     /// real neighbouring low (the same JOIN a front curve would connect to — see

@@ -29,14 +29,18 @@ systems, and couples the rest of the world to it:
   Lows also add circulation, so storms = stronger, swirlier wind.
 - **Fronts** (`FrontComputer`/`FrontMapLayer`) — only LOW cells carry fronts; a high is fair-weather
   subsidence with no frontal boundary of its own (still gets an H marker, no line). A moving, open-wave
-  low renders BOTH a warm front (its POLEWARD half, where warm air overruns) and a cold front (its
-  EQUATORWARD half, where cold air digs in) from the same traced pressure contour — split by real geography
-  (`WindField.PolewardZSign`, driven by the real climate latitude via `WindField.LatitudeFunc` — see
-  "Real latitude" below, NOT a simple map-midline split), NOT the system's own direction of travel, since a
-  front's warm/cold sides are set by which air mass sits on which side of the boundary. Symbols always
-  face outward, radially (so warm points poleward, cold points equatorward — no extra per-type flip
-  needed). `WindField.StormBiasAt` mirrors the same split: storminess biases toward a low's poleward
-  (warm) / equatorward (cold) sides (synergy bonus near the low's own centre), highs contribute nothing.
+  low renders a SINGLE front line, chosen by its own `PressureCell.AirMassTemp`: a warm-natured low draws
+  its warm front on the POLEWARD side (where warm air overruns, advancing poleward); a cold-natured low
+  draws its cold front on the EQUATORWARD side (where cold air digs in, advancing equatorward) — consistent
+  with the poleward/equatorward advection bias `AirMassTemp` also drives (see "Air-mass temperature"
+  below). Side is still split by real geography (`WindField.PolewardZSign`, driven by the real climate
+  latitude via `WindField.LatitudeFunc` — see "Real latitude" below, NOT a simple map-midline split), NOT
+  the system's own direction of travel. Each front line starts at the low's own elliptical LEADING EDGE in
+  that direction (`EllipseGeometry.RadiusToward`, accounting for `RadiusMinor`/`Orientation`), not near its
+  centre. Symbols always face outward, radially (so warm points poleward, cold points equatorward — no
+  extra per-type flip needed). `WindField.StormBiasAt` still treats every low as having both a poleward
+  (warm) and equatorward (cold) side for storm-forcing purposes — a genuinely independent calculation from
+  which single line gets drawn — highs contribute nothing.
 - **Front reach** — each low's cold and warm sides carry an independent radial reach multiplier
   (`PressureCell.ColdFrontReach`/`WarmFrontReach`, start at 1) grown every hour in `WindFieldSimulation.ApplyOcclusion`
   — cold faster (`ColdReachGrowthPerHour`) than warm (`WarmReachGrowthPerHour`) at the base rate, since real
@@ -46,7 +50,9 @@ systems, and couples the rest of the world to it:
   similar air mass offers little resistance and the front advances near its base rate, a starkly different
   one slows it — so cooler Δtemp (more similar air masses) → faster front movement, higher Δtemp → slower.
   With no cell on a side, growth uses the unmodified base rate. `FrontComputer.ApplyFrontReach` scales the
-  traced contour per angle bucket by whichever side it falls on before rendering.
+  traced contour per angle bucket by whichever side it falls on before rendering. Both reaches keep growing
+  every hour regardless of which single line (see "Fronts" above) a given moving low actually renders —
+  `ColdFrontReach` still drives the front occlusion catch check below independent of the render choice.
 - **Front occlusion** — a real two-cell event: a low's advancing cold front physically CATCHES another
   pressure cell (low or high, whichever `FindNearestCellOnSide` finds equatorward of it), not a fixed ratio
   against its own warm front or an age timer. `WindFieldSimulation.ApplyOcclusion` triggers a catch once
@@ -81,6 +87,15 @@ systems, and couples the rest of the world to it:
   (`FrontTemperatureMax`), replacing the old low-pressure-is-always-hot assumption. (Same-type cell
   merging was removed — it interfered with the occlusion catch-target search below, and active cell count
   is already bounded by spawn rate + despawn distance, so it wasn't needed to keep cell count in check.)
+  `AirMassTemp` also biases a cell's own advection: `WindFieldSimulation.Advect` (via the shared
+  `AirMassBiasedAngle` helper) rotates a cell's target advection bearing toward the pole (warm) or equator
+  (cold) side by up to `AirMassTempMoveBiasMaxAngle` (~25°), scaled by `AirMassTemp` and
+  `WindField.PolewardZSign` — mirroring how `SeasonalBiasZ` tilts the base jetstream angle rather than
+  pushing a raw Z velocity component, so the bias stays meaningful relative to whatever the local flow is
+  actually doing. Applied to every cell (low or high) whenever `AdvectWithWind` is on. `WindFieldSimulation.Spawn`
+  pre-biases its upwind aim the same way (estimating the new cell's `AirMassTemp` at the anchor position)
+  so a systematically warm/cold cell still tends to drift back through the player instead of consistently
+  leaning past them.
 - **Heat/cold waves** (`WindFieldSimulation.TrySeedHeatColdWave`, config `HeatColdWaveEnabled`) — a rare,
   very strong, near-stationary `PressureCell.IsHeatColdWave` HIGH sited on a genuine terrain-thermal
   hotspot (same siting as ordinary thermal seeding below), always anticyclonic regardless of the hotspot's
