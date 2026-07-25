@@ -69,12 +69,25 @@ public class WindField
 
     /// <summary>
     /// Optional terrain surface height (blocks) at (x, z). Server: Algernons Terrain Sampler; client:
-    /// rain-map height for loaded chunks. Drives orographic deflection/slowdown in <see cref="WindAt"/>.
+    /// rain-map height for loaded chunks. Drives orographic deflection/slowdown in <see cref="WindAt"/>
+    /// and <see cref="WaterProximityAt"/>.
     /// </summary>
     public Func<double, double, double>? TerrainHeightFunc;
 
+    /// <summary>
+    /// Optional terrain-noise humidity baseline at (x, z, totalHours) — worldgen rainfall noise (+ a small
+    /// forest-density nudge), see <see cref="TerrainSystem.TerrainHumidity"/>. Set per side. Blended into
+    /// <see cref="HumidityAt"/>.
+    /// </summary>
+    public Func<double, double, double, double>? TerrainHumidityFunc;
+
     /// <summary>Strength of down-gradient (high→low) pressure flow added to the wind. 0 = off.</summary>
     public double GradientWindScale;
+
+    // Humidity overlay strengths (config-driven, see HumidityAt).
+    public double HumidityWaterProximityStrength = 0.25;
+    public double HumidityPressureStrength = 0.15;
+    public double HumidityNoiseAmplitude = 0.1;
 
     // Orographic (terrain) interaction.
     public bool OrographicEnabled;
@@ -602,6 +615,75 @@ public class WindField
             }
             return sum;
         }
+    }
+
+    // Water-proximity ring-sample radii (blocks), nearest first — mirrors the style of the orographic
+    // consts above (named, tuned by feel) rather than a per-block flood search, which would be far too
+    // expensive on the same hot path WindAt runs on. A ring with water anywhere on it counts as "found
+    // at this radius"; closer rings dominate the falloff below.
+    private static readonly double[] WaterProximityRadii = { 32.0, 96.0, 200.0 };
+    private static readonly double[] WaterProximityWeights = { 1.0, 0.6, 0.3 };
+    private const int WaterProximitySamplesPerRing = 8;
+
+    /// <summary>
+    /// 0..1 "closeness to open water" at (x, z), sampled from the already-wired <see cref="TerrainHeightFunc"/>
+    /// against <see cref="SeaLevel"/> — no per-block flood search. Samples a small ring of points at a few
+    /// increasing radii; a ring with any sample below sea level contributes its weight (nearer rings weigh
+    /// more), so coasts/lakes/wide rivers register without needing exact distance-to-shore. 0 if
+    /// <see cref="TerrainHeightFunc"/> isn't wired up yet.
+    /// </summary>
+    public double WaterProximityAt(double x, double z)
+    {
+        Func<double, double, double>? h = TerrainHeightFunc;
+        if (h == null) return 0.0;
+
+        double best = 0.0;
+        for (int r = 0; r < WaterProximityRadii.Length; r++)
+        {
+            double radius = WaterProximityRadii[r];
+            bool found = false;
+            for (int s = 0; s < WaterProximitySamplesPerRing; s++)
+            {
+                double angle = 2.0 * Math.PI * s / WaterProximitySamplesPerRing;
+                double sx = x + radius * Math.Cos(angle);
+                double sz = z + radius * Math.Sin(angle);
+                if (h(sx, sz) < SeaLevel) { found = true; break; }
+            }
+            if (found && WaterProximityWeights[r] > best) best = WaterProximityWeights[r];
+        }
+        return best;
+    }
+
+    // Fine noise overlay salt: offsets so HumidityAt's Meander call doesn't correlate 1:1 with the
+    // jetstream's own Meander(x, z, totalHours, MeanderFrequency) call.
+    private const double HumidityNoiseSpatialSalt = 1.7;
+    private const double HumidityNoiseTimeSalt = 0.35;
+    private const double HumidityNoiseFreq = 1.3;
+
+    /// <summary>
+    /// Humidity at (x, z, totalHours) in [0, 1]: a terrain-noise baseline (worldgen rainfall map, via
+    /// <see cref="TerrainHumidityFunc"/>) plus a water-proximity boost (<see cref="WaterProximityAt"/>),
+    /// a weather-system overlay (lows converge moist air and bring storms, highs are dry subsidence — the
+    /// same <see cref="PressureAt(double,double,double)"/> sign convention as everywhere else: + low / −
+    /// high), and a fine deterministic noise term reusing <see cref="Meander"/> at a different scale/time
+    /// salt than the jetstream's own call. Deterministic from already-synced state, same as
+    /// <see cref="PressureAt(double,double,double)"/>/<see cref="CellTemperatureAt"/> — no separate network
+    /// sync needed.
+    /// </summary>
+    public double HumidityAt(double x, double z, double totalHours)
+    {
+        double baseline = TerrainHumidityFunc?.Invoke(x, z, totalHours) ?? 0.5;
+        double waterBoost = WaterProximityAt(x, z);
+        double pressureTerm = PressureAt(x, z, totalHours);
+        if (pressureTerm > 1.5) pressureTerm = 1.5; else if (pressureTerm < -1.5) pressureTerm = -1.5;
+        double noise = Meander(x * HumidityNoiseSpatialSalt, z * HumidityNoiseSpatialSalt, totalHours * HumidityNoiseTimeSalt, HumidityNoiseFreq);
+
+        double h = baseline
+            + HumidityWaterProximityStrength * waterBoost
+            + HumidityPressureStrength * pressureTerm
+            + HumidityNoiseAmplitude * noise;
+
+        return h < 0.0 ? 0.0 : (h > 1.0 ? 1.0 : h);
     }
 
     /// <summary>

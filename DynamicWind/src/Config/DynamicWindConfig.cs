@@ -109,6 +109,42 @@ public class DynamicWindConfig
     [Description("description-HeatColdWaveEnabled")]
     public bool HeatColdWaveEnabled { get; set; } = true;
 
+    // ── Humidity ────────────────────────────────────────────────────────────
+    [Description("description-HumidityEnabled")]
+    public bool HumidityEnabled { get; set; } = true;
+
+    [Range(0.0, 1.0)]
+    [Description("description-HumidityRainfallBlendWeight")]
+    public float HumidityRainfallBlendWeight { get; set; } = 0.7f;
+
+    [Range(0.0, 1.0)]
+    [Description("description-HumidityWaterProximityStrength")]
+    public float HumidityWaterProximityStrength { get; set; } = 0.25f;
+
+    [Range(0.0, 1.0)]
+    [Description("description-HumidityPressureStrength")]
+    public float HumidityPressureStrength { get; set; } = 0.15f;
+
+    [Range(0.0, 1.0)]
+    [Description("description-HumidityNoiseAmplitude")]
+    public float HumidityNoiseAmplitude { get; set; } = 0.1f;
+
+    [Description("description-HumidityBodyTempCompatEnabled")]
+    public bool HumidityBodyTempCompatEnabled { get; set; } = true;
+
+    [Range(0.0, 3.0)]
+    [Description("description-HumidityDiscomfortMax")]
+    public float HumidityDiscomfortMax { get; set; } = 1.5f;
+
+    [Range(0.0, 1.0)]
+    [Description("description-HumidityWetnessDryingSuppression")]
+    public float HumidityWetnessDryingSuppression { get; set; } = 0.5f;
+
+    [ProtoIgnore]
+    [Category("clientside")]
+    [Description("description-HumidityHudClockLineEnabled")]
+    public bool HumidityHudClockLineEnabled { get; set; } = true;
+
     // ── Clouds ──────────────────────────────────────────────────────────────
     [ProtoIgnore]
     [Category("clientside")]
@@ -286,6 +322,14 @@ public class DynamicWindConfig
         FrontTemperatureMax = o.FrontTemperatureMax;
         ThermalTemperatureMax = o.ThermalTemperatureMax;
         HeatColdWaveEnabled = o.HeatColdWaveEnabled;
+        HumidityEnabled = o.HumidityEnabled;
+        HumidityRainfallBlendWeight = o.HumidityRainfallBlendWeight;
+        HumidityWaterProximityStrength = o.HumidityWaterProximityStrength;
+        HumidityPressureStrength = o.HumidityPressureStrength;
+        HumidityNoiseAmplitude = o.HumidityNoiseAmplitude;
+        HumidityBodyTempCompatEnabled = o.HumidityBodyTempCompatEnabled;
+        HumidityDiscomfortMax = o.HumidityDiscomfortMax;
+        HumidityWetnessDryingSuppression = o.HumidityWetnessDryingSuppression;
         AltitudePressureDrop = o.AltitudePressureDrop;
         AdvectWithWind = o.AdvectWithWind;
         AdvectionSpeed = o.AdvectionSpeed;

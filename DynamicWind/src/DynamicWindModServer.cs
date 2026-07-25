@@ -1,4 +1,5 @@
 using AlgernonsTerrainSampler;
+using DynamicWind.Compat;
 using DynamicWind.Network;
 using DynamicWind.Patches;
 using DynamicWind.TerrainSystem;
@@ -40,6 +41,7 @@ public class DynamicWindModServer : DynamicWindModCommon
         }
 
         SetupThermalPressureFunc(api);
+        SetupTerrainHumidityFunc(api);
         if (sampler != null)
         {
             // Algernons Terrain Sampler gives terrain height at any coordinate without chunk gen.
@@ -72,6 +74,13 @@ public class DynamicWindModServer : DynamicWindModCommon
         WindmillDirectionality.Apply(harmony, Mod.Logger);
         SailboatWind.Apply(harmony, Mod.Logger);
         WeatherCoupling.Apply(harmony, Mod.Logger);
+
+        // Optional: Immersive Body Temperature's humidity/wetness compat, only entered if that mod is
+        // loaded (soft dependency, no modinfo entry — resolved entirely via AccessTools).
+        if (api.ModLoader.IsModEnabled(ImmersiveBodyTemperatureCompat.ModId) && Config.HumidityBodyTempCompatEnabled)
+        {
+            ImmersiveBodyTemperatureCompat.Apply(harmony, Mod.Logger);
+        }
 
         DynamicWindCommands.Register(api, Field, Config);
 
