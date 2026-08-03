@@ -106,9 +106,19 @@ public static class FrontComputer
     private const double OverlapDistanceFactor = 1.3;   // × (radius_i + radius_j) — overlap trigger threshold
     private const int OverlapGridResolution = 64;        // grid divisions along the longer axis of the sampled box
     private const int OverlapGridMaxCells = 6000;        // safety cap on total grid points
-    private const double OverlapBoxMarginFactor = 1.5;   // × own radius — margin around a lone cell's box
+    private const double OverlapBoxMarginFactor = 1.5;   // × own radius — MINIMUM margin around a lone cell's box
+    // The traced contour sits at radius × reach, and reach grows to MaxFrontReach (3), so the box must
+    // widen with it: a fixed 1.5× margin put the target contour outside the sampled box for any front
+    // past reach 1.5 (~6 game-hours of growth), leaving nothing in the wedge and silently falling back to
+    // the very analytic arc this path exists to replace — after paying for the full grid sample.
+    private const double OverlapBoxReachPad = 0.5;       // + reach, × own radius — box half-extent at high reach
     private const double OverlapWedgeMaxDistFactor = 3.0; // × own radius — discard traced segments farther than this
-    private const double OverlapChainMergeStepFactor = 0.6; // × grid step — endpoint-merge tolerance for chaining
+    // Endpoint-merge tolerance for chaining. MarchingSquares.Trace emits exactly-coincident endpoints for
+    // segments that share a contour, so this only needs to absorb floating-point error. A large fraction of
+    // the grid step would instead weld endpoints belonging to two DISTINCT branches passing through one
+    // ambiguous saddle cell — exactly what forms in the pinch between two overlapping systems — producing a
+    // spurious stroke jumping across the saddle, with pips stamped along it.
+    private const double OverlapChainMergeStepFactor = 1e-3; // × grid step
 
     public static void Compute(WindField field, double totalHours, List<FrontMarker> markers, List<FrontLine> lines)
     {
@@ -352,9 +362,12 @@ public static class FrontComputer
     ///
     /// The target LEVEL is derived the same way the analytic arc's radius-scaling works: scaling a single
     /// cell's own boundary radius by <paramref name="reach"/> is equivalent to contouring at
-    /// <c>|Strength| * exp(-reach²)</c> (since the elliptical falloff's <c>norm2</c> at radius×reach is
-    /// exactly reach²) — so reach still controls how far out the front sits, just expressed as a pressure
-    /// level instead of a radius multiplier, and both formulas agree exactly at reach = 1.
+    /// <c>|Strength| * WindField.PressureFalloff(reach²)</c> (the elliptical falloff's <c>norm2</c> at
+    /// radius×reach is exactly reach²) — so reach still controls how far out the front sits, just expressed
+    /// as a pressure level instead of a radius multiplier, and both formulas agree exactly at reach = 1.
+    /// This MUST go through <see cref="WindField.PressureFalloff"/> rather than hardcoding its formula:
+    /// the two definitions of "where the boundary is" have to stay in step or the traced contour lands at a
+    /// different radius than the analytic arc it falls back to.
     ///
     /// A LOCAL grid (this cell's own footprint plus any cell it overlaps, not the whole map) is sampled
     /// once and marched at that level; raw segments are then restricted to a wedge around
@@ -369,12 +382,13 @@ public static class FrontComputer
         PressureCell cell, double cx, double cz, double ownRadius, double biasAngle, float reach)
     {
         double absStrength = Math.Abs(cell.Strength);
-        double signedLevel = Math.Sign(cell.Strength) * absStrength * Math.Exp(-(double)reach * reach);
+        double signedLevel = Math.Sign(cell.Strength) * absStrength * WindField.PressureFalloff((double)reach * reach);
 
         // Local sample box: this cell's own footprint, expanded to include any cell it overlaps (so the
         // merged/pinched boundary between them is fully captured, not cut off at the box edge).
-        double minX = cx - ownRadius * OverlapBoxMarginFactor, maxX = cx + ownRadius * OverlapBoxMarginFactor;
-        double minZ = cz - ownRadius * OverlapBoxMarginFactor, maxZ = cz + ownRadius * OverlapBoxMarginFactor;
+        double boxHalf = ownRadius * Math.Max(OverlapBoxMarginFactor, reach + OverlapBoxReachPad);
+        double minX = cx - boxHalf, maxX = cx + boxHalf;
+        double minZ = cz - boxHalf, maxZ = cz + boxHalf;
         for (int j = 0; j < field.Cells.Count; j++)
         {
             if (j == selfIndex) continue;

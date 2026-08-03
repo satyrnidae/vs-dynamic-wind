@@ -49,10 +49,9 @@ public class WindFieldSimulation
     private const double DespawnMargin = 30000.0; // a cell despawns once it's farther than this PLUS its own radius (toward the player) from EVERY online player
 
     // Velocity easing (AdvectWithWind): a cell doesn't snap straight to the local background wind each
-    // tick, it exponentially eases its own velocity toward that target — real inertia, and what lets a
-    // thermal-seeded cell (born stationary, see TrySeedOne) visibly speed up over the next several hours
-    // as nearby cells' circulation and the base jetstream act on it, rather than jumping to full speed on
-    // its very first tick.
+    // tick, it exponentially eases its own velocity toward that target — real inertia, so a cell responds
+    // to nearby circulation and the base jetstream over several hours rather than jumping to a new
+    // velocity on a single tick.
     private const double VelocityEaseRatePerHour = 0.15;
 
     // Air-mass movement bias: a cell's own AirMassTemp rotates its target advection bearing toward the
@@ -116,9 +115,8 @@ public class WindFieldSimulation
     // Pressure systems are scattered across a wide region centred on (and leaning west of) the
     // population centre, so several systems span the visible map at once instead of a few tiny cells
     // clustered far to the west. Spawn-time radius is sampled directly from [CellRadiusMin, CellRadiusMax]
-    // (or a sub-band of it — see SpawnRadiusSubBandFraction) rather than from a fixed scale reference, so
-    // it stays correct under user retuning instead of drifting relative to a hardcoded constant.
-    private const double SpawnRadiusSubBandFraction = 0.25; // sub-band width, as a fraction of the full range
+    // rather than from a fixed scale reference, so it stays correct under user retuning instead of
+    // drifting relative to a hardcoded constant.
 
     // Spawn placement: a new front starts far out from a random player — like a real system approaching
     // from a distance — generally upwind so it drifts back through the player's area, scattered across a
@@ -132,34 +130,10 @@ public class WindFieldSimulation
     private const double SpawnPlayerAvoidRadius = 6000.0;    // never spawn this close to ANY online player
     private const double SpawnPlayerAvoidPush = 1500.0;      // extra clearance pushed past the avoid radius
 
-    // Terrain thermal seeding: spawn mobile cells from terrain hotspots near players. Kept deliberately
-    // modest — terrain pressure cell spawning was cluttering the field with far too many short-lived
-    // cells at the old rate.
-    private const double ThermalSeedRatePerDay = 4.0;    // seed attempts per game day
-    private const double SeedScanRadius = 1500.0;        // sample box half-extent around population center
-    private const double SeedThreshold = 0.25;           // minimum |thermal| to seed a cell
-    private const double SeedGain = 1.2;                 // thermal magnitude → seeded cell strength
-    private const double SeedMinSeparation = 600.0;      // don't seed atop an existing cell
-
-    // Heat-wave/cold-wave events: a rare, very strong, near-stationary HIGH that traps ground air near
-    // the surface — a real heat dome in warm months, an arctic-high cold snap in cold months (both are
-    // anticyclonic highs; it's the trapped, subsiding air itself that reads hot or cold, not the pressure
-    // sign). Sited on a genuine terrain-thermal hotspot like ordinary thermal seeding above, but the
-    // heat/cold side is decided by the season at the spawn site, independent of the hotspot's own sign.
-    // Deliberately far rarer than ordinary thermal seeding — this is meant to be a notable, occasional
-    // event, not a routine one.
-    private const double HeatColdWaveRatePerDay = 0.03;       // ~once every ~33 game-days on average
-    private const double HeatColdWaveTempMin = 5.0;           // °C, "outside the average" floor
-    private const double HeatColdWaveTempMax = 10.0;          // °C, ceiling
-    private const float HeatColdWaveStrengthMin = 2.2f;       // magnitude; always a strong HIGH (negative)
-    private const float HeatColdWaveStrengthMax = 2.8f;
-    private const double HeatColdWaveDurationMinHours = 72.0;  // 3 days
-    private const double HeatColdWaveDurationMaxHours = 120.0; // 5 days
-    // Highs have a lot of inertia: an ordinary cell eases toward the background wind over ~a day
-    // (VelocityEaseRatePerHour); a heat/cold-wave high eases far slower so it lingers over the same area
-    // for its multi-day life instead of drifting off with the jet — only a strong, moving system nearby
-    // (a big local background-wind term) will noticeably nudge it before then.
-    private const double HeatColdWaveVelocityEaseRatePerHour = 0.02;
+    // NOTE: terrain-thermal seeding (mobile cells spawned from water/terrain hotspots) and the
+    // heat-wave/cold-wave events built on the same siting path were both REMOVED — every mobile cell now
+    // comes from the jetstream spawner alone. TerrainThermal no longer feeds pressure at all: it is a
+    // TEMPERATURE field driving the sea breeze directly (WindField.SeaBreezeStrength).
 
     // How often the dedicated sim thread ticks — matches the old main-thread tick listener interval.
     private const int SimIntervalMs = 2000;
@@ -260,6 +234,10 @@ public class WindFieldSimulation
             // reload" symptom). Re-anchor to the authoritative current time instead: cells keep their saved
             // positions, treated as current (nothing simulates while the world is unloaded).
             field.AnchorHours = now;
+            // The drift integral carries its own clock, so it needs the same treatment: leaving it at the
+            // saved timestamp would make CloudDriftAt extrapolate across the entire offline gap and jump
+            // the precipitation texture thousands of blocks on the first frame after a load.
+            field.CloudDriftHours = now;
             lastGameHours = now;
             initialized = true;
             loadedPendingReanchor = false;
@@ -269,6 +247,7 @@ public class WindFieldSimulation
         {
             lastGameHours = now;
             field.AnchorHours = now;
+            field.CloudDriftHours = now;
             initialized = true;
             return;
         }
@@ -288,16 +267,16 @@ public class WindFieldSimulation
             // empty-server gap instead of a save/load gap. Cells keep their frozen X/Z; only the anchor
             // moves, so nothing actually appears to move until the sim resumes.
             lock (field.CellsLock) { field.AnchorHours = now; }
+            field.CloudDriftHours = now; // same reasoning as the reload re-anchor above
             return;
         }
 
+        AccumulateCloudDrift(now, dGameHours);
         Advect(now, dGameHours);
         ApplyOcclusion(now, dGameHours);
         ApplyWeatherFeedback(now, dGameHours);
         Expire(now);
         MaybeSpawn(now, dGameHours);
-        MaybeSeedThermal(now, dGameHours);
-        MaybeSeedHeatColdWave(now, dGameHours);
     }
 
     // Centre of the "Summer" season band from GameCalendar.GetSeason: (0.4685 + 0.726) / 2.
@@ -326,6 +305,41 @@ public class WindFieldSimulation
         {
             field.SeasonalBiasZ = 0; // hemisphere/season not ready yet → no bias
         }
+    }
+
+    // Cloud-texture drift. Blocks per game-hour per unit of wind magnitude — the speed vanilla's
+    // precipitation noise is dragged across the world. Matched to AdvectionSpeed's scale (cells and the
+    // cloud field should travel together; a storm's rain band shouldn't lag its own low by 30×) but kept
+    // separate so it can be tuned without moving the pressure systems themselves.
+    private const double CloudDriftSpeed = 400.0;
+
+    /// <summary>
+    /// Integrate the cloud-texture drift one tick. Sampled from the GLOBAL base flow at a reference
+    /// position, not the local wind: the offset is applied uniformly to every precipitation-noise lookup,
+    /// so a position-dependent value would shear/tear the noise field rather than translate it. Uses the
+    /// same jetstream bearing the base field does (meander + seasonal tilt), so the clouds track the
+    /// prevailing synoptic flow.
+    ///
+    /// Accumulated here rather than derived on demand because it is a TIME INTEGRAL: the flow's bearing
+    /// changes over the year, and any closed-form "bearing × elapsed" shortcut would jump the entire
+    /// pattern whenever the bearing moved.
+    /// </summary>
+    private void AccumulateCloudDrift(double now, double dGameHours)
+    {
+        if (dGameHours <= 0) return;
+
+        double refX = sapi.WorldManager.MapSizeX * 0.5;
+        double refZ = sapi.WorldManager.MapSizeZ * 0.5;
+        double meander = field.MeanderAmplitude * WindField.Meander(refX, refZ, now, field.MeanderFrequency);
+        double angle = meander + field.SeasonalBiasMaxAngle * field.SeasonalBiasZ;
+        double speed = field.BaseStrength * CloudDriftSpeed;
+
+        field.CloudDriftVelX = Math.Cos(angle) * speed;
+        field.CloudDriftVelZ = Math.Sin(angle) * speed;
+        field.CloudDriftX += field.CloudDriftVelX * dGameHours;
+        field.CloudDriftZ += field.CloudDriftVelZ * dGameHours;
+        field.CloudDriftHours = now;
+        Dirty = true;
     }
 
     /// <summary>
@@ -366,7 +380,6 @@ public class WindFieldSimulation
                     if (pd.AdvectWithWind)
                     {
                         // Ease toward the local wind rather than snapping to it — see VelocityEaseRatePerHour.
-                        // A heat/cold-wave high eases far slower (a lot of inertia — see HeatColdWaveVelocityEaseRatePerHour).
                         // The target bearing is also rotated toward the pole (warm) or equator (cold) side by
                         // this cell's own AirMassTemp — see AirMassBiasedAngle.
                         double baseAngle = Math.Atan2(w.Y, w.X);
@@ -374,8 +387,7 @@ public class WindFieldSimulation
                         double mag = speed[i] * pd.AdvectionSpeed; // speed[i] == w.Length(), sampled just above
                         double targetVX = Math.Cos(biasedAngle) * mag;
                         double targetVZ = Math.Sin(biasedAngle) * mag;
-                        double easeRate = c.IsHeatColdWave ? HeatColdWaveVelocityEaseRatePerHour : VelocityEaseRatePerHour;
-                        double ease = 1.0 - Math.Exp(-easeRate * dGameHours);
+                        double ease = 1.0 - Math.Exp(-VelocityEaseRatePerHour * dGameHours);
                         newVX[i] = c.VelX + (targetVX - c.VelX) * ease;
                         newVZ[i] = c.VelZ + (targetVZ - c.VelZ) * ease;
                     }
@@ -751,9 +763,7 @@ public class WindFieldSimulation
         }
     }
 
-    /// <summary>Builds a newly-spawned cell's common fields — shared by <see cref="Spawn"/>,
-    /// <see cref="TrySeedOne"/>, and <see cref="TrySeedHeatColdWave"/>, which each add their own
-    /// spawn-specific fields (e.g. heat/cold-wave flags) on top.</summary>
+    /// <summary>Builds a newly-spawned cell's common fields.</summary>
     private static PressureCell BuildCell(double x, double z, float strength, float radius,
         double velX, double velZ, double now, double durationHours,
         float minorRatio, float stormLikelihood, float airMassTemp) => new()
@@ -777,156 +787,6 @@ public class WindFieldSimulation
     private static float OrientationFromVelocity(double velX, double velZ)
         => (float)(Math.Atan2(velZ, velX) + Math.PI / 2.0);
 
-    /// <summary>
-    /// Spawn a mobile, dispersing pressure cell from a terrain thermal hotspot, restricted to water/ocean
-    /// sites (<see cref="TerrainThermal.IsWater"/>) — land hotspots still feed the static terrain-pressure
-    /// baseline (<c>ThermalStaticScale</c>) but no longer seed mobile cells. Water's own pressure sign is
-    /// seasonal (<see cref="TerrainThermal.PressureAt"/>): a warm-season site seeds a HIGH (cool water is
-    /// stabilizing, the marine-layer/sea-breeze pattern), a cold-season site seeds a LOW (relatively warm
-    /// water under cold air is destabilizing, matching real nor'easters/polar lows/lake-effect systems).
-    /// These then advect with the wind, so terrain influence is no longer pinned to the terrain — it drifts
-    /// and spreads downwind. Rate-limited and kept clear of existing cells.
-    /// </summary>
-    private void MaybeSeedThermal(double now, double dGameHours)
-    {
-        if (dGameHours <= 0 || !HasPlayers) return; // nobody to seed near — nothing else to do this tick
-        if (!config.ThermalSeeding || field.ThermalPressureFunc == null) return;
-        lock (field.CellsLock) { if (field.Cells.Count >= config.MaxActiveCells) return; }
-
-        // Expected seed attempts scale with elapsed game time (so seeding also speeds up during sleep).
-        double expected = ThermalSeedRatePerDay / 24.0 * dGameHours;
-        int attempts = (int)expected;
-        if (attempts > MaxSpawnPerTick) attempts = MaxSpawnPerTick;
-        if (rand.NextDouble() < expected - Math.Floor(expected)) attempts++;
-        for (int i = 0; i < attempts; i++) TrySeedOne(now);
-    }
-
-    private void TrySeedOne(double now)
-    {
-        lock (field.CellsLock)
-        {
-            if (field.Cells.Count >= config.MaxActiveCells) return;
-            if (!TryGetSpawnAnchor(out double cx, out double cz)) return;
-
-            double sx = cx + (rand.NextDouble() - 0.5) * 2.0 * SeedScanRadius;
-            double sz = cz + (rand.NextDouble() - 0.5) * 2.0 * SeedScanRadius;
-            if (!TerrainThermal.IsWater(sapi.World, sx, sz)) return; // local mobile cells: water/ocean sites only
-            double th = field.ThermalPressureFunc!(sx, sz, now);
-            if (Math.Abs(th) < SeedThreshold) return;
-
-            // Don't pile a new cell on top of an existing one.
-            double elapsed = now - field.AnchorHours;
-            foreach (PressureCell c in field.Cells)
-            {
-                double dx = (c.X + c.VelX * elapsed) - sx;
-                double dz = (c.Z + c.VelZ * elapsed) - sz;
-                if (dx * dx + dz * dz < SeedMinSeparation * SeedMinSeparation) return;
-            }
-
-            // Bottom sub-band of the configured range — thermal seeds stay visibly smaller than full
-            // synoptic systems (see Spawn) even as CellRadiusMin/Max are retuned.
-            float radius = GameMath.Clamp(
-                (float)(config.CellRadiusMin + rand.NextDouble() * SpawnRadiusSubBandFraction * (config.CellRadiusMax - config.CellRadiusMin)),
-                config.CellRadiusMin, config.CellRadiusMax);
-            float strength = (float)Math.Max(-2.0, Math.Min(2.0, th * SeedGain));
-            double durationHours = 8 + rand.NextDouble() * 16;
-            // Born stationary — a thermal hotspot itself isn't moving, so the cell it seeds shouldn't either.
-            // With AdvectWithWind on, Advect's velocity easing (VelocityEaseRatePerHour) then lets it speed
-            // up gradually as nearby cells' circulation and the base jetstream act on it, rather than jumping
-            // to full jet speed on its very first tick.
-            double minorRatio = SpawnMinorRatioMin + rand.NextDouble() * (SpawnMinorRatioMax - SpawnMinorRatioMin);
-
-            field.Cells.Add(BuildCell(sx, sz, strength, radius, velX: 0.0, velZ: 0.0, now, durationHours,
-                (float)minorRatio, (float)rand.NextDouble(), ComputeAirMassTemp(sx, sz)));
-            field.AnchorHours = now;
-            Dirty = true;
-        }
-    }
-
-    /// <summary>
-    /// Rare heat-wave/cold-wave event: spawn attempts scale with elapsed game time, same pattern as
-    /// <see cref="MaybeSeedThermal"/>, but at a far lower rate — this is meant to be a notable, occasional
-    /// event, not a routine one. Capped at one attempt per tick (never worth bursting several at once).
-    /// </summary>
-    private void MaybeSeedHeatColdWave(double now, double dGameHours)
-    {
-        if (dGameHours <= 0 || !HasPlayers) return; // nobody to seed near — nothing else to do this tick
-        if (!config.HeatColdWaveEnabled || field.ThermalPressureFunc == null) return;
-        lock (field.CellsLock) { if (field.Cells.Count >= config.MaxActiveCells) return; }
-
-        double expected = HeatColdWaveRatePerDay / 24.0 * dGameHours;
-        int attempts = expected >= 1.0 ? 1 : 0;
-        if (rand.NextDouble() < expected - attempts) attempts++;
-        for (int i = 0; i < attempts; i++) TrySeedHeatColdWave(now);
-    }
-
-    /// <summary>
-    /// Spawn a heat-wave/cold-wave high: sited on a genuine terrain-thermal hotspot, restricted to
-    /// water/ocean sites (<see cref="TerrainThermal.IsWater"/>) like ordinary thermal seeding
-    /// (<see cref="TrySeedOne"/>) — land hotspots no longer seed mobile cells (see TrySeedOne). Always a
-    /// strong HIGH regardless of the hotspot's own (now seasonal) sign — a heat dome and an arctic-high
-    /// cold snap are both anticyclonic. Warm-season vs. cold-season (and therefore heat wave vs. cold wave)
-    /// is decided by the season at the spawn site, not by the hotspot.
-    /// Spawned near-max strength and near-stationary (see HeatColdWaveVelocityEaseRatePerHour in Advect):
-    /// that large initial magnitude is what gives it "a lot of inertia" — the same proportional dispersal
-    /// decay every cell gets takes far longer to fade a near-max-strength cell below MinStrength, so it
-    /// naturally lasts on the order of days rather than hours, with DiesTotalHours as a 3–5 day backstop.
-    /// </summary>
-    private void TrySeedHeatColdWave(double now)
-    {
-        lock (field.CellsLock)
-        {
-            if (field.Cells.Count >= config.MaxActiveCells) return;
-            if (!TryGetSpawnAnchor(out double cx, out double cz)) return;
-
-            double sx = cx + (rand.NextDouble() - 0.5) * 2.0 * SeedScanRadius;
-            double sz = cz + (rand.NextDouble() - 0.5) * 2.0 * SeedScanRadius;
-            if (!TerrainThermal.IsWater(sapi.World, sx, sz)) return; // local mobile cells: water/ocean sites only
-            double th = field.ThermalPressureFunc!(sx, sz, now);
-            if (Math.Abs(th) < SeedThreshold) return; // needs a genuine terrain thermal condition to anchor to
-
-            // Don't pile onto an existing cell (same guard as TrySeedOne).
-            double elapsed = now - field.AnchorHours;
-            foreach (PressureCell c in field.Cells)
-            {
-                double dx = (c.X + c.VelX * elapsed) - sx;
-                double dz = (c.Z + c.VelZ * elapsed) - sz;
-                if (dx * dx + dz * dz < SeedMinSeparation * SeedMinSeparation) return;
-            }
-
-            double seasonWarmth;
-            try
-            {
-                var pos = new BlockPos((int)sx, sapi.World.SeaLevel, (int)sz, 0);
-                float seasonRel = sapi.World.Calendar.GetSeasonRel(pos); // hemisphere-aware
-                seasonWarmth = Math.Cos(2.0 * Math.PI * (seasonRel - SummerPeakRel)); // +1 midsummer, −1 midwinter
-            }
-            catch { return; } // season not ready yet — safer to skip this rare event than guess a side
-
-            bool isHeatWave = seasonWarmth >= 0;
-            double waveDelta = (HeatColdWaveTempMin + rand.NextDouble() * (HeatColdWaveTempMax - HeatColdWaveTempMin))
-                * (isHeatWave ? 1.0 : -1.0);
-
-            // Top sub-band of the configured range — heat domes/cold snaps are large, dominant systems.
-            float radius = GameMath.Clamp(
-                (float)(config.CellRadiusMax - rand.NextDouble() * SpawnRadiusSubBandFraction * (config.CellRadiusMax - config.CellRadiusMin)),
-                config.CellRadiusMin, config.CellRadiusMax);
-            float strength = -(float)(HeatColdWaveStrengthMin + rand.NextDouble() * (HeatColdWaveStrengthMax - HeatColdWaveStrengthMin)); // always a strong HIGH
-            double durationHours = HeatColdWaveDurationMinHours + rand.NextDouble() * (HeatColdWaveDurationMaxHours - HeatColdWaveDurationMinHours);
-            double minorRatio = SpawnMinorRatioMin + rand.NextDouble() * (SpawnMinorRatioMax - SpawnMinorRatioMin);
-
-            // highs never front/storm — StormLikelihood 0 is irrelevant, keep it inert.
-            PressureCell cell = BuildCell(sx, sz, strength, radius, velX: 0.0, velZ: 0.0, now, durationHours,
-                (float)minorRatio, stormLikelihood: 0f, airMassTemp: (float)(isHeatWave ? 1.0 : -1.0));
-            cell.IsHeatColdWave = true;
-            cell.WaveTemperatureDelta = (float)waveDelta;
-            field.Cells.Add(cell);
-            field.AnchorHours = now;
-            Dirty = true;
-            sapi.Logger.Notification("[dynamicwind] {0} forming near ({1:0}, {2:0}): {3:+0.0;-0.0}°C, ~{4:0.0} day(s).",
-                isHeatWave ? "Heat wave" : "Cold wave", sx, sz, waveDelta, durationHours / 24.0);
-        }
-    }
 
     /// <summary>
     /// Intrinsic air-mass character in [-1, 1] a cell is born with (see
@@ -984,6 +844,12 @@ public class WindFieldSimulation
                 MeanderAmplitude = field.MeanderAmplitude,
                 CyclonicInflowAngle = field.CyclonicInflowAngle,
                 SeasonalBiasZ = field.SeasonalBiasZ,
+                // Re-based to the shared anchor so the client's own extrapolation starts from the same
+                // instant cell positions do (the drift carries its own clock server-side).
+                DriftX = field.CloudDriftX + field.CloudDriftVelX * (field.AnchorHours - field.CloudDriftHours),
+                DriftZ = field.CloudDriftZ + field.CloudDriftVelZ * (field.AnchorHours - field.CloudDriftHours),
+                DriftVelX = field.CloudDriftVelX,
+                DriftVelZ = field.CloudDriftVelZ,
                 TotalHoursAnchor = field.AnchorHours
             };
         }
@@ -1055,6 +921,15 @@ public class WindFieldSimulation
                     if (c.ColdFrontReach <= 0f) c.ColdFrontReach = 1f;
                     if (c.WarmFrontReach <= 0f) c.WarmFrontReach = 1f;
                 }
+
+                // Cloud drift is a running integral, so it must survive a reload or the whole precipitation
+                // texture would snap back to its origin on every world load. A pre-drift save leaves these
+                // at protobuf's 0 default — i.e. no accumulated drift yet, which is exactly right.
+                field.CloudDriftX = s.DriftX;
+                field.CloudDriftZ = s.DriftZ;
+                field.CloudDriftVelX = s.DriftVelX;
+                field.CloudDriftVelZ = s.DriftVelZ;
+                field.CloudDriftHours = s.TotalHoursAnchor;
 
                 field.AnchorHours = s.TotalHoursAnchor; // provisional; re-anchored to the live clock next tick
                 loadedPendingReanchor = true;           // defer time baseline to the first live tick (see OnTick)

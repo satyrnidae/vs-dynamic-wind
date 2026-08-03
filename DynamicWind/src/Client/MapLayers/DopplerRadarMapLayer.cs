@@ -288,11 +288,31 @@ public class DopplerRadarMapLayer : DynamicWindWorldMapLayerBase
                 if (norm > 1) norm = 1;
                 double t = Math.Pow(norm, RampExponent);
 
-                bool isSnow = EstimateIsSnow(cx, cz);
+                bool isSnow = IsSnowAt(cx, cz, th);
                 Vec4f color = RampColor(isSnow ? SnowStops : RainStops, (float)t, (float)(0.3 + 0.5 * t));
                 cells.Add(new Cell { X = cx, Z = cz, Color = color });
             }
         }
+    }
+
+    /// <summary>
+    /// Rain-vs-snow for one radar cell. Uses the REAL block climate wherever that cell's chunk is actually
+    /// loaded — near the player it's both available and authoritative, and it's what vanilla's own
+    /// rain/snow split reads, so the overlay must agree with it rather than paint snow while rain falls on
+    /// the player's roof (the standalone curve below has no rainfall/altitude/terrain input at all).
+    /// Outside the loaded area <c>GetClimateAt</c> returns garbage/defaults — see the class remarks — so
+    /// <see cref="EstimateIsSnow"/> takes over there.
+    /// </summary>
+    private bool IsSnowAt(double x, double z, double totalDays)
+    {
+        var probe = new BlockPos((int)x, 0, (int)z, 0);
+        if (capi!.World.BlockAccessor.GetChunkAtBlockPos(probe) != null)
+        {
+            var surface = new BlockPos((int)x, capi.World.BlockAccessor.GetRainMapHeightAt(probe), (int)z, 0);
+            ClimateCondition? cc = capi.World.BlockAccessor.GetClimateAt(surface, EnumGetClimateMode.NowValues, totalDays);
+            if (cc != null) return cc.Temperature < SnowThresholdTemp;
+        }
+        return EstimateIsSnow(x, z);
     }
 
     /// <summary>

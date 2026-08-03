@@ -233,6 +233,10 @@ public class FrontMapLayer : DynamicWindWorldMapLayerBase
                 double dist = Math.Sqrt(dx * dx + dz * dz);
                 if (dist < 1e-6) continue;
                 double edgeR = EllipseGeometry.RadiusToward(m.Radius, m.RadiusMinor, m.Orientation, dx, dz);
+                // Never step PAST the viewport centre: cell radii (15k-30k blocks) routinely exceed the
+                // distance to it, and an unclamped step would place the marker on the OPPOSITE side of the
+                // map from the actual system — reading as a storm approaching from the wrong direction.
+                if (edgeR > dist) edgeR = dist;
                 double ex = m.X + dx / dist * edgeR, ez = m.Z + dz / dist * edgeR;
                 if (!ToScreen(b, vb, ex, ez, out sx, out sy)) continue; // system's own edge is still off-screen
             }
@@ -395,12 +399,16 @@ public class FrontMapLayer : DynamicWindWorldMapLayerBase
         double spanX = vb.X2 - vb.X1, spanZ = vb.Z2 - vb.Z1;
         if (spanX < 1e-6 || spanZ < 1e-6) return;
 
-        double maxAbsStrength = 0;
+        // Cheap pre-check only. This bounds the SUMMED field from above (|sum| <= sum of |Strength|), so
+        // it can never reject a viewport that actually has a contourable level in it; the ring loop below
+        // is bounded by the sampled field itself, since overlapping same-sign cells sum well past any
+        // single cell's own |Strength| and the innermost rings live in exactly that merged core.
+        double strengthSum = 0;
         lock (field.CellsLock)
         {
-            foreach (PressureCell c in field.Cells) maxAbsStrength = Math.Max(maxAbsStrength, Math.Abs(c.Strength));
+            foreach (PressureCell c in field.Cells) strengthSum += Math.Abs(c.Strength);
         }
-        if (maxAbsStrength < IsobarStep) return; // nothing significant enough to contour at all
+        if (strengthSum < IsobarStep) return; // nothing significant enough to contour at all
 
         double step = IsobarGridBaseStep;
         while ((spanX / step) * (spanZ / step) > IsobarGridMaxCells) step *= 2;
@@ -409,20 +417,32 @@ public class FrontMapLayer : DynamicWindWorldMapLayerBase
         int nx = (int)Math.Ceiling(spanX / step) + 2;
         int nz = (int)Math.Ceiling(spanZ / step) + 2;
         var values = new float[nx * nz];
+        double maxAbsField = 0;
         for (int j = 0; j < nz; j++)
             for (int i = 0; i < nx; i++)
-                values[j * nx + i] = (float)field.CellPressureAt(originX + i * step, originZ + j * step, totalHours);
+            {
+                float v = (float)field.CellPressureAt(originX + i * step, originZ + j * step, totalHours);
+                values[j * nx + i] = v;
+                double av = Math.Abs(v);
+                if (av > maxAbsField) maxAbsField = av;
+            }
 
-        for (int ring = 0; ring < IsobarMaxRings; ring++)
+        // Levels are traced outermost-first (weakest |pressure| first), but RingIndex is consumed as
+        // "0 = innermost" by the alpha ramp, so count the rings up front and emit the inverted index —
+        // otherwise the tight, intense core renders faintest and the weak outer fringe boldest.
+        int ringCount = 0;
+        while (ringCount < IsobarMaxRings && (ringCount + 1) * IsobarStep < maxAbsField) ringCount++;
+
+        for (int ring = 0; ring < ringCount; ring++)
         {
             double levelMag = (ring + 1) * IsobarStep;
-            if (levelMag >= maxAbsStrength) break;
+            int ringIndex = ringCount - 1 - ring;
 
             List<MarchingSquares.Segment> lowSegs = MarchingSquares.Trace(values, nx, nz, originX, originZ, step, levelMag);
-            foreach (MarchingSquares.Segment s in lowSegs) isobarSegments.Add(new IsobarSegment(s.A, s.B, true, ring));
+            foreach (MarchingSquares.Segment s in lowSegs) isobarSegments.Add(new IsobarSegment(s.A, s.B, true, ringIndex));
 
             List<MarchingSquares.Segment> highSegs = MarchingSquares.Trace(values, nx, nz, originX, originZ, step, -levelMag);
-            foreach (MarchingSquares.Segment s in highSegs) isobarSegments.Add(new IsobarSegment(s.A, s.B, false, ring));
+            foreach (MarchingSquares.Segment s in highSegs) isobarSegments.Add(new IsobarSegment(s.A, s.B, false, ringIndex));
         }
     }
 

@@ -77,11 +77,13 @@ public abstract class DynamicWindModCommon : ModSystem
         catch (Exception e) { Mod.Logger.Warning("[dynamicwind] Failed to store config: {0}", e); }
     }
 
-    /// <summary>Wires <see cref="WindField.ThermalPressureFunc"/> to a cached lookup of <see cref="TerrainThermal.PressureAt"/>. Shared by both sides; terrain-height caching still differs per side and is set up separately.</summary>
-    protected void SetupThermalPressureFunc(ICoreAPI api)
+    /// <summary>Wires <see cref="WindField.TerrainTempFunc"/> to a cached lookup of
+    /// <see cref="TerrainThermal.TemperatureAnomalyAt"/>. Shared by both sides; terrain-height caching still
+    /// differs per side and is set up separately.</summary>
+    protected void SetupTerrainTempFunc(ICoreAPI api)
     {
-        var thermalCache = new ThermalCache((x, z, th) => TerrainThermal.PressureAt(api.World, x, z, th));
-        Field.ThermalPressureFunc = thermalCache.Get;
+        var thermalCache = new ThermalCache((x, z, th) => TerrainThermal.TemperatureAnomalyAt(api.World, x, z, th));
+        Field.TerrainTempFunc = thermalCache.Get;
     }
 
     /// <summary>Wires <see cref="WindField.TerrainHumidityFunc"/> to a cached lookup of <see cref="TerrainHumidity.WorldgenBaselineAt"/>.
@@ -126,7 +128,7 @@ public abstract class DynamicWindModCommon : ModSystem
         Field.OroDeflection = Config.OrographicDeflectionStrength;
         Field.OroWake = Config.OrographicWakeFactor;
         Field.AltitudeMaxDrop = Config.AltitudePressureDrop;
-        Field.ThermalStaticScale = Config.ThermalStaticScale;
+        Field.SeaBreezeStrength = Config.SeaBreezeStrength;
         Field.HumidityWaterProximityStrength = Config.HumidityWaterProximityStrength;
         Field.HumidityPressureStrength = Config.HumidityPressureStrength;
         Field.HumidityNoiseAmplitude = Config.HumidityNoiseAmplitude;
@@ -164,21 +166,23 @@ public abstract class DynamicWindModCommon : ModSystem
     /// </summary>
     public Vec3d ComputeWindSpeed(Vec3d pos, double vsSpeed, double totalHours, bool applyOcclusion)
     {
-        Vec2d w = Field.WindAt(pos.X, pos.Z, totalHours, out double oroFactor);
+        // One pass yields both the full wind vector (direction) and the cells-only magnitude used for the
+        // front excess below — they differ only in the down-gradient term's pressure source, so evaluating
+        // WindAt twice re-walked the cell list and re-ran the orographic step for nothing on this very hot
+        // path (every GetWindSpeedAt: per dropped item, particle, foliage sample and windmill tick).
+        Vec2d w = Field.WindAt(pos.X, pos.Z, totalHours, out double oroFactor, out double preOroCellMag);
 
         double mag = w.Length();
         if (mag < 1e-6) return new Vec3d(vsSpeed, 0, 0); // degenerate field → leave vanilla value
 
         // Front-driven excess is measured from pressure CELLS only (excludeTerrainGradient) — the
-        // full field above (used for direction/bearing) also includes the ever-present terrain-thermal
-        // sea-breeze gradient (TerrainThermal.PressureAt via WindField.PressureAt), which is real and
+        // full field above (used for direction/bearing) also includes the ever-present sea-breeze term
+        // (WindField's gradient of TerrainThermal's temperature anomaly), which is real and
         // legitimately steers wind everywhere there's land/water/terrain contrast, but isn't a "front":
         // folding it into frontExcess would add FrontWindStrength-scaled speed near every coastline or
         // terrain edge even with zero active pressure cells nearby, inflating average speed well outside
         // any actual weather system.
-        Vec2d cellW = Field.WindAt(pos.X, pos.Z, totalHours, -1, out double cellOroFactor, includeTerrainGradient: false);
-        double cellMag = cellW.Length();
-        double preOroCellMag = cellOroFactor > 1e-6 ? cellMag / cellOroFactor : cellMag;
+        // (preOroCellMag comes from the single WindAt call above — see its remarks.)
 
         // Baseline jetstream speed = vanilla's, modulated by a slow jet-streak noise (faster/slower
         // segments, never zero). Pressure fronts then ADD wind on top of that. Orographic interaction
@@ -259,10 +263,10 @@ public abstract class DynamicWindModCommon : ModSystem
         return Config.OcclusionMinFactor + (1.0 - Config.OcclusionMinFactor) * Math.Pow(t, Config.OcclusionSharpness);
     }
 
-    // Re-entrancy guard: the terrain-thermal term below calls ThermalPressureFunc → TerrainThermal →
+    // Re-entrancy guard: the terrain-thermal term below calls TerrainTempFunc → TerrainThermal →
     // GetClimateAt, which re-fires OnGetClimate. Without this we'd recurse until the stack blew. On a
-    // nested call we skip our shift entirely (the inner climate is only used to derive thermal
-    // pressure; it must not carry our temperature delta anyway).
+    // nested call we skip our shift entirely (the inner climate is only used to derive the terrain
+    // temperature anomaly; it must not carry our temperature delta anyway).
     [ThreadStatic] private static bool inClimateHandler;
 
     /// <summary>
@@ -281,7 +285,7 @@ public abstract class DynamicWindModCommon : ModSystem
         if (climate == null || mode == EnumGetClimateMode.WorldGenValues) return;
         if (inClimateHandler) return;
         bool humidityActive = Config.HumidityEnabled && Config.HumidityRainfallBlendWeight > 0f;
-        if (Config.FrontTemperatureMax <= 0f && Config.ThermalTemperatureMax <= 0f && !Config.HeatColdWaveEnabled && !humidityActive) return;
+        if (Config.FrontTemperatureMax <= 0f && Config.ThermalTemperatureMax <= 0f && !humidityActive) return;
 
         inClimateHandler = true;
         try
@@ -292,19 +296,16 @@ public abstract class DynamicWindModCommon : ModSystem
             double t = Field.CellTemperatureAt(pos.X, pos.Z, totalHours);
             double frontDelta = Config.FrontTemperatureMax * Clamp1(t);
 
-            // Terrain thermal term: + warm land / − cool water.
+            // Terrain thermal term: + warm land / − cool water. TerrainThermal is already denominated in
+            // °C, so this only normalises its nominal amplitude to the user's configured maximum shift.
             double thermalDelta = 0;
-            if (Config.ThermalTemperatureMax > 0f && Field.ThermalPressureFunc != null)
+            if (Config.ThermalTemperatureMax > 0f && Field.TerrainTempFunc != null)
             {
-                double thermal = Field.ThermalPressureFunc(pos.X, pos.Z, totalHours);
-                thermalDelta = Config.ThermalTemperatureMax * Clamp1(thermal / ThermalNorm);
+                double anomaly = Field.TerrainTempFunc(pos.X, pos.Z, totalHours);
+                thermalDelta = Config.ThermalTemperatureMax * Clamp1(anomaly / TerrainThermal.Amplitude);
             }
 
-            // Heat-wave/cold-wave term: a rare, strong, near-stationary high trapping ground air — see
-            // PressureCell.IsHeatColdWave/WaveTemperatureDelta and WindFieldSimulation.TrySeedHeatColdWave.
-            double waveDelta = Config.HeatColdWaveEnabled ? Field.HeatColdWaveDeltaAt(pos.X, pos.Z, totalHours) : 0.0;
-
-            climate.Temperature += (float)(frontDelta + thermalDelta + waveDelta);
+            climate.Temperature += (float)(frontDelta + thermalDelta);
 
             // Humidity: blend vanilla's own Rainfall toward our terrain/pressure/noise-derived value, so
             // everything that already reads live Rainfall (crop growth, farmland moisture, third-party
@@ -323,9 +324,6 @@ public abstract class DynamicWindModCommon : ModSystem
             inClimateHandler = false;
         }
     }
-
-    // Normaliser: typical terrain thermals (|TerrainThermal| up to ~2.6) reach ~ThermalTemperatureMax.
-    private const double ThermalNorm = 2.0;
 
     private static double Clamp1(double v) => v < -1 ? -1 : (v > 1 ? 1 : v);
 }

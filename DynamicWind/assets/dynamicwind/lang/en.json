@@ -40,8 +40,6 @@
     "setting-FrontTemperatureMax": "Front temp shift (max °C)",
     "description-ThermalTemperatureMax": "Maximum °C the terrain-thermal field shifts local temperature. 0 disables terrain temperature.",
     "setting-ThermalTemperatureMax": "Terrain temp shift (max °C)",
-    "description-HeatColdWaveEnabled": "Allow rare, strong, near-stationary heat-wave/cold-wave highs to form over terrain thermal hotspots, pushing local temperature 5-10°C outside the seasonal average for several days.",
-    "setting-HeatColdWaveEnabled": "Heat/cold waves",
 
     "description-HumidityEnabled": "Derive humidity from terrain (worldgen rainfall noise + water proximity), pressure systems, and fine noise, blending it into live Rainfall. 0/off leaves vanilla Rainfall untouched.",
     "setting-HumidityEnabled": "Dynamic humidity",
@@ -75,10 +73,8 @@
     "setting-DispersalRate": "Cell dispersal rate",
     "description-BernoulliStrength": "Bernoulli coupling: faster-moving air lowers local pressure, stagnant air raises it. 0 disables speed/pressure feedback.",
     "setting-BernoulliStrength": "Speed/pressure coupling",
-    "description-ThermalSeeding": "Spawn mobile, dispersing pressure cells from terrain thermal hotspots so terrain influence drifts with the wind.",
-    "setting-ThermalSeeding": "Seed cells from terrain hotspots",
-    "description-ThermalStaticScale": "How much of the raw terrain thermal field stays as a static, terrain-pinned baseline. 1 = fully static, 0 = fully mobile.",
-    "setting-ThermalStaticScale": "Static terrain thermal scale",
+    "description-SeaBreezeStrength": "Strength of the sea/land breeze: surface wind driven toward warmer air by the land-water temperature contrast. Reverses to a land breeze at night and through the cold season. 0 disables it.",
+    "setting-SeaBreezeStrength": "Sea breeze strength",
 
     "description-OrographicEnabled": "Let terrain slow and deflect wind.",
     "setting-OrographicEnabled": "Terrain deflects wind",
@@ -159,8 +155,6 @@
     "command-cells-row": "  {0} s={1} t={7} r={2}/{3} at ({4},{5}) dies in {6}h",
     "command-cell-low": "LOW ",
     "command-cell-high": "HIGH",
-    "command-cell-heatwave": "HEAT",
-    "command-cell-coldwave": "COLD",
 
     "maplegend-doppler-rain": "Rain",
     "maplegend-doppler-snow": "Snow",

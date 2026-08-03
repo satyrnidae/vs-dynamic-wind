@@ -61,11 +61,14 @@ public class WindField
     public readonly object CellsLock = new();
 
     /// <summary>
-    /// Optional terrain-driven thermal pressure contribution at (x, z, totalHours). Set per side
-    /// (server uses world data; client samples its loaded world). + = low (warm land), − = high
-    /// (cool water). Added on top of the moving cell pressure in <see cref="PressureAt"/>.
+    /// Optional terrain-driven near-surface TEMPERATURE anomaly (°C) at (x, z, totalHours) — see
+    /// <see cref="TerrainSystem.TerrainThermal"/>. Set per side (server uses world data; client samples its
+    /// loaded world). + = warmer than ambient (sun-warmed land, or relatively warm water in the cold
+    /// season), − = cooler. Drives the sea-breeze wind term in <see cref="WindAt"/> and the climate
+    /// temperature shift in <c>DynamicWindModCommon.OnGetClimate</c>. Deliberately NOT part of
+    /// <see cref="PressureAt"/>: pressure is purely synoptic (moving cells + altitude lapse).
     /// </summary>
-    public Func<double, double, double, double>? ThermalPressureFunc;
+    public Func<double, double, double, double>? TerrainTempFunc;
 
     /// <summary>
     /// Optional terrain surface height (blocks) at (x, z). Server: Algernons Terrain Sampler; client:
@@ -143,11 +146,12 @@ public class WindField
     }
 
     /// <summary>
-    /// How much of the raw terrain thermal field stays as a static (terrain-pinned) baseline in
-    /// <see cref="PressureAt"/>. The remainder is meant to be expressed as mobile, dispersing cells
-    /// seeded by the server sim, so the pressure differential moves with the wind. 1 = fully static.
+    /// Strength of the sea-breeze/land-breeze term in <see cref="WindAt"/>: wind blows TOWARD warmer air
+    /// (into the thermal low), i.e. up the <see cref="TerrainTempFunc"/> gradient, scaled by this. A
+    /// thermally direct circulation driven from the temperature field itself rather than from a
+    /// terrain-pinned pressure baseline. 0 disables it.
     /// </summary>
-    public double ThermalStaticScale = 1.0;
+    public double SeaBreezeStrength = 1.0;
 
     /// <summary>|velocity| (blocks/hour) below which a low is treated as "stationary" rather than a
     /// moving open-wave system — shared by <see cref="FrontRegimeBiasAt"/> and
@@ -173,11 +177,24 @@ public class WindField
         double travelAngle = Math.Atan2(velZ, velX);
         double poleSign = PolewardZSign(z);
         warmAngle = travelAngle + poleSign * WaveFrontTiltAngle;
-        coldAngle = travelAngle + Math.PI - poleSign * WaveFrontTiltAngle;
+        // The trailing axis is travelAngle + PI, so tilting the cold front equatorward means ADDING
+        // poleSign * tilt here, not subtracting it: subtracting rotates the reversed direction back
+        // toward the SAME side the warm front already occupies (travel=0, poleSign=+1 gives 160deg ->
+        // (-0.94, +0.34), poleward), collapsing the comma shape and cancelling the regime split's Z term.
+        coldAngle = travelAngle + Math.PI + poleSign * WaveFrontTiltAngle;
     }
 
     private const double GradSampleDist = 48.0;
     private const double GradMaxWind = 1.5;
+
+    // Sea breeze. Sampled wider than the pressure gradient: a coastline's thermal contrast is a
+    // terrain-scale feature and a 48-block probe pair straddles too little of it to read the transition.
+    // Gain converts a NORMALISED anomaly gradient (per block, after dividing by TerrainThermal.Amplitude)
+    // into wind units — a typical coast runs the full contrast over a few hundred blocks, i.e. ~0.005/block,
+    // so this lands a strong shoreline breeze near the cap without pinning ordinary terrain there.
+    private const double SeaBreezeSampleDist = 96.0;
+    private const double SeaBreezeGain = 150.0;
+    private const double SeaBreezeMaxWind = 1.0;
 
     // Directional steering: a pressure cell's rotational influence should keep bending the AMBIENT wind's
     // DIRECTION well beyond the (narrower) range at which it still meaningfully pushes extra SPEED — real
@@ -235,31 +252,6 @@ public class WindField
         return (a + b + c) / 3.0;
     }
 
-    // Weather texture: noticeably denser (higher spatial frequency) than Meander's own world-scale
-    // wander above — a pressure system's own weather noise map is meant to show internal texture (rain
-    // bands, patchy clearing) at a finer grain than the broad, slowly-evolving background pattern, the
-    // same way real radar imagery shows fine structure inside a synoptic-scale system.
-    private const double WeatherNoiseFreqX = 0.006;
-    private const double WeatherNoiseFreqZ = 0.008;
-    private const double WeatherNoiseFreqXZ = 0.005;
-    private const double WeatherNoiseTimeFreq = 0.05;
-
-    /// <summary>
-    /// A pressure cell's own organic weather-texture noise in [-1, 1] — see <see cref="WeatherNoiseFreqX"/>
-    /// remarks. Seeded per-cell by <see cref="PressureCell.BornTotalHours"/> (offsetting each sine's phase),
-    /// so different cells show different, uncorrelated texture instead of all lows/highs pulsing in
-    /// lockstep. Used by <c>WeatherCoupling</c> to add (for a low) or subtract (for a high) fine-grained
-    /// variation on top of vanilla's own broad rain-cloudness noise, rather than a smooth uniform push.
-    /// </summary>
-    public static double CellWeatherNoise(PressureCell cell, double x, double z, double totalHours)
-    {
-        double seed = cell.BornTotalHours;
-        double a = Math.Sin(x * WeatherNoiseFreqX + seed * 7.3 + totalHours * WeatherNoiseTimeFreq);
-        double b = Math.Sin(z * WeatherNoiseFreqZ - seed * 4.1 - totalHours * WeatherNoiseTimeFreq * 1.3);
-        double c = Math.Sin((x + z) * WeatherNoiseFreqXZ + seed * 2.9 + totalHours * WeatherNoiseTimeFreq * 0.7);
-        return (a + b + c) / 3.0;
-    }
-
     /// <summary>
     /// Wind vector at a world position. X/Z components are East/South; the magnitude is the strength
     /// multiplier (≈1.0 in calm jetstream flow, higher near strong lows).
@@ -293,8 +285,28 @@ public class WindField
     /// contrast regardless of whether any pressure system is nearby).</summary>
     public Vec2d WindAt(double x, double z, double totalHours, int excludeCell, out double orographicFactor,
         bool includeTerrainGradient = true)
+        => WindAtCore(x, z, totalHours, excludeCell, out orographicFactor, includeTerrainGradient, false, out _);
+
+    /// <summary>
+    /// One-pass variant for <see cref="DynamicWindModCommon.ComputeWindSpeed"/>, which needs BOTH the full
+    /// wind vector (direction, terrain gradient included) and the magnitude of the cells-only field (to
+    /// measure front-driven excess speed). Those two differ ONLY in the down-gradient term's pressure
+    /// source, so calling <see cref="WindAt(double,double,double,int,out double,bool)"/> twice re-walked the
+    /// cell list under the lock, redid the steering blend, and ran the whole orographic step a second time
+    /// (only to divide its factor straight back out) on the mod's hottest path — every
+    /// <c>GetWindSpeedAt</c>, i.e. per dropped item, per weather particle, per foliage sample, per windmill
+    /// tick. <paramref name="cellsOnlyPreOroMagnitude"/> is taken BEFORE the orographic step, matching what
+    /// dividing the second call's magnitude by its own orographic factor used to approximate.
+    /// </summary>
+    public Vec2d WindAt(double x, double z, double totalHours, out double orographicFactor,
+        out double cellsOnlyPreOroMagnitude)
+        => WindAtCore(x, z, totalHours, -1, out orographicFactor, true, true, out cellsOnlyPreOroMagnitude);
+
+    private Vec2d WindAtCore(double x, double z, double totalHours, int excludeCell, out double orographicFactor,
+        bool includeTerrainGradient, bool wantCellsOnlyMagnitude, out double cellsOnlyPreOroMagnitude)
     {
         double wx, wz;
+        cellsOnlyPreOroMagnitude = 0;
         lock (CellsLock)
         {
             // Base jetstream: due-East flow with a slow meandering bearing, tilted N/S by the season
@@ -392,26 +404,46 @@ public class WindField
             }
 
             // 3. Down-gradient flow: air bleeds from high toward low pressure (+∇P points to lows).
+            // Pressure is purely synoptic now (moving cells; the altitude lapse is vertical-only and so has
+            // no horizontal gradient), which makes this term identical for the full and the cells-only
+            // field — what separates them is the SEA BREEZE below, gated by includeTerrainGradient.
             if (GradientWindScale > 0)
             {
                 double d = GradSampleDist;
-                double gx, gz;
-                if (includeTerrainGradient)
-                {
-                    gx = (PressureAt(x + d, z, totalHours, excludeCell) - PressureAt(x - d, z, totalHours, excludeCell)) / (2 * d);
-                    gz = (PressureAt(x, z + d, totalHours, excludeCell) - PressureAt(x, z - d, totalHours, excludeCell)) / (2 * d);
-                }
-                else
-                {
-                    gx = (CellPressureAt(x + d, z, totalHours, excludeCell) - CellPressureAt(x - d, z, totalHours, excludeCell)) / (2 * d);
-                    gz = (CellPressureAt(x, z + d, totalHours, excludeCell) - CellPressureAt(x, z - d, totalHours, excludeCell)) / (2 * d);
-                }
+                double gx = (CellPressureAt(x + d, z, totalHours, excludeCell) - CellPressureAt(x - d, z, totalHours, excludeCell)) / (2 * d);
+                double gz = (CellPressureAt(x, z + d, totalHours, excludeCell) - CellPressureAt(x, z - d, totalHours, excludeCell)) / (2 * d);
                 double gwx = GradientWindScale * gx;
                 double gwz = GradientWindScale * gz;
                 double gm = Math.Sqrt(gwx * gwx + gwz * gwz);
                 if (gm > GradMaxWind) { double s = GradMaxWind / gm; gwx *= s; gwz *= s; }
                 wx += gwx;
                 wz += gwz;
+            }
+
+            // Cells-only magnitude is taken HERE — after the synoptic terms, before the sea breeze — since
+            // the sea breeze is exactly the ever-present terrain contribution that must not count as
+            // "front" wind (see the one-pass WindAt overload and DynamicWindModCommon.ComputeWindSpeed).
+            if (wantCellsOnlyMagnitude) cellsOnlyPreOroMagnitude = Math.Sqrt(wx * wx + wz * wz);
+
+            // 4. Sea breeze / land breeze — a thermally DIRECT circulation, driven straight off the terrain
+            // temperature field rather than through a terrain-pinned pressure baseline: surface air flows
+            // toward warmer air (into the thermal low), i.e. UP the temperature gradient. Warm-season
+            // daytime coast → water is cooler → flow runs inland (sea breeze); at night, and through the
+            // cold season, TerrainThermal's sign flips and this reverses into a land breeze for free.
+            // The gradient is normalised by TerrainThermal.Amplitude so the gain stays meaningful if that
+            // field's °C scale is retuned.
+            if (includeTerrainGradient && SeaBreezeStrength > 0 && TerrainTempFunc != null)
+            {
+                double d = SeaBreezeSampleDist;
+                double inv = 1.0 / (2 * d * TerrainSystem.TerrainThermal.Amplitude);
+                double tgx = (TerrainTempFunc(x + d, z, totalHours) - TerrainTempFunc(x - d, z, totalHours)) * inv;
+                double tgz = (TerrainTempFunc(x, z + d, totalHours) - TerrainTempFunc(x, z - d, totalHours)) * inv;
+                double bwx = SeaBreezeStrength * SeaBreezeGain * tgx;
+                double bwz = SeaBreezeStrength * SeaBreezeGain * tgz;
+                double bm = Math.Sqrt(bwx * bwx + bwz * bwz);
+                if (bm > SeaBreezeMaxWind) { double s = SeaBreezeMaxWind / bm; bwx *= s; bwz *= s; }
+                wx += bwx;
+                wz += bwz;
             }
         }
 
@@ -479,6 +511,47 @@ public class WindField
         orographicFactor = spd / origSpd;
     }
 
+    /// <summary>
+    /// Radial pressure falloff for one cell, from <see cref="EllipseGeometry.Norm2"/> (1.0 on the cell's own
+    /// elliptical boundary). <c>exp(-sqrt(norm2))</c>, NOT the gaussian <c>exp(-norm2)</c> the circulation
+    /// terms use: both agree exactly at the boundary (e⁻¹ ≈ 0.37) but this one has a far fatter tail, which
+    /// is what makes a system's pressure differential still MEAN something out where its front lines are
+    /// actually drawn. A front sits at <c>radius × reach</c> with reach growing to <c>MaxFrontReach</c> = 3,
+    /// i.e. norm2 = 9 — under a gaussian that is e⁻⁹ ≈ 0.0001, four orders of magnitude down, so pressure
+    /// (and anything derived from it: weather coupling, isobars, map tint, gradient wind) was effectively
+    /// dead along a mature front. Here it is e⁻³ ≈ 0.05, ~500× stronger.
+    ///
+    /// The reach ↔ level identity <c>FrontComputer</c> relies on follows this function: the contour at
+    /// <c>radius × reach</c> sits at <c>|Strength| · PressureFalloff(reach²)</c> = <c>|Strength| · e^-reach</c>.
+    /// Keep the two in step if this is ever retuned.
+    /// </summary>
+    public static double PressureFalloff(double norm2) => Math.Exp(-Math.Sqrt(norm2));
+
+    /// <summary>
+    /// Accumulated wind drift of the cloud/precipitation texture (blocks) at <paramref name="totalHours"/>,
+    /// extrapolated linearly from the last synced snapshot exactly as cell positions are. Server-integrated
+    /// (see <c>WindFieldSimulation.AccumulateCloudDrift</c>) and synced, so both sides agree — which they
+    /// must, or the Doppler overlay would show rain where none falls.
+    ///
+    /// Used by <c>WeatherCoupling</c>'s GetRainCloudness prefix to offset the sample position, making
+    /// vanilla's precipitation noise advect with the real wind. Vanilla's own field barely moves: its noise
+    /// is sampled at <c>posX/18 + totalDays*18</c> with no Z term at all, so the pattern slides due WEST at
+    /// a hardcoded 324 blocks/day and can never move north/south, regardless of wind — ~30× slower than
+    /// cells advect (AdvectionSpeed 400 blocks/HOUR) and in a fixed direction.
+    /// </summary>
+    public void CloudDriftAt(double totalHours, out double driftX, out double driftZ)
+    {
+        double elapsed = totalHours - CloudDriftHours;
+        driftX = CloudDriftX + CloudDriftVelX * elapsed;
+        driftZ = CloudDriftZ + CloudDriftVelZ * elapsed;
+    }
+
+    /// <summary>Accumulated cloud drift as of <see cref="CloudDriftHours"/>, and its current rate — see
+    /// <see cref="CloudDriftAt"/>. Carries its OWN timestamp rather than riding on
+    /// <see cref="AnchorHours"/>, since the cell anchor moves whenever a cell spawns/expires and the drift
+    /// integral must not be re-based by that. The snapshot re-bases it to the anchor on the wire.</summary>
+    public double CloudDriftX, CloudDriftZ, CloudDriftVelX, CloudDriftVelZ, CloudDriftHours;
+
     /// <summary>Signed pressure at a position (sum of cell contributions). + = low, - = high.</summary>
     public double PressureAt(double x, double z, double totalHours) => PressureAt(x, z, totalHours, -1);
 
@@ -508,8 +581,7 @@ public class WindField
                 PressureCell cell = Cells[i];
                 double dx = x - (cell.X + cell.VelX * elapsed);
                 double dz = z - (cell.Z + cell.VelZ * elapsed);
-                double norm2 = EllipseGeometry.Norm2(cell, dx, dz);
-                p += cell.Strength * Math.Exp(-norm2);
+                p += cell.Strength * PressureFalloff(EllipseGeometry.Norm2(cell, dx, dz));
             }
             return p;
         }
@@ -612,34 +684,6 @@ public class WindField
         }
     }
 
-    /// <summary>
-    /// Falloff-weighted sum of nearby heat-wave/cold-wave highs' <see cref="PressureCell.WaveTemperatureDelta"/>
-    /// (°C) — kept separate from <see cref="CellTemperatureAt"/>'s [-1,1] air-mass blend so a rare, strong
-    /// heat/cold-wave event's swing isn't diluted by averaging against every other active cell (an ordinary
-    /// front sitting nearby would otherwise pull the blend back toward neutral). Summed rather than
-    /// averaged: these are rare and spawned clear of other cells (see TrySeedHeatColdWave), so overlap
-    /// between two waves is an edge case, not the common path. Used by DynamicWindModCommon.OnGetClimate.
-    /// </summary>
-    public double HeatColdWaveDeltaAt(double x, double z, double totalHours)
-    {
-        lock (CellsLock)
-        {
-            double sum = 0;
-            double elapsed = totalHours - AnchorHours;
-            for (int i = 0; i < Cells.Count; i++)
-            {
-                PressureCell cell = Cells[i];
-                if (!cell.IsHeatColdWave) continue;
-                double dx = x - (cell.X + cell.VelX * elapsed);
-                double dz = z - (cell.Z + cell.VelZ * elapsed);
-                double falloff = Math.Exp(-EllipseGeometry.Norm2(cell, dx, dz));
-                if (falloff < 1e-4) continue;
-                sum += falloff * cell.WaveTemperatureDelta;
-            }
-            return sum;
-        }
-    }
-
     // Water-proximity ring-sample radii (blocks), nearest first — mirrors the style of the orographic
     // consts above (named, tuned by feel) rather than a per-block flood search, which would be far too
     // expensive on the same hot path WindAt runs on. A ring with water anywhere on it counts as "found
@@ -711,17 +755,12 @@ public class WindField
 
     /// <summary>
     /// As <see cref="PressureAt(double,double,double)"/> but optionally excluding one cell index (used
-    /// when advecting that cell on the background flow). The static terrain thermal baseline is scaled
-    /// by <see cref="ThermalStaticScale"/>; the rest of the terrain signal is carried by mobile cells
-    /// the server sim seeds from terrain hotspots.
+    /// when advecting that cell on the background flow). Horizontal pressure is now purely the moving
+    /// cells — the terrain thermal signal is a TEMPERATURE field (<see cref="TerrainTempFunc"/>) driving
+    /// the sea breeze directly in <see cref="WindAt"/>, not a terrain-pinned pressure baseline.
     /// </summary>
     private double PressureAt(double x, double z, double totalHours, int excludeCell)
-    {
-        double p = CellPressureAt(x, z, totalHours, excludeCell);
-        if (ThermalStaticScale > 0)
-            p += ThermalStaticScale * (ThermalPressureFunc?.Invoke(x, z, totalHours) ?? 0.0);
-        return p;
-    }
+        => CellPressureAt(x, z, totalHours, excludeCell);
 
     /// <summary>
     /// Signed pressure including the vertical lapse: real air pressure falls with altitude, read here

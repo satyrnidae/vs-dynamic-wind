@@ -33,7 +33,7 @@ public class DynamicWindModClient : DynamicWindModCommon
         DynamicWindRuntime.ClientModSystem = this;
         api.Event.LevelFinalize += () => SetupWorldGeometry(api);
 
-        SetupThermalPressureFunc(api);
+        SetupTerrainTempFunc(api);
         SetupTerrainHumidityFunc(api);
         // Client has no terrain sampler; use the rain-map height (loaded chunks) so the minimap shows
         // orographic curving around terrain near the player.
@@ -114,6 +114,13 @@ public class DynamicWindModClient : DynamicWindModCommon
         Field.MeanderAmplitude = s.MeanderAmplitude;
         Field.CyclonicInflowAngle = s.CyclonicInflowAngle;
         Field.SeasonalBiasZ = s.SeasonalBiasZ;
+        // Cloud drift arrives re-based to the same anchor as the cells (see WindFieldSimulation.Snapshot),
+        // so the client extrapolates it from there exactly as it extrapolates cell positions.
+        Field.CloudDriftX = s.DriftX;
+        Field.CloudDriftZ = s.DriftZ;
+        Field.CloudDriftVelX = s.DriftVelX;
+        Field.CloudDriftVelZ = s.DriftVelZ;
+        Field.CloudDriftHours = s.TotalHoursAnchor;
     }
 
     /// <summary>

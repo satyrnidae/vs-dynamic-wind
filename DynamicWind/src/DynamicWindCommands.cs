@@ -66,9 +66,7 @@ internal static class DynamicWindCommands
             {
                 double cx = c.X + c.VelX * elapsed;
                 double cz = c.Z + c.VelZ * elapsed;
-                string typeDesc = c.IsHeatColdWave
-                    ? Lang.Get(c.WaveTemperatureDelta > 0 ? "dynamicwind:command-cell-heatwave" : "dynamicwind:command-cell-coldwave")
-                    : Lang.Get(c.IsLow ? "dynamicwind:command-cell-low" : "dynamicwind:command-cell-high");
+                string typeDesc = Lang.Get(c.IsLow ? "dynamicwind:command-cell-low" : "dynamicwind:command-cell-high");
                 sb.AppendLine(Lang.Get("dynamicwind:command-cells-row", typeDesc, $"{c.Strength:0.00}", $"{c.Radius:0}", $"{c.RadiusMinor:0}", $"{cx:0}", $"{cz:0}", $"{Math.Max(0, c.DiesTotalHours - th):0.0}", $"{c.AirMassTemp:+0.00;-0.00}"));
             }
         }

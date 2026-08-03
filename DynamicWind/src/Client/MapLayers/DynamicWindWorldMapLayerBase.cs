@@ -41,14 +41,25 @@ public abstract class DynamicWindWorldMapLayerBase : MapLayer
         Active = api is ICoreClientAPI capi && capi.Settings.Bool.Exists(ActiveSettingsKey)
             ? capi.Settings.Bool[ActiveSettingsKey]
             : configDefault;
+        activeAtRestore = Active;
+        restored = true;
     }
+
+    private bool activeAtRestore;
+    private bool restored;
 
     /// <summary>Persists the current <see cref="MapLayer.Active"/> value so it survives a game restart —
     /// called whenever the world map dialog closes, which is when the legend checkboxes the user might
-    /// have just clicked actually take effect.</summary>
+    /// have just clicked actually take effect. Only writes when the value actually CHANGED since it was
+    /// restored: an unconditional write would persist the config-derived default on the very first map
+    /// close, permanently shadowing the server-synced "visible by default" setting for anyone who has
+    /// ever opened the map, even though they never touched the legend.</summary>
     public override void OnMapClosedClient()
     {
-        if (api is ICoreClientAPI capi) capi.Settings.Bool.Set(ActiveSettingsKey, Active, false);
+        if (api is not ICoreClientAPI capi) return;
+        if (!restored || Active == activeAtRestore) return;
+        capi.Settings.Bool.Set(ActiveSettingsKey, Active, false);
+        activeAtRestore = Active;
     }
 
     /// <summary>True if this GUI map element is the minimap HUD (snaps to the player), i.e. NOT the full world map.</summary>

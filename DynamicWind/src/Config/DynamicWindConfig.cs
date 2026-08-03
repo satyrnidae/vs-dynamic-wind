@@ -84,7 +84,10 @@ public class DynamicWindConfig
     [Description("description-CirculationStrength")]
     public float CirculationStrength { get; set; } = 2.5f;
 
-    [Range(0.0, 3.0)]
+    // Range covers the pre-retune default (9) even though the synoptic retune lowered the DEFAULT to 2:
+    // Validate() clamps every int to its [Range], so narrowing below the old default would silently
+    // rewrite (and re-persist) an existing user's saved value with no migration or log line.
+    [Range(0.0, 9.0)]
     [Description("description-MaxActiveCells")]
     public int MaxActiveCells { get; set; } = 2;
 
@@ -105,9 +108,6 @@ public class DynamicWindConfig
     [Range(0.0, 5.0)]
     [Description("description-ThermalTemperatureMax")]
     public float ThermalTemperatureMax { get; set; } = 1.0f;
-
-    [Description("description-HeatColdWaveEnabled")]
-    public bool HeatColdWaveEnabled { get; set; } = true;
 
     // ── Humidity ────────────────────────────────────────────────────────────
     [Description("description-HumidityEnabled")]
@@ -172,12 +172,11 @@ public class DynamicWindConfig
     [Description("description-BernoulliStrength")]
     public float BernoulliStrength { get; set; } = 0.3f;
 
-    [Description("description-ThermalSeeding")]
-    public bool ThermalSeeding { get; set; } = true;
-
-    [Range(0.0, 1.0)]
-    [Description("description-ThermalStaticScale")]
-    public float ThermalStaticScale { get; set; } = 0.35f;
+    // Terrain no longer contributes PRESSURE at all — it is a temperature field, and the coastal wind it
+    // drives is now a thermally direct circulation off that field's own gradient (WindField.WindAt).
+    [Range(0.0, 3.0)]
+    [Description("description-SeaBreezeStrength")]
+    public float SeaBreezeStrength { get; set; } = 1.0f;
 
     // ── Orographic (terrain) ────────────────────────────────────────────────
     [Description("description-OrographicEnabled")]
@@ -222,6 +221,9 @@ public class DynamicWindConfig
     [Description("description-WindmillDirectionality")]
     public bool WindmillDirectionality { get; set; } = true;
 
+    // Efficiency of a rotor sitting exactly PERPENDICULAR to the wind — the bottom of the alignment curve,
+    // which scales linearly up to full power head-on (see WindmillDirectionality). NOT a flat floor on the
+    // resulting speed.
     [Range(0.0, 1.0)]
     [Description("description-WindmillMinEfficiency")]
     public float WindmillMinEfficiency { get; set; } = 0.5f;
@@ -321,7 +323,6 @@ public class DynamicWindConfig
         WeatherPressureCoupling = o.WeatherPressureCoupling;
         FrontTemperatureMax = o.FrontTemperatureMax;
         ThermalTemperatureMax = o.ThermalTemperatureMax;
-        HeatColdWaveEnabled = o.HeatColdWaveEnabled;
         HumidityEnabled = o.HumidityEnabled;
         HumidityRainfallBlendWeight = o.HumidityRainfallBlendWeight;
         HumidityWaterProximityStrength = o.HumidityWaterProximityStrength;
@@ -335,8 +336,7 @@ public class DynamicWindConfig
         AdvectionSpeed = o.AdvectionSpeed;
         DispersalRate = o.DispersalRate;
         BernoulliStrength = o.BernoulliStrength;
-        ThermalSeeding = o.ThermalSeeding;
-        ThermalStaticScale = o.ThermalStaticScale;
+        SeaBreezeStrength = o.SeaBreezeStrength;
         OrographicEnabled = o.OrographicEnabled;
         OrographicHeightThreshold = o.OrographicHeightThreshold;
         OrographicSlowdownFactor = o.OrographicSlowdownFactor;

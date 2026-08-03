@@ -15,8 +15,8 @@ systems, and couples the rest of the world to it:
   over time — its natural variation, *not* diurnal) as the baseline jetstream speed, points it along our
   direction, then ADDS front wind = `FrontWindStrength · max(0, |cell-only WindAt| − BaseStrength)` (the
   amount pressure CELLS — fronts/highs/lows — push the field above its calm baseline). This excess is
-  deliberately measured with the terrain-thermal sea-breeze gradient (see "Terrain thermal pressure"
-  below) EXCLUDED (`WindField.WindAt(..., includeTerrainGradient: false)`) — that gradient is real and
+  deliberately measured with the terrain-thermal sea-breeze gradient (see "Terrain thermal temperature /
+  sea breeze" below) EXCLUDED (`WindField.WindAt(..., includeTerrainGradient: false)`) — that gradient is real and
   still steers the wind's DIRECTION everywhere via the normal (terrain-included) `WindAt` call, but it's
   present near almost any coastline/terrain contrast regardless of whether a pressure system is nearby,
   so folding it into `frontExcess` would inflate average speed well outside any actual front. So a calm
@@ -26,28 +26,63 @@ systems, and couples the rest of the world to it:
 - **Clouds** — Harmony postfix on both `CloudRenderer.CloudTick` and `FluffyClouds.CloudRendererMap.CloudTick`
   (whichever is active for the player's cloud-quality setting) rotates the cloud-drift vector to the wind bearing.
 - **Windmills** — Harmony postfix on `BEBehaviorWindmillRotor.CheckWindSpeed`: power × cos(angle between
-  wind and rotor axle). Head-on = full, perpendicular = stalled, from-behind = negative → spins backwards.
-  Both the wind's speed and its alignment are eased per-rotor toward each tick's raw reading
+  wind and rotor axle). Head-on = full, from-behind = negative → spins backwards. `WindmillMinEfficiency`
+  is the efficiency at exactly PERPENDICULAR, applied by rescaling the alignment curve onto
+  `[MinEfficiency, 1]` — **not** by clamping the result (`max(|dot|, min)`, the original implementation,
+  flattened every angle below the threshold to one identical speed and held that power right up to the
+  crossing). Both the wind's speed and its alignment are eased per-rotor toward each tick's raw reading
   (`WindmillDirectionality.SpeedEaseRatePerSecond`) rather than snapped — real sails have rotational
-  inertia — and reversal is decided from the EASED alignment too, so a shifting wind eases the mill down
-  through a stall and back up the other way instead of flipping outright.
+  inertia — and reversal is decided from the EASED alignment too. Because perpendicular power is
+  `MinEfficiency` rather than zero, easing the alignment alone never carries the mill through zero, so a
+  reversal is DEFERRED behind an explicit output ramp (`ReversalRampRatePerSecond`): the rotor's own output
+  drives down through zero, only THEN is `MechanicalNetwork.DirectionHasReversed` published, then it
+  accelerates back up to target the other way — instead of a geared assembly snapping from full speed to
+  full reverse in one tick. Exactly edge-on, the alignment sign is numerical noise and a square-on rotor
+  would chatter every tick, so inside `PerpendicularDeadBand` the direction comes from which SIDE the wind
+  passes on (the cross product) rather than from the alignment sign.
 - **Sailboats** — Harmony postfix on `EntityBoat.SeatsToMotion`: tailwind +50%, crosswind base,
   headwind −10% (piecewise by heading-vs-wind alignment). Tacking is out of scope.
 - **Weather** — `WeatherCoupling` (Harmony postfix on `WeatherSystemBase.GetRainCloudness`) raises
   cloudness/rain inside lows and lowers it in highs — storms form in **low** pressure, highs are
   fair-weather subsidence, matching real synoptic charts (see [noaa.gov/jetstream/wxmaps](https://www.noaa.gov/jetstream/wxmaps)).
-  Lows also add circulation, so storms = stronger, swirlier wind. On top of that base pressure shift, every
-  active cell carries its own organic weather-noise texture (`WindField.CellWeatherNoise`, deliberately
-  denser/higher-frequency than vanilla's own broad rain-cloudness pattern, seeded per-cell by
-  `PressureCell.BornTotalHours` so different systems show uncorrelated texture), gated by the same Gaussian
-  falloff envelope its circulation/pressure already use: a low ADDS its noise on top of the world pattern
-  (patchy heavier/lighter rain bands inside the storm instead of a uniformly "always rainy" disc — gated by
-  `StormLikelihood`, so an immature low hasn't earned this yet), a high SUBTRACTS its noise (patchy
-  clearing/holes instead of a perfectly smooth dry disc). The low side is further weighted by
-  `WindField.FrontRegimeBiasAt`'s front-type multiplier (occluded > cold > warm > stationary intensity).
-  This replaced an earlier, now-removed `WindField.StormBiasAt` mechanic that pushed cloudness smoothly by
-  distance along the front's own leading/trailing axes — a uniform directional gradient rather than actual
-  per-system texture.
+  Lows also add circulation, so storms = stronger, swirlier wind. The coupling is **MULTIPLICATIVE**, not
+  additive: `__result *= exp(StormCouplingStrength · clamp(P) · typeMult · PrecipLogGain)`, so a low scales
+  vanilla's existing cloudness field UP and a high scales it DOWN, with low/high exact reciprocals. Vanilla's
+  own field already carries organic broad-scale texture, so modulating it yields patchy bands inside a storm
+  and patchy clearing inside a high **for free** — which is why there is no longer any per-cell noise map
+  (`WindField.CellWeatherNoise` is REMOVED; so is the older `WindField.StormBiasAt` before it). It's also
+  sign-safe by construction: a high can only ever scale cloudness down, whereas subtracting a zero-mean
+  noise could *raise* it over half a high's footprint (a real bug that existed). The LOW side of the
+  exponent is weighted by `WindField.FrontRegimeBiasAt`'s front-type multiplier (occluded > cold > warm >
+  stationary), itself `StormLikelihood`-weighted so an immature low hasn't earned full intensity.
+  **Deliberate consequence:** the coupling is proportional, so a region vanilla left completely dry stays
+  dry — a pressure system modulates an existing moisture pattern rather than inventing one. There is
+  deliberately **no upper clamp** on the result: vanilla clamps where it needs to (`Event_OnGetClimate` does
+  `Clamp(cloudness, 0, 1)` into `RainCloudOverlay` and `Clamp(cloudness − 0.5, 0, 1)` into `Rainfall`), but
+  `GetPrecipitation` is `Max(0, cloudness − 0.5)` with NO ceiling — so capping cloudness at 1 here silently
+  caps precipitation at 0.5 and flattens every storm core and the radar's red band. Headroom above 1 is what
+  makes an intense low read as intense. (Lightning rate is `distantLightningRate × RainCloudOverlay`, i.e.
+  linear in cloudness, so this also governs how often distant thunderstorms fire.)
+- **Cloud/precip drift** (`WeatherCoupling.DriftPrefix` + `WindField.CloudDriftAt`) — vanilla's precipitation
+  noise barely moves and never follows the wind: `getPrecipNoise` samples at `posX/18 + totalDays·18` with
+  **no time term on Z at all**, so the pattern slides due WEST at a hardcoded **324 blocks/day** (13.5/hour),
+  can never travel north/south, and ignores wind entirely — ~30× slower than cells advect (`AdvectionSpeed`
+  400 blocks/**hour**). Its third noise axis (`totalDays·4` at octave frequency 1/150) also only decorrelates
+  over **~37 game-days**, which is why the same pattern can sit overhead for months. This became conspicuous
+  once precipitation went multiplicative, since vanilla's noise is now the visible texture rather than one
+  contribution among several. A Harmony **prefix** therefore shifts `posX`/`posZ` by the accumulated wind
+  drift before vanilla samples (sampling UPWIND makes the pattern travel DOWNWIND) and subtracts vanilla's
+  own westward term so wind is the only thing moving it. `conds`/`wgenRain` are untouched, so a region's
+  underlying climate stays put and only the weather riding over it moves. The drift is a TIME INTEGRAL of the
+  base flow, so it is server-accumulated (`WindFieldSimulation.AccumulateCloudDrift`, sampled from the global
+  jetstream bearing at a reference position — a position-DEPENDENT offset would shear the noise field rather
+  than translate it) and synced in `WindFieldState` (`DriftX/Z` + `DriftVelX/Z`, re-based to the cell anchor
+  on the wire); the client extrapolates linearly exactly as it does cell positions, so radar and real rain
+  can't disagree. It carries its OWN timestamp (`WindField.CloudDriftHours`) rather than riding on
+  `AnchorHours`, since the cell anchor moves on every spawn/expire; it is persisted through `Save`/`Load`
+  and re-anchored alongside the cells on reload/empty-server resume, or the texture would snap back to its
+  origin (or jump thousands of blocks) on the first tick after a gap. The postfix reads the TRUE position via
+  Harmony `__state`, since pressure cells live in world space, not the noise field's drifting frame.
 - **Fronts** (`FrontComputer`/`FrontMapLayer`) — `FrontComputer` traces pure contour geometry only
   (points + arc-length + a facing reference per `FrontLine`); `FrontMapLayer` renders it procedurally as
   vector shapes, not icon sprites — a continuous stroke built from thin quads bridging every fine-sampled
@@ -96,14 +131,26 @@ systems, and couples the rest of the world to it:
   rather than an independently-chosen geography split that can silently drift out of sync with what's
   drawn (as the old, purely poleward/equatorward convention did once fronts switched to leading/trailing a
   low's own direction of travel). See "Weather" above for how that regime weighting actually feeds into
-  precipitation (the per-cell weather-noise texture, not a smooth directional push).
+  precipitation (it scales the LOW side of the multiplicative cloudness exponent).
+- **Pressure falloff shape** (`WindField.PressureFalloff`) — a cell's pressure decays as `exp(-√norm2)`,
+  NOT the gaussian `exp(-norm2)` its circulation/steering terms use. Both agree exactly on the cell's own
+  elliptical boundary (`norm2` = 1 → e⁻¹ ≈ 0.37); the difference is the tail. Front lines are drawn at
+  `radius × reach` with reach growing to `MaxFrontReach` = 3, i.e. `norm2` = 9 — under a gaussian that's
+  e⁻⁹ ≈ 0.0001, so the pressure differential along a mature front was four orders of magnitude down and
+  everything derived from it (weather coupling, isobars, map tint, gradient wind) was effectively dead out
+  there. `exp(-√norm2)` gives e⁻³ ≈ 0.05, ~500× stronger. NOTE the falloff was ALREADY elliptical
+  (`EllipseGeometry.Norm2` divides along-stream by `RadiusMinor`, cross-stream by `Radius`) — the dead far
+  edge was never a circular-vs-elliptical problem, it was the gaussian's tail. `FrontComputer`'s
+  overlap-trace level MUST go through `PressureFalloff` (level = `|Strength| · PressureFalloff(reach²)`)
+  rather than hardcoding a formula, or the traced contour lands at a different radius than the analytic
+  arc it falls back to.
 - **Isobars** — rendered in the SAME layer as fronts (`FrontMapLayer`, not a separate map layer), but
   computed separately from markers/fronts (`FrontMapLayer.ComputeIsobars`, not `FrontComputer.Compute`)
   since — unlike the front lines' per-cell geometry — isobars are a whole-viewport visualization with no
   single-cell analytic shortcut available in the first place: they're traced unconditionally via marching
   squares (`Utils/MarchingSquares.cs`) over the ACTUAL combined pressure field
-  (`WindField.CellPressureAt`, cells only, matching the front lines' own convention of ignoring the
-  terrain-thermal baseline), sampled across the whole visible viewport on a grid coarsened exactly like
+  (`WindField.CellPressureAt`, cells only — which is now the whole horizontal pressure field anyway,
+  minus the altitude lapse), sampled across the whole visible viewport on a grid coarsened exactly like
   `DopplerRadarMapLayer`'s own grid (fixed base step, doubled whenever the visible area would exceed a
   cell budget) so resolution scales down automatically when zoomed out. Unlike fronts (lows only), isobars
   are drawn around EVERY significant cell, highs included — a real chart draws them around anticyclones
@@ -169,49 +216,43 @@ systems, and couples the rest of the world to it:
   pre-biases its upwind aim the same way (estimating the new cell's `AirMassTemp` at the anchor position)
   so a systematically warm/cold cell still tends to drift back through the player instead of consistently
   leaning past them.
-- **Heat/cold waves** (`WindFieldSimulation.TrySeedHeatColdWave`, config `HeatColdWaveEnabled`) — a rare,
-  very strong, near-stationary `PressureCell.IsHeatColdWave` HIGH sited on a genuine terrain-thermal
-  hotspot, restricted to water/ocean sites (`TerrainThermal.IsWater`, same siting restriction as ordinary
-  thermal seeding below — land hotspots no longer seed mobile cells, only the static terrain baseline),
-  always anticyclonic regardless of the hotspot's own (now seasonal — see "Terrain thermal pressure" below)
-  sign — real heat domes and arctic-high cold snaps are both highs; it's the trapped, subsiding air
-  itself that reads hot or cold. Heat wave vs. cold wave is decided by the season at the spawn site (warm
-  months → heat wave, cold months → cold wave), NOT by the hotspot's sign, and both draw from the *same*
-  rare spawn-attempt rate (`HeatColdWaveRatePerDay`, ~once per ~33 game-days), so — since seasons split
-  roughly 50/50 warm/cold over a year — hot and cold waves come out equally rare by construction rather
-  than needing separate rates. Pushes local temperature 5–10°C outside the seasonal average via
-  `PressureCell.WaveTemperatureDelta` / `WindField.HeatColdWaveDeltaAt`, added in `OnGetClimate` alongside
-  (not blended into) the normal `AirMassTemp` term — an ordinary front sitting nearby would otherwise
-  dilute the wave's swing back toward neutral. Spawned at near-max `Strength` and (like a thermal-seeded
-  cell) stationary at birth: that large initial magnitude is what gives it "a lot of inertia" — the same
-  proportional dispersal decay every cell gets takes far longer to fade a near-max-strength cell below
-  `MinStrength`, so it naturally persists on the order of days rather than hours, with a 3–5 day
-  `DiesTotalHours` as the outer backstop. It also eases toward the local background wind far slower than
-  an ordinary cell (`HeatColdWaveVelocityEaseRatePerHour`), so only a strong, moving system passing nearby
-  will meaningfully nudge it before its natural lifetime runs out. Ordinary terrain-thermal seeding
-  (`ThermalSeedRatePerDay`) was also made rarer (14/day → 4/day) — it was cluttering the field with far
-  too many short-lived cells.
-- **Terrain thermal pressure** (`TerrainThermal`) — beyond the moving synoptic cells, pressure has a
-  terrain-driven baseline: warm, sun-exposed dry land → low (rising air), always. Water's sign is
-  **seasonal**, matching real air/water thermal contrast: warm-season air over cool water is stabilizing →
-  high (sinking air, the marine-layer/sea-breeze pattern); cold-season air over relatively warm water is
-  destabilizing → low (real nor'easters, polar lows, autumn/winter lake-effect systems) — both are genuine
-  synoptic phenomena, blended continuously by season (`TerrainThermal.SeasonWarmthAt`, same cosine pattern
-  as `WindFieldSimulation`'s other seasonal-warmth lookups) so shoulder seasons taper toward neutral rather
-  than flipping outright. Modulated by time of day + temperature. Water's pressure magnitude scales with
-  **depth** (sea level − `GetTerrainMapheightAt` seabed, full at `WaterFullDepth`≈20 blocks) so shallow
-  coasts read near-neutral. Added into `WindField.PressureAt` via `ThermalPressureFunc` (set per side: each
-  samples its own world's surface height + `GetClimateAt`/season). Only a fraction (`ThermalStaticScale`,
-  default 0.35) stays as a static terrain-pinned baseline; the rest of the terrain signal is expressed as
-  **mobile seeded cells** (below) so the pressure differential drifts with the wind instead of being glued
-  to the ground. This is what gives the minimap spatial pressure variation (blue land / crimson water, now
-  shifting seasonally over water), and biases storms toward hot low-pressure land. `TerrainThermal.IsWater`
-  is a separate, sign-independent land/water check (used by the mobile-cell siting gates below) since
-  water's own pressure sign can no longer be used to infer land vs. water — there is no ocean-vs-lake
-  distinction anywhere in the codebase, so "over water" is the closest available proxy for "over ocean".
-  NOTE: `WeatherCoupling.OnGetClimate` calls `PressureAt` → thermal → `GetClimateAt`,
-  so it uses a `[ThreadStatic]` reentrancy guard to avoid infinite recursion. (Thermal currently feeds
-  pressure/weather/visualization only, not wind direction — sea-breeze wind coupling is possible future work.)
+- **REMOVED: terrain-thermal seeding and heat/cold waves.** Mobile cells seeded from terrain/water thermal
+  hotspots (`ThermalSeeding` / `TrySeedOne`) and the rare heat-wave/cold-wave highs built on the same
+  water-hotspot siting path (`HeatColdWaveEnabled` / `TrySeedHeatColdWave`, with `PressureCell.IsHeatColdWave`
+  / `WaveTemperatureDelta` and `WindField.HeatColdWaveDeltaAt`) were all deleted — terrain-driven cell
+  formation no longer made sense once cells became synoptic-scale, and the water-only siting gate it
+  depended on locked out inland players entirely. **Every mobile cell now comes from the jetstream spawner
+  (`WindFieldSimulation.Spawn`) alone**, and `TerrainThermal` is now a purely static TEMPERATURE field
+  (see the next bullet) that spawns nothing. `TerrainThermal.IsWater` went with them (its only caller was
+  seed siting). Don't reintroduce any of this without a new design — the reasons it was cut are above, not
+  merely a tuning problem.
+- **Terrain thermal temperature / sea breeze** (`TerrainThermal`, `WindField.TerrainTempFunc`) — the
+  terrain signal is a near-surface **temperature anomaly in °C** (`TerrainThermal.TemperatureAnomalyAt`,
+  + = warmer than ambient), NOT a pressure term: warm, sun-exposed dry land runs warmer than its
+  surroundings, always. Water's sign is **seasonal**, matching real air/water thermal contrast: in the warm
+  season water is COOLER than the land beside it (the marine-layer/sea-breeze pattern), in the cold season
+  relatively warm water is WARMER than the frozen land beside it (real nor'easters, polar lows,
+  autumn/winter lake-effect systems) — blended continuously by season (`TerrainThermal.SeasonWarmthAt`,
+  same cosine pattern as `WindFieldSimulation`'s other seasonal-warmth lookups) so shoulder seasons taper
+  toward neutral rather than flipping outright. Modulated by time of day + temperature; water's magnitude
+  scales with **depth** (sea level − `GetTerrainMapheightAt` seabed, full at `WaterFullDepth`≈20 blocks) so
+  shallow coasts read near-neutral, and is STRONGER at night (the contrast sharpens once land stops
+  radiating) — which is what reverses the coastal flow into a night-time land breeze for free.
+  Two consumers, both reading `WindField.TerrainTempFunc` (set per side: each samples its own world's
+  surface height + `GetClimateAt`/season, cached — see `ThermalCache` below): the climate temperature shift
+  in `DynamicWindModCommon.OnGetClimate` (`ThermalTemperatureMax`), and the **sea-breeze wind** term in
+  `WindField.WindAt`, a thermally DIRECT circulation that blows toward warmer air (up the temperature
+  gradient, into the thermal low), scaled by `SeaBreezeStrength` and capped at `SeaBreezeMaxWind`.
+  **It deliberately no longer feeds `WindField.PressureAt` at all** (the old `ThermalPressureFunc` /
+  `ThermalStaticScale` static pressure baseline is REMOVED): pinning a pressure system to the ground is
+  unphysical, and driving the coastal flow off the temperature field directly is both the physically
+  primary formulation and one fewer indirection. Horizontal pressure is therefore purely synoptic (moving
+  cells), with the altitude lapse on top. Note the sea breeze is a DIRECTION contribution as far as speed
+  accounting goes — `ComputeWindSpeed` measures front excess with `includeTerrainGradient: false` precisely
+  so this ever-present coastal gradient can steer the wind everywhere without inflating average speed
+  outside any real pressure system.
+  NOTE: `WeatherCoupling.OnGetClimate` calls into the thermal lookup → `GetClimateAt`, so it uses a
+  `[ThreadStatic]` reentrancy guard to avoid infinite recursion.
 - **Real latitude** (`WindField.LatitudeFunc`) — Vintage Story's actual climate latitude is NOT a single
   equator at the map's centre with poles at its edges: it's a repeating triangle wave in world Z (period
   `4 × polarEquatorDistance`, a world-config value defaulting to 50000 blocks, phase-shifted by a per-seed
@@ -239,18 +280,11 @@ systems, and couples the rest of the world to it:
     (`WindAt(x,z,t,excludeCell)`, self excluded) rather than snapping straight to it — an exponential
     approach at `VelocityEaseRatePerHour`, real inertia — and its current velocity is stored so the client
     extrapolates linearly between snapshots. `AdvectionSpeed` (blocks/game-hour per unit wind). Off →
-    falls back to the fixed jetstream velocity (or, for a thermal-seeded cell, stays stationary — see below).
+    falls back to the fixed jetstream velocity.
   - **Dispersal** — `DispersalRate` grows each cell's radius and decays its strength per hour; cells expire
     once strength falls below `MinStrength` (or hit their lifetime backstop). So systems spread out and fade.
   - **Bernoulli** — `BernoulliStrength`: faster-than-nominal flow lowers a cell's pressure (toward low, +),
     stagnant air raises it. Sampled once per tick from the same background wind (no recursion).
-  - **Thermal seeding** — `ThermalSeeding` spawns small mobile cells from terrain thermal hotspots,
-    restricted to water/ocean sites (`TerrainThermal.IsWater`) — land hotspots no longer seed mobile cells,
-    only the static terrain-pressure baseline above. Water's sign is seasonal (see "Terrain thermal
-    pressure" above): warm-season water seeds a HIGH, cold-season water seeds a LOW. Unlike a regular
-    jet-spawned system, these are born perfectly STATIONARY (a hotspot itself isn't moving) and only pick up
-    speed gradually via the Advection easing above as nearby cells' circulation and the base jetstream act
-    on them, then disperse like any other cell.
   - **Altitude lapse** — `WindField.PressureAt(x,y,z,t)` adds a vertical term: real air pressure falls with
     height, read as "more low" (+), reaching +`AltitudePressureDrop` (default 0.5 = −50%) at the build ceiling,
     0 at/below sea level. Vertical-only, so it never alters wind — only the displayed/weather-coupled pressure
@@ -267,14 +301,16 @@ systems, and couples the rest of the world to it:
   already has, so it reorients the flow without adding speed on its own. Applied only to the
   jetstream+circulation portion, before the separate pressure-gradient bleed below.
 - **Pressure-gradient wind** — wind bleeds down the pressure gradient (high → low), so the synoptic cells
-  AND the terrain thermal contrast (water→land sea breeze) actually push the air. `WindField.WindAt` adds
-  `PressureWindStrength · ∇P` (numeric gradient of `PressureAt`, clamped). Runs on both sides.
+  actually push the air. `WindField.WindAt` adds `PressureWindStrength · ∇P` (numeric gradient of
+  `PressureAt`, clamped). Runs on both sides. The coastal sea breeze is NOT part of this term — it's a
+  separate thermally direct term off the temperature gradient (see "Terrain thermal temperature / sea
+  breeze" above).
 - **Terrain (orographic)** — in `WindField.WindAt` on BOTH sides via a per-side `TerrainHeightFunc`
   (server: Algernons Terrain Sampler at any coord; client: rain-map height for loaded chunks, so the minimap
   shows it). Wind climbing into a slope slows (stagnation) and curves along the contour around the obstacle;
   wind sheltered by higher terrain upwind slows in the lee wake. Tunables: `OrographicSlowdownFactor`,
   `OrographicDeflectionStrength`, `OrographicWakeFactor`.
-- The thermal-pressure and terrain-height lookups are wrapped in `ThermalCache` (coarse tile + time bucket,
+- The terrain-temperature and terrain-height lookups are wrapped in `ThermalCache` (coarse tile + time bucket,
   thread-safe) because `WindAt` samples them several times per call on a hot path; this also keeps the
   weather-coupling re-entry rare.
 - **Wind overlay** (`WindArrowMapLayer`) — a fixed 24×24 grid of arrows on the **full world map only**
@@ -295,10 +331,8 @@ systems, and couples the rest of the world to it:
 Because the map is north-up with +Z pointing *down* (south), the screen-CCW tangent is `(rz, −rx)`, so
 lows circulate **counter-clockwise** and highs **clockwise** (NH convention). Pressure-cell radii are
 sampled directly from `[CellRadiusMin, CellRadiusMax]` (user config, default ~15,000–30,000 blocks — large,
-synoptic-scale systems) rather than the server's loaded-chunk extent: regular jet-spawned systems
-(`WindFieldSimulation.Spawn`) get full-range variety, while thermal seeds and heat/cold waves each sample a
-quarter-width sub-band (`SpawnRadiusSubBandFraction`) near the low/high end of that range respectively, so
-they stay visibly smaller/larger than a full system even as the config range is retuned. New cells spawn
+synoptic-scale systems) rather than the server's loaded-chunk extent — jet-spawned systems
+(`WindFieldSimulation.Spawn`, now the only spawner) sample that full range. New cells spawn
 ~40,000 blocks (`SpawnDistanceBlocks` ± `SpawnDistanceJitter`) from a random online player, generally
 upwind (scattered within `SpawnAngleSpreadRad` of the pure-upwind bearing) so they drift back through the
 player's area — like a real system approaching from a distance. That target distance is capped by the

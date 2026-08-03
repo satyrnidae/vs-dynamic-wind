@@ -12,7 +12,7 @@ namespace DynamicWind.TerrainSystem;
 ///
 /// Safe to call from inside <see cref="DynamicWindModCommon.OnGetClimate"/>'s reentrancy guard:
 /// <see cref="EnumGetClimateMode.WorldGenValues"/> reads return immediately at the top of that handler
-/// (mirrors the reasoning already documented for <see cref="TerrainThermal"/>/<c>ThermalPressureFunc</c>).
+/// (mirrors the reasoning already documented for <see cref="TerrainThermal"/>/<c>TerrainTempFunc</c>).
 /// </summary>
 internal static class TerrainHumidity
 {

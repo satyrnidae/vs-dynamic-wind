@@ -19,6 +19,19 @@ public class WindFieldState
     public double CyclonicInflowAngle;
     /// <summary>Seasonal N/S jetstream bias factor in [−1, 1] (see <see cref="WindField.SeasonalBiasZ"/>).</summary>
     public double SeasonalBiasZ;
+    /// <summary>
+    /// Accumulated cloud-texture drift (blocks) at <see cref="TotalHoursAnchor"/>, and the rate it is
+    /// currently accumulating at (blocks/game-hour) so the client can extrapolate between snapshots the
+    /// same way it extrapolates cell positions — see <see cref="WindField.CloudDriftAt"/>. This has to be
+    /// SERVER-ACCUMULATED and synced rather than derived client-side: it is a time integral of the base
+    /// flow, and the flow's own seasonal tilt varies over the year, so multiplying an instantaneous
+    /// bearing by total elapsed time would shear the whole pattern every time that tilt moved.
+    /// Absent on a pre-drift snapshot → protobuf leaves these 0, i.e. no drift. Safe.
+    /// </summary>
+    public double DriftX;
+    public double DriftZ;
+    public double DriftVelX;
+    public double DriftVelZ;
     /// <summary>Server <c>Calendar.TotalHours</c> when this snapshot was sent.</summary>
     public double TotalHoursAnchor;
 }

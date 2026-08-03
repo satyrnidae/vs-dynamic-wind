@@ -1,8 +1,6 @@
 using System;
 using System.Reflection;
 using DynamicWind.Config;
-using DynamicWind.PressureSystem;
-using DynamicWind.Utils;
 using DynamicWind.WindSystem;
 using HarmonyLib;
 using Vintagestory.API.Common;
@@ -30,16 +28,30 @@ namespace DynamicWind.Patches;
 /// </summary>
 internal static class WeatherCoupling
 {
-    private const double PrecipShift = 0.6;     // cloudness units shifted per unit of (clamped) pressure
+    // Precipitation is MULTIPLICATIVE on vanilla's own cloudness field, not additive: a low multiplies the
+    // existing pattern up, a high divides it down. Vanilla's field already carries organic, broad-scale
+    // texture, so modulating it gives patchy bands inside a storm and patchy clearing inside a high for
+    // free — no separate per-cell noise map needed (the old CellWeatherNoise term is gone). It is also
+    // sign-safe by construction: a high can only ever scale cloudness DOWN, where subtracting a zero-mean
+    // noise could raise it over half a high's footprint.
+    //
+    // exp() of the pressure keeps it strictly positive and makes low/high exact reciprocals: pressure +p
+    // multiplies by k, −p divides by the same k.
+    private const double PrecipLogGain = 0.55;  // exponent per unit of (clamped) pressure
     private const double PressureClamp = 1.5;
-    private const double StormBiasShift = 0.5;  // cloudness units shifted per unit of (clamped) noise term
-    private const double StormBiasClamp = 2.0;
+
+    // NO upper clamp on the result, deliberately. Vanilla clamps where it needs to — Event_OnGetClimate
+    // does Clamp(cloudness, 0, 1) into RainCloudOverlay and Clamp(cloudness - 0.5, 0, 1) into Rainfall —
+    // but GetPrecipitation is Max(0, cloudness - 0.5) with NO ceiling, so capping cloudness at 1 here
+    // would silently cap precipitation at 0.5 and flatten every storm core (and the radar's red band with
+    // it). Headroom above 1 is what makes an intense low read as intense.
 
     // Front-type weather intensity: an occluded front (cold front has caught the warm one) brings the
     // most severe weather (thunderstorms/thundersnow), a cold front heavy storms, a warm front only light
     // storms, and a stationary front stays relatively calm precipitation-wise — real synoptic behaviour.
-    // Applied as a weighted-average multiplier on the low-side noise term below, using
-    // WindField.FrontRegimeBiasAt to determine which regime(s) are influencing this position.
+    // Scales the LOW side of the exponent below, using WindField.FrontRegimeBiasAt to determine which
+    // regime(s) are influencing this position (that lookup is itself StormLikelihood-weighted, so an
+    // immature low hasn't earned its full intensity yet).
     private const double OccludedPrecipMult = 1.4;
     private const double ColdPrecipMult = 1.2;
     private const double WarmPrecipMult = 0.7;
@@ -56,13 +68,57 @@ internal static class WeatherCoupling
             logger.Warning("[dynamicwind] WeatherSystemBase.GetRainCloudness not found — precipitation coupling disabled.");
             return;
         }
-        harmony.Patch(target, postfix: new HarmonyMethod(typeof(WeatherCoupling), nameof(Postfix)));
+        harmony.Patch(target,
+            prefix: new HarmonyMethod(typeof(WeatherCoupling), nameof(DriftPrefix)),
+            postfix: new HarmonyMethod(typeof(WeatherCoupling), nameof(Postfix)));
         patched = true;
-        logger.Notification("[dynamicwind] Precipitation coupling enabled (pressure → rain/clouds/radar).");
+        logger.Notification("[dynamicwind] Precipitation coupling enabled (pressure → rain/clouds/radar, wind-advected).");
     }
 
-    private static void Postfix(WeatherSystemBase __instance, ref float __result, double posX, double posZ, double totalDays)
+    // Vanilla's precipitation noise barely moves and never follows the wind: getPrecipNoise samples at
+    // `posX/18 + totalDays*18` with NO time term on Z at all, so the whole pattern slides due WEST at a
+    // hardcoded 324 blocks/day (13.5/hour) and can never travel north/south — roughly 30x slower than
+    // pressure cells advect (AdvectionSpeed 400 blocks/HOUR) and in a fixed direction regardless of the
+    // actual wind. That was always odd; it became conspicuous once precipitation went MULTIPLICATIVE on
+    // this field, since vanilla's noise is now the visible texture rather than one contribution among
+    // several — a near-static stencil reads as a near-static stencil.
+    //
+    // So shift the sample position by the accumulated wind drift before vanilla ever sees it: sampling
+    // UPWIND of where we are makes the pattern travel DOWNWIND. The vanilla westward term is cancelled at
+    // the same time so wind is the only thing moving it. Applied to posX/posZ only — `conds` (and hence
+    // wgenRain, the worldgen rainfall baseline) is untouched, so a region's underlying climate stays put
+    // and only the weather riding over it moves.
+    /// <summary>Magnitude of vanilla's own hardcoded WESTWARD pattern drift, in blocks per game-day:
+    /// getPrecipNoise's first noise axis is <c>posX/18 + totalDays·18</c>, so a feature holds station at
+    /// <c>posX = 18u − 324t</c>. Subtracted again in the prefix so our wind is the only thing moving it.</summary>
+    private const double VanillaWestwardDriftPerDay = 324.0;
+
+    private static void DriftPrefix(WeatherSystemBase __instance, ref double posX, ref double posZ,
+        double totalDays, out object? __state)
     {
+        // The postfix must read pressure at the TRUE world position, not the drifted sample position —
+        // Harmony hands it whatever this prefix leaves in posX/posZ, so stash the originals for it. Set
+        // before any early-out so the postfix always has them.
+        __state = new[] { posX, posZ };
+
+        EnumAppSide side = __instance?.api?.Side ?? EnumAppSide.Server;
+        WindField? field = DynamicWindRuntime.FieldFor(side);
+        if (field == null) return;
+
+        double totalHours = totalDays * __instance!.api.World.Calendar.HoursPerDay;
+        field.CloudDriftAt(totalHours, out double driftX, out double driftZ);
+
+        posX -= driftX + VanillaWestwardDriftPerDay * totalDays;
+        posZ -= driftZ;
+    }
+
+    private static void Postfix(WeatherSystemBase __instance, ref float __result, double posX, double posZ,
+        double totalDays, object? __state)
+    {
+        // True (un-drifted) position — pressure cells live in world space, not in the noise field's
+        // drifting frame. See DriftPrefix.
+        if (__state is double[] orig && orig.Length == 2) { posX = orig[0]; posZ = orig[1]; }
+
         EnumAppSide side = __instance?.api?.Side ?? EnumAppSide.Server;
         WindField? field = DynamicWindRuntime.FieldFor(side);
         DynamicWindConfig? config = DynamicWindRuntime.ConfigFor(side);
@@ -73,55 +129,25 @@ internal static class WeatherCoupling
         if (p > PressureClamp) p = PressureClamp;
         else if (p < -PressureClamp) p = -PressureClamp;
 
-        // + pressure (low) raises cloudness past the 0.5 precip threshold; − (high) pushes it below.
-        __result += (float)(config.StormCouplingStrength * p * PrecipShift);
-
-        // Per-cell weather-noise texture: each active low/high carries its own organic noise map
-        // (WindField.CellWeatherNoise, deliberately denser than vanilla's own broad rain-cloudness
-        // pattern), gated by the same Gaussian falloff envelope its circulation/pressure already use. A
-        // low ADDS its noise on top of the world pattern — patchy heavier/lighter rain bands inside the
-        // storm instead of a uniformly "always rainy" disc; a high SUBTRACTS its noise — patchy
-        // clearing/holes instead of a perfectly smooth dry disc. Replaces the old smooth directional
-        // StormBiasAt push entirely.
-        double lowNoise = 0.0, highNoise = 0.0;
-        double elapsed = totalHours - field.AnchorHours;
-        lock (field.CellsLock)
+        // Weight the low side by which front regime(s) actually influence this position — an occluded low
+        // brings severe weather, a cold front heavy storms, a warm front only light ones, and a stationary
+        // low stays comparatively calm even while it rains. Highs have no front regime, so they scale down
+        // uniformly.
+        double typeMult = 1.0;
+        if (p > 0)
         {
-            foreach (PressureCell c in field.Cells)
-            {
-                double cx = c.X + c.VelX * elapsed, cz = c.Z + c.VelZ * elapsed;
-                double dx = posX - cx, dz = posZ - cz;
-                double falloff = Math.Exp(-EllipseGeometry.Norm2(c, dx, dz));
-                if (falloff < 1e-4) continue;
-
-                double noise = WindField.CellWeatherNoise(c, posX, posZ, totalHours);
-                if (c.IsLow)
-                {
-                    if (c.StormLikelihood <= 0f) continue; // hasn't developed into a storm yet
-                    lowNoise += falloff * Math.Abs(c.Strength) * c.StormLikelihood * noise;
-                }
-                else
-                {
-                    highNoise += falloff * Math.Abs(c.Strength) * noise;
-                }
-            }
+            WindField.FrontRegimeBias regime = field.FrontRegimeBiasAt(posX, posZ, totalHours);
+            double regimeTotal = regime.Cold + regime.Warm + regime.Occluded + regime.Stationary;
+            if (regimeTotal > 1e-6)
+                typeMult = (regime.Occluded * OccludedPrecipMult + regime.Cold * ColdPrecipMult
+                            + regime.Warm * WarmPrecipMult + regime.Stationary * StationaryPrecipMult) / regimeTotal;
         }
 
-        // Weight the low side by which front regime(s) actually influence this position — an occluded
-        // low brings severe weather, a cold front heavy storms, a warm front only light ones, and a
-        // stationary low stays comparatively calm even while it rains. Highs have no front regime.
-        WindField.FrontRegimeBias regime = field.FrontRegimeBiasAt(posX, posZ, totalHours);
-        double regimeTotal = regime.Cold + regime.Warm + regime.Occluded + regime.Stationary;
-        double typeMult = regimeTotal > 1e-6
-            ? (regime.Occluded * OccludedPrecipMult + regime.Cold * ColdPrecipMult
-               + regime.Warm * WarmPrecipMult + regime.Stationary * StationaryPrecipMult) / regimeTotal
-            : 1.0;
-
-        double noiseTerm = lowNoise * typeMult - highNoise;
-        if (noiseTerm > StormBiasClamp) noiseTerm = StormBiasClamp;
-        else if (noiseTerm < -StormBiasClamp) noiseTerm = -StormBiasClamp;
-
-        __result += (float)(config.StormCouplingStrength * noiseTerm * StormBiasShift);
+        // Multiply vanilla's cloudness: + pressure (low) scales it up past the precip threshold, − (high)
+        // scales it down. Note this is deliberately proportional — a region vanilla left completely dry
+        // stays dry, since a pressure system modulates an existing moisture pattern rather than inventing
+        // one out of nothing.
+        __result *= (float)Math.Exp(config.StormCouplingStrength * p * typeMult * PrecipLogGain);
 
         if (__result < 0f) __result = 0f;
     }

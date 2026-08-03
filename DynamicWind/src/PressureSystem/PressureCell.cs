@@ -89,22 +89,6 @@ public class PressureCell
     /// occlusions. Meaningful only while <see cref="OccludedUntilTotalHours"/> is active.</summary>
     public byte OcclusionKind;
 
-    /// <summary>True for a rare heat-wave/cold-wave high (see WindFieldSimulation.TrySeedHeatColdWave):
-    /// a very strong, near-stationary system that traps ground air, pushing local temperature further
-    /// from the season's average than an ordinary front/thermal cell. Drives
-    /// <see cref="DynamicWind.WindSystem.WindField.HeatColdWaveDeltaAt"/>, kept separate from the normal
-    /// <see cref="AirMassTemp"/> blend so its swing isn't diluted by averaging against every other active
-    /// cell, and drives a slower velocity-ease rate in WindFieldSimulation.Advect (a lot of inertia — it
-    /// lingers over the same area instead of drifting off with the jet like an ordinary cell).</summary>
-    public bool IsHeatColdWave;
-
-    /// <summary>Extra flat temperature delta in °C this heat/cold-wave cell adds on top of the normal
-    /// front/thermal terms (see DynamicWindModCommon.OnGetClimate), applied with its own falloff via
-    /// <see cref="DynamicWind.WindSystem.WindField.HeatColdWaveDeltaAt"/> rather than blended into
-    /// <see cref="DynamicWind.WindSystem.WindField.CellTemperatureAt"/>'s weighted average. Positive =
-    /// heat wave, negative = cold wave. Meaningful only when <see cref="IsHeatColdWave"/> is true.</summary>
-    public float WaveTemperatureDelta;
-
     // Computed; excluded from protobuf (ImplicitFields.AllPublic would otherwise try to deserialize
     // into this read-only property and throw).
     [ProtoIgnore]

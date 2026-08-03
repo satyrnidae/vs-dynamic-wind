@@ -6,28 +6,38 @@ using Vintagestory.API.MathTools;
 namespace DynamicWind.TerrainSystem;
 
 /// <summary>
-/// Terrain-driven thermal pressure: warm, sun-exposed dry land creates low pressure (rising air), always.
-/// Water's sign is SEASONAL: warm-season air over cool water is stabilizing → high pressure (sinking air,
-/// the marine-layer/sea-breeze pattern); cold-season air over relatively warm water is destabilizing → low
-/// pressure (real nor'easters, polar lows, autumn/winter lake-effect systems) — both are genuine synoptic
-/// phenomena. Computed from the world's terrain (seabed) height + climate/season at a position, modulated
-/// by time of day. The water pressure contribution scales with water DEPTH (sea level − seabed), so
+/// Terrain-driven near-surface TEMPERATURE anomaly, in °C relative to the local ambient: warm, sun-exposed
+/// dry land runs warmer than its surroundings, always. Water's sign is SEASONAL: in the warm season water
+/// is COOLER than the land beside it (the marine-layer/sea-breeze pattern); in the cold season relatively
+/// warm water is WARMER than the frozen land beside it (real nor'easters, polar lows, autumn/winter
+/// lake-effect systems). Computed from the world's terrain (seabed) height + climate/season at a position,
+/// modulated by time of day. The water contribution scales with water DEPTH (sea level − seabed), so
 /// shallow coasts read near-neutral and deep oceans read strong. Same code runs on server and client;
 /// far/ungenerated columns return 0 (neutral).
 ///
 /// Day/night: land keeps a substantial baseline at night (stored ground heat) but peaks at solar noon;
-/// water's pressure magnitude is STRONGER at night regardless of sign (the air/water thermal contrast is
-/// sharpest once the land stops radiating).
+/// water's magnitude is STRONGER at night regardless of sign (the air/water thermal contrast is sharpest
+/// once the land stops radiating) — which is what reverses the coastal flow into a night-time land breeze.
 ///
-/// Sign convention matches <see cref="WindField"/>: + = low pressure, − = high pressure.
+/// This field is TEMPERATURE, not pressure: it is the physically primary quantity in a thermally direct
+/// circulation, and it feeds two consumers — the climate temperature shift in
+/// <c>DynamicWindModCommon.OnGetClimate</c>, and the sea-breeze wind term in <see cref="WindField.WindAt"/>,
+/// which blows DOWN this gradient's opposite (i.e. toward warmer air, into the thermal low). It deliberately
+/// no longer feeds <see cref="WindField.PressureAt"/> at all: pinning a pressure system to the ground was
+/// unphysical, and pressure is now purely synoptic (moving cells + altitude lapse). See CLAUDE.md.
+///
+/// Sign convention: + = warmer than ambient, − = cooler.
 /// </summary>
 internal static class TerrainThermal
 {
-    private const double Amplitude = 2.6;       // master strength of the terrain pressure signal
-    private const double WaterFullDepth = 20.0; // blocks of depth for full pressure contribution
+    /// <summary>Nominal peak magnitude of the anomaly, in °C — a strong land/water contrast reads about
+    /// this far from ambient. Callers that need a normalised [-1, 1] shape divide by it.</summary>
+    public const double Amplitude = 6.0;
+    private const double WaterFullDepth = 20.0; // blocks of depth for full contribution
     private const double SummerPeakRel = 0.59725; // matches WindFieldSimulation.SummerPeakRel
 
-    public static double PressureAt(IWorldAccessor world, double x, double z, double totalHours)
+    /// <summary>Near-surface temperature anomaly in °C at (x, z). + = warmer than ambient, − = cooler.</summary>
+    public static double TemperatureAnomalyAt(IWorldAccessor world, double x, double z, double totalHours)
     {
         int ix = (int)x;
         int iz = (int)z;
@@ -49,39 +59,23 @@ internal static class TerrainThermal
             double depthFactor = depth / WaterFullDepth;
             if (depthFactor > 1) depthFactor = 1;
             double seasonWarmth = SeasonWarmthAt(world, pos); // +1 midsummer, −1 midwinter, 0 if season not ready
-            double sign = -seasonWarmth; // summer (+warmth) → high (−); winter (−warmth) → low (+)
+            double sign = -seasonWarmth; // summer (+warmth) → water COOLER (−); winter → water WARMER (+)
             double nightBoost = 1.0 + 0.6 * (1.0 - diurnal); // 1.0 at noon → 1.6 at night
             return sign * (0.6 * depthFactor) * Amplitude * nightBoost;
         }
 
-        // Land: dry, sun-exposed ground heats most; wet/forested less. Warmer + sunnier = stronger low.
+        // Land: dry, sun-exposed ground heats most; wet/forested less. Warmer + sunnier = warmer anomaly.
         pos.Y = terrainY;
         ClimateCondition cc = world.BlockAccessor.GetClimateAt(pos, EnumGetClimateMode.NowValues, totalHours / 24.0);
         if (cc == null) return 0.0;
 
         double aridity = 1.0 - GameMath.Clamp(cc.Rainfall, 0f, 1f);
         double tempFactor = GameMath.Clamp((cc.Temperature + 5.0) / 30.0, 0.0, 1.0); // -5..25°C → 0..1
-        double coeff = 0.2 + 0.8 * aridity;                       // low pressure (positive)
+        double coeff = 0.2 + 0.8 * aridity;                       // warmer than ambient (positive)
         // Stored heat: a solid 0.45 floor at night (ground stays warm) rising to full at solar noon — so
         // land thermals still drive pressure overnight, just less than under the midday sun.
         double mag = (0.45 + 0.55 * diurnal) * (0.3 + 0.7 * tempFactor);
         return coeff * mag * Amplitude;
-    }
-
-    /// <summary>True if (x, z) is water (positive sea-level-relative depth) — the same terrain-height check
-    /// <see cref="PressureAt"/>'s water branch uses, but independent of the pressure VALUE's sign, since
-    /// water can now yield either sign depending on season. Used to restrict locally-formed mobile pressure
-    /// cells (thermal seeds / heat-cold-waves in <c>WindFieldSimulation</c>) to water/ocean sites without
-    /// inferring land-vs-water from a sign that's no longer reliable. There is no ocean-vs-lake distinction
-    /// anywhere in this codebase — this only checks depth relative to sea level — so "over water" is the
-    /// closest available proxy for "over ocean". Uncached (unlike <see cref="PressureAt"/>/ThermalCache):
-    /// called only a handful of times per rate-limited seed attempt, not on the wind hot path.</summary>
-    public static bool IsWater(IWorldAccessor world, double x, double z)
-    {
-        var pos = new BlockPos((int)x, 0, (int)z, 0);
-        int terrainY = world.BlockAccessor.GetTerrainMapheightAt(pos);
-        if (terrainY <= 0) return false; // ungenerated/void — treat as not-water
-        return world.SeaLevel - terrainY > 0;
     }
 
     /// <summary>0 at night, peaks at ~solar noon (sine over the daylight half).</summary>
