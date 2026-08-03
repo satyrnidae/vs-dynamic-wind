@@ -30,10 +30,10 @@ namespace DynamicWind.Client.MapLayers;
 /// always follows the curve exactly, however sharply it bends — no more angle-lerped icon tiles
 /// gapping/overlapping at sharp bends), and a periodic decoration pass (triangles for cold, hemicircles for
 /// warm, alternating for stationary/generic-occluded) stamped at even on-screen arc-length spacing, both
-/// colored per <see cref="FrontColors"/>. Also draws isobars (<see cref="IsobarRing"/>, from the same
-/// `FrontComputer.Compute` call) as faint closed contour loops behind everything else — real-chart-style
-/// constant-pressure rings around EVERY significant cell (highs included, unlike fronts), tinted the same
-/// low/high colors as the wind arrows. Toggle via the map legend.
+/// colored per <see cref="FrontColors"/>. Also draws isobars (<see cref="ComputeIsobars"/>) as faint
+/// marching-squares contour segments behind everything else — real-chart-style constant-pressure lines
+/// traced over the WHOLE combined pressure field across the visible viewport (highs included, unlike
+/// fronts), tinted the same low/high colors as the wind arrows. Toggle via the map legend.
 /// </summary>
 public class FrontMapLayer : DynamicWindWorldMapLayerBase
 {
@@ -47,6 +47,16 @@ public class FrontMapLayer : DynamicWindWorldMapLayerBase
     private const float IsobarAlphaStep = 0.04f; // opacity reduction per ring outward from the innermost
     private const float IsobarMinAlpha = 0.12f;
 
+    // Isobar grid: traced over the whole visible viewport (unlike the overlap-aware front-line fallback's
+    // small LOCAL grid — see FrontComputer.BuildFrontLineViaOverlap), since isobars need to cover
+    // potentially huge, mostly-empty areas efficiently. Coarsened exactly like DopplerRadarMapLayer's own
+    // grid (fixed base step, doubled whenever the visible area would exceed the cell budget) so resolution
+    // scales down automatically when zoomed out.
+    private const double IsobarGridBaseStep = 512.0;
+    private const int IsobarGridMaxCells = 4000;
+    private const double IsobarStep = 0.2;    // fixed absolute pressure spacing — real-chart style (see remarks below)
+    private const int IsobarMaxRings = 12;    // safety cap for a near-max-strength cell (e.g. a heat/cold wave)
+
     private DynamicWindConfig? cfg;
     private ICoreClientAPI? capi;
     private MeshRef? quad;
@@ -58,8 +68,23 @@ public class FrontMapLayer : DynamicWindWorldMapLayerBase
 
     private readonly List<FrontMarker> markers = new();
     private readonly List<FrontLine> lines = new();
-    private readonly List<IsobarRing> isobars = new();
+    private readonly List<IsobarSegment> isobarSegments = new();
     private readonly List<LineScratch> scratch = new();
+
+    /// <summary>One marching-squares segment of a constant-pressure contour — see
+    /// <see cref="ComputeIsobars"/>. Unlike front lines, isobars don't need arc-length ordering (no
+    /// decorations/symbols placed along them), so raw unchained segments are drawn directly.</summary>
+    private readonly struct IsobarSegment
+    {
+        public readonly Vec2d A, B;
+        public readonly bool IsLow;
+        public readonly int RingIndex; // 0 = innermost (highest |pressure|) ring for whichever cell this came from
+
+        public IsobarSegment(Vec2d a, Vec2d b, bool isLow, int ringIndex)
+        {
+            A = a; B = b; IsLow = isLow; RingIndex = ringIndex;
+        }
+    }
 
     private sealed class LineScratch
     {
@@ -154,45 +179,37 @@ public class FrontMapLayer : DynamicWindWorldMapLayerBase
         IShaderProgram shader = BindStandardShader(capi, texWhite);
 
         // Isobars: drawn first/furthest back — faint background context, never competing with the front
-        // lines/markers/decorations drawn after them. Each ring is already a closed polyline
-        // (FrontComputer.BuildIsobarRing); no fine-sampling pass needed like the front lines (no added
-        // wobble to resolve — see FrontComputer's remarks — and a closed ellipse doesn't need arc-length
-        // tiling for decorations), so segments are drawn directly between the ring's own points.
-        for (int ri = 0; ri < isobars.Count; ri++)
+        // lines/markers/decorations drawn after them. Each entry is already one raw marching-squares
+        // segment (see ComputeIsobars) — no chaining/ordering needed since isobars have no
+        // decorations/symbols placed along arc length, unlike front lines.
+        for (int si = 0; si < isobarSegments.Count; si++)
         {
-            IsobarRing ring = isobars[ri];
-            Vec2d[] pts = ring.Points;
-            if (pts.Length < 2) continue;
+            IsobarSegment seg = isobarSegments[si];
+            ToScreen(b, vb, seg.A.X, seg.A.Y, out float sx0, out float sy0); // still valid off-screen coords
+            ToScreen(b, vb, seg.B.X, seg.B.Y, out float sx1, out float sy1);
 
-            Vec4f baseColor = ring.IsLow ? FrontColors.WarmCrimson : FrontColors.ColdBlue;
-            float alpha = Math.Max(IsobarMinAlpha, IsobarBaseAlpha - ring.RingIndex * IsobarAlphaStep);
-            Vec4f color = new(baseColor.R, baseColor.G, baseColor.B, alpha);
-            shader.Uniform("rgbaIn", color);
+            float fx0 = (float)((sx0 - b.renderX) / b.InnerWidth), fy0 = (float)((sy0 - b.renderY) / b.InnerHeight);
+            float fx1 = (float)((sx1 - b.renderX) / b.InnerWidth), fy1 = (float)((sy1 - b.renderY) / b.InnerHeight);
+            bool onscreen = (fx0 >= -0.05f && fx0 <= 1.05f && fy0 >= -0.05f && fy0 <= 1.05f)
+                || (fx1 >= -0.05f && fx1 <= 1.05f && fy1 >= -0.05f && fy1 <= 1.05f);
+            if (!onscreen) continue;
 
-            for (int j = 0; j < pts.Length - 1; j++)
-            {
-                ToScreen(b, vb, pts[j].X, pts[j].Y, out float sx0, out float sy0); // still valid off-screen coords
-                ToScreen(b, vb, pts[j + 1].X, pts[j + 1].Y, out float sx1, out float sy1);
+            double dxp = sx1 - sx0, dyp = sy1 - sy0;
+            double segLenPx = Math.Sqrt(dxp * dxp + dyp * dyp);
+            if (segLenPx < 1e-6) continue;
 
-                float fx0 = (float)((sx0 - b.renderX) / b.InnerWidth), fy0 = (float)((sy0 - b.renderY) / b.InnerHeight);
-                float fx1 = (float)((sx1 - b.renderX) / b.InnerWidth), fy1 = (float)((sy1 - b.renderY) / b.InnerHeight);
-                bool onscreen = (fx0 >= -0.05f && fx0 <= 1.05f && fy0 >= -0.05f && fy0 <= 1.05f)
-                    || (fx1 >= -0.05f && fx1 <= 1.05f && fy1 >= -0.05f && fy1 <= 1.05f);
-                if (!onscreen) continue;
+            Vec4f baseColor = seg.IsLow ? FrontColors.WarmCrimson : FrontColors.ColdBlue;
+            float alpha = Math.Max(IsobarMinAlpha, IsobarBaseAlpha - seg.RingIndex * IsobarAlphaStep);
+            shader.Uniform("rgbaIn", new Vec4f(baseColor.R, baseColor.G, baseColor.B, alpha));
 
-                double dxp = sx1 - sx0, dyp = sy1 - sy0;
-                double segLenPx = Math.Sqrt(dxp * dxp + dyp * dyp);
-                if (segLenPx < 1e-6) continue;
-
-                float msx = (float)((sx0 + sx1) * 0.5), msy = (float)((sy0 + sy1) * 0.5);
-                float tanAngle = (float)Math.Atan2(dyp, dxp);
-                mvMat.Set(capi.Render.CurrentModelviewMatrix)
-                    .Translate(msx, msy, 60.5f)
-                    .RotateZ(tanAngle)
-                    .Scale((float)(segLenPx * 0.5), IsobarLineWidthPx * 0.5f, 0f);
-                shader.UniformMatrix("modelViewMatrix", mvMat.Values);
-                capi.Render.RenderMesh(quad);
-            }
+            float msx = (float)((sx0 + sx1) * 0.5), msy = (float)((sy0 + sy1) * 0.5);
+            float tanAngle = (float)Math.Atan2(dyp, dxp);
+            mvMat.Set(capi.Render.CurrentModelviewMatrix)
+                .Translate(msx, msy, 60.5f)
+                .RotateZ(tanAngle)
+                .Scale((float)(segLenPx * 0.5), IsobarLineWidthPx * 0.5f, 0f);
+            shader.UniformMatrix("modelViewMatrix", mvMat.Values);
+            capi.Render.RenderMesh(quad);
         }
 
         // H / L letters, drawn BEHIND the front lines/decorations below. With cell radii now large enough
@@ -354,7 +371,59 @@ public class FrontMapLayer : DynamicWindWorldMapLayerBase
     {
         WindField? field = DynamicWindRuntime.ClientField;
         if (field == null || capi == null) return;
-        FrontComputer.Compute(field, capi.World.Calendar.TotalHours, markers, lines, isobars);
+        double totalHours = capi.World.Calendar.TotalHours;
+        FrontComputer.Compute(field, totalHours, markers, lines);
+        ComputeIsobars(field, mapElem.CurrentBlockViewBounds, totalHours);
+    }
+
+    /// <summary>
+    /// Traces constant-pressure contours across the WHOLE visible viewport via <see cref="MarchingSquares"/>
+    /// over the actual combined field (<see cref="WindField.CellPressureAt(double,double,double)"/>,
+    /// cells only — no terrain-thermal baseline, matching the front lines' own convention). This is
+    /// unconditionally the marching-squares path (unlike front lines, which only fall back to it when two
+    /// cells overlap — see FrontComputer.BuildFrontLine): isobars are a whole-field visualization, not a
+    /// single system's own boundary, so there's no cheaper single-cell analytic shortcut available here in
+    /// the first place. Real-chart style: a FIXED absolute pressure step (<see cref="IsobarStep"/>) means a
+    /// weak system shows one or two widely-spaced rings and a strong one shows many tightly-packed ones —
+    /// that density variation is a feature, not something to normalize away. Grid resolution is coarsened
+    /// exactly like DopplerRadarMapLayer's own grid so it stays cheap at any zoom.
+    /// </summary>
+    private void ComputeIsobars(WindField field, Cuboidd vb, double totalHours)
+    {
+        isobarSegments.Clear();
+
+        double spanX = vb.X2 - vb.X1, spanZ = vb.Z2 - vb.Z1;
+        if (spanX < 1e-6 || spanZ < 1e-6) return;
+
+        double maxAbsStrength = 0;
+        lock (field.CellsLock)
+        {
+            foreach (PressureCell c in field.Cells) maxAbsStrength = Math.Max(maxAbsStrength, Math.Abs(c.Strength));
+        }
+        if (maxAbsStrength < IsobarStep) return; // nothing significant enough to contour at all
+
+        double step = IsobarGridBaseStep;
+        while ((spanX / step) * (spanZ / step) > IsobarGridMaxCells) step *= 2;
+
+        double originX = vb.X1, originZ = vb.Z1;
+        int nx = (int)Math.Ceiling(spanX / step) + 2;
+        int nz = (int)Math.Ceiling(spanZ / step) + 2;
+        var values = new float[nx * nz];
+        for (int j = 0; j < nz; j++)
+            for (int i = 0; i < nx; i++)
+                values[j * nx + i] = (float)field.CellPressureAt(originX + i * step, originZ + j * step, totalHours);
+
+        for (int ring = 0; ring < IsobarMaxRings; ring++)
+        {
+            double levelMag = (ring + 1) * IsobarStep;
+            if (levelMag >= maxAbsStrength) break;
+
+            List<MarchingSquares.Segment> lowSegs = MarchingSquares.Trace(values, nx, nz, originX, originZ, step, levelMag);
+            foreach (MarchingSquares.Segment s in lowSegs) isobarSegments.Add(new IsobarSegment(s.A, s.B, true, ring));
+
+            List<MarchingSquares.Segment> highSegs = MarchingSquares.Trace(values, nx, nz, originX, originZ, step, -levelMag);
+            foreach (MarchingSquares.Segment s in highSegs) isobarSegments.Add(new IsobarSegment(s.A, s.B, false, ring));
+        }
     }
 
     public override void Dispose()

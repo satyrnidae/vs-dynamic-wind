@@ -36,7 +36,18 @@ systems, and couples the rest of the world to it:
 - **Weather** — `WeatherCoupling` (Harmony postfix on `WeatherSystemBase.GetRainCloudness`) raises
   cloudness/rain inside lows and lowers it in highs — storms form in **low** pressure, highs are
   fair-weather subsidence, matching real synoptic charts (see [noaa.gov/jetstream/wxmaps](https://www.noaa.gov/jetstream/wxmaps)).
-  Lows also add circulation, so storms = stronger, swirlier wind.
+  Lows also add circulation, so storms = stronger, swirlier wind. On top of that base pressure shift, every
+  active cell carries its own organic weather-noise texture (`WindField.CellWeatherNoise`, deliberately
+  denser/higher-frequency than vanilla's own broad rain-cloudness pattern, seeded per-cell by
+  `PressureCell.BornTotalHours` so different systems show uncorrelated texture), gated by the same Gaussian
+  falloff envelope its circulation/pressure already use: a low ADDS its noise on top of the world pattern
+  (patchy heavier/lighter rain bands inside the storm instead of a uniformly "always rainy" disc — gated by
+  `StormLikelihood`, so an immature low hasn't earned this yet), a high SUBTRACTS its noise (patchy
+  clearing/holes instead of a perfectly smooth dry disc). The low side is further weighted by
+  `WindField.FrontRegimeBiasAt`'s front-type multiplier (occluded > cold > warm > stationary intensity).
+  This replaced an earlier, now-removed `WindField.StormBiasAt` mechanic that pushed cloudness smoothly by
+  distance along the front's own leading/trailing axes — a uniform directional gradient rather than actual
+  per-system texture.
 - **Fronts** (`FrontComputer`/`FrontMapLayer`) — `FrontComputer` traces pure contour geometry only
   (points + arc-length + a facing reference per `FrontLine`); `FrontMapLayer` renders it procedurally as
   vector shapes, not icon sprites — a continuous stroke built from thin quads bridging every fine-sampled
@@ -50,7 +61,7 @@ systems, and couples the rest of the world to it:
   renders the classic Norwegian-cyclone-model pair — BOTH a warm front leading ahead of the low's own
   direction of travel (`atan2(VelZ, VelX)`) and a cold front trailing behind it, meeting at the low's own
   centre — rather than a fixed compass/jetstream direction or (an earlier design) only one or the other.
-  Each is tilted off the pure travel/anti-travel axis toward its real-world side by `FrontComputer.WaveFrontTiltAngle`
+  Each is tilted off the pure travel/anti-travel axis toward its real-world side by `WindField.WaveFrontTiltAngle`
   (warm leads AND tilts poleward — where warm air overruns; cold trails AND tilts equatorward — where cold
   air digs in), via `WindField.PolewardZSign`/real latitude — giving the classic asymmetric "comma" shape
   instead of two lines sitting exactly opposite each other through the low's centre. Neither line ever
@@ -58,38 +69,51 @@ systems, and couples the rest of the world to it:
   (`EllipseGeometry.RadiusToward`, accounting for `RadiusMinor`/`Orientation`) traced across a wide arc
   (`FrontComputer.BuildLeadingEdgeArc`, ±`ArcHalfAngle` around its own bias angle — a cap hugging the whole
   front-facing side of the low), with that boundary radius scaled outward by ITS OWN reach
-  (`WarmFrontReach`/`ColdFrontReach` respectively) — nothing more. Two earlier approaches were tried and
-  discarded: an explicit Bezier JOIN connecting a front's curve to a neighbouring low's, which could
+  (`WarmFrontReach`/`ColdFrontReach` respectively) when the cell is ISOLATED. When it meaningfully overlaps
+  another significant cell (`FrontComputer.HasSignificantOverlap`, a plain distance-vs-combined-radius
+  check), the single-cell ellipse would no longer match the true (summed) field — that case instead traces
+  the ACTUAL combined pressure field with marching squares over a small LOCAL grid around the overlapping
+  pair (`FrontComputer.BuildFrontLineViaOverlap`, `Utils/MarchingSquares.cs`), at the level
+  `|Strength| · exp(-reach²)` (equivalent to the analytic radius-scaling — the two agree exactly at
+  reach = 1), restricted to the same bias-angle wedge and chained into one polyline
+  (`MarchingSquares.ChainSegments`) since front lines need arc-length ordering for their decorations.
+  Isolated systems (the common case, given the low `MaxActiveCells` cap and spawn logic that already keeps
+  new cells apart) are unaffected by this path. Three earlier approaches were tried and discarded before
+  landing here: an explicit Bezier JOIN connecting a front's curve to a neighbouring low's, which could
   self-intersect or collapse to near-zero length when several systems sat close together (rendering as
-  tiny, wrong-colored blobs); and, once cells grew to synoptic scale, a free march trailing outward from
-  the arc's ends (gently deflected by nearby cells' background pressure gradient) plus a sine "wobble" for
-  organic texture, which read as jagged/noisy rather than a smooth boundary at that size. Both were removed
-  in favour of the plain elliptical arc — matching how a real synoptic chart traces a front along the
-  system's own boundary, not an arbitrary curve trailing away from it. Stationary and Occluded fronts still
-  render only a SINGLE line (a real stationary/occluded front is one boundary, not a warm/cold pair),
-  picking their bias angle FROM a nearby cell's direction (bearing-to-neighbour / catch-direction
-  respectively) but never drawing an explicit connecting curve to it. `WindField.StormBiasAt` and
-  `FrontRegimeBiasAt` bias precipitation/storm-intensity toward EXACTLY the same edges each low's front
-  lines actually draw — occluded: the single catch/equatorward axis; stationary: bearing to its nearest
-  other significant cell; moving: both the leading/warm and trailing/cold axes from the shared
-  `WindField.MovingFrontAngles` (also what `FrontComputer` calls to draw the two lines) — rather than an
-  independently-chosen geography split that can silently drift out of sync with what's drawn (as the old,
-  purely poleward/equatorward convention did once fronts switched to leading/trailing a low's own
-  direction of travel). `StormBiasAt`'s along-axis falloff is a smooth (not hard-clamped) ramp
-  (`SmoothPositive`) scaled by cell radius, so precipitation doesn't crease sharply exactly through a low's
-  centre — highs contribute nothing to either function.
-- **Isobars** — rendered in the SAME layer as fronts (`FrontMapLayer`, not a separate map layer), computed
-  alongside markers/fronts in the same `FrontComputer.Compute` call. Unlike fronts (lows only), isobars are
-  drawn around EVERY significant cell, highs included — a real chart draws them around anticyclones too.
-  A single cell's own pressure contribution is exactly `Strength * exp(-norm2)`
-  (`WindField.CellPressureAt`), and `norm2 == 1` exactly at `EllipseGeometry.RadiusToward`'s boundary, so
-  the contour at any level `L < |Strength|` is that same ellipse uniformly scaled by
-  `sqrt(ln(|Strength| / L))` (`FrontComputer.BuildIsobarRing`) — no marching squares needed, and (like the
-  front-line arc) this ignores neighbouring cells' contribution to the shape. Rings are spaced at a FIXED
-  absolute pressure step (`FrontComputer.IsobarStep`), real-chart style: a weak system shows one or two
-  widely-spaced rings, a strong one shows many tightly-packed ones — that density variation is a feature,
-  not something to normalize away. `FrontMapLayer` draws them first/furthest back (faint, alpha fading per
-  ring outward from the innermost) so they read as background context behind the front lines/markers.
+  tiny, wrong-colored blobs); a free march trailing outward from the arc's ends (gently deflected by nearby
+  cells' background pressure gradient) plus a sine "wobble" for organic texture, which read as jagged/noisy
+  once cells grew to synoptic scale; and even the plain analytic arc alone stopped being enough once two
+  systems could sit close enough to genuinely interact, which is what the marching-squares fallback now
+  handles. Stationary and Occluded fronts still render only a SINGLE line (a real stationary/occluded front
+  is one boundary, not a warm/cold pair), picking their bias angle FROM a nearby cell's direction
+  (bearing-to-neighbour / catch-direction respectively) but never drawing an explicit connecting curve to
+  it — and go through the same isolated/overlap dispatch as the Warm/Cold case. `WindField.FrontRegimeBiasAt`
+  weights precipitation-TYPE intensity (occluded/cold/warm/stationary) toward EXACTLY the same
+  leading/trailing axes each low's front lines actually draw (`WindField.MovingFrontAngles`, also what
+  `FrontComputer` calls to draw the two lines) — occluded: the single catch/equatorward axis; stationary:
+  bearing to its nearest other significant cell; moving: both the leading/warm and trailing/cold axes —
+  rather than an independently-chosen geography split that can silently drift out of sync with what's
+  drawn (as the old, purely poleward/equatorward convention did once fronts switched to leading/trailing a
+  low's own direction of travel). See "Weather" above for how that regime weighting actually feeds into
+  precipitation (the per-cell weather-noise texture, not a smooth directional push).
+- **Isobars** — rendered in the SAME layer as fronts (`FrontMapLayer`, not a separate map layer), but
+  computed separately from markers/fronts (`FrontMapLayer.ComputeIsobars`, not `FrontComputer.Compute`)
+  since — unlike the front lines' per-cell geometry — isobars are a whole-viewport visualization with no
+  single-cell analytic shortcut available in the first place: they're traced unconditionally via marching
+  squares (`Utils/MarchingSquares.cs`) over the ACTUAL combined pressure field
+  (`WindField.CellPressureAt`, cells only, matching the front lines' own convention of ignoring the
+  terrain-thermal baseline), sampled across the whole visible viewport on a grid coarsened exactly like
+  `DopplerRadarMapLayer`'s own grid (fixed base step, doubled whenever the visible area would exceed a
+  cell budget) so resolution scales down automatically when zoomed out. Unlike fronts (lows only), isobars
+  are drawn around EVERY significant cell, highs included — a real chart draws them around anticyclones
+  too — since both signs are traced at each level. Levels are spaced at a FIXED absolute pressure step
+  (`FrontMapLayer.IsobarStep`), real-chart style: a weak system shows one or two widely-spaced rings, a
+  strong one shows many tightly-packed ones — that density variation is a feature, not something to
+  normalize away. Raw marching-squares segments are drawn directly (no chaining into ordered polylines,
+  unlike overlapping front lines) since isobars have no decorations/symbols placed along arc length.
+  `FrontMapLayer` draws them first/furthest back (faint, alpha fading per ring outward from the innermost)
+  so they read as background context behind the front lines/markers.
 - **Front reach** — each low's cold and warm sides carry an independent radial reach multiplier
   (`PressureCell.ColdFrontReach`/`WarmFrontReach`, start at 1) grown every hour in `WindFieldSimulation.ApplyOcclusion`
   — cold faster (`ColdReachGrowthPerHour`) than warm (`WarmReachGrowthPerHour`) at the base rate, since real

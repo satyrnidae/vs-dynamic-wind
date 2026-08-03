@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Cairo;
 using DynamicWind.Config;
+using DynamicWind.WindSystem;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
@@ -25,12 +26,12 @@ namespace DynamicWind.Client.MapLayers;
 /// core ramps through yellow/orange to red — so the overlay reads as "mostly green, red only at the
 /// epicentre" instead of painting the whole rain field hot. (An earlier logarithmic curve did the
 /// opposite — it lifted faint rain up toward red, turning entire cloud areas red — which is why this is a
-/// power curve, not a log.) Cells cold enough for vanilla to render snow instead of rain (client climate
-/// temperature below <see cref="SnowThresholdTemp"/>, matching vanilla's own default snow/rain split) use
-/// a separate blue → purple ramp instead — read via <c>NowValues</c> where the chunk is loaded, falling
-/// back to the yearly-average <c>WorldGenValues</c> climate map elsewhere (radar range can exceed the
-/// loaded/view distance on a zoomed-out world map), so far cells still get a reasonable rain-vs-snow read
-/// instead of silently defaulting to rain. WORLD MAP ONLY (skips the minimap HUD, like the legend below).
+/// power curve, not a log.) Cells cold enough to probably be snow instead of rain use a separate
+/// blue → purple ramp instead — decided by <see cref="EstimateIsSnow"/>, a standalone climate estimate
+/// (season + hemisphere + latitude) rather than sampling the real block climate at all: <c>GetClimateAt</c>
+/// needs the chunk loaded to give a meaningful (not garbage/default) answer, which the radar's scan range
+/// routinely exceeds on a zoomed-out world map, so it's not a usable data source for this at any distance.
+/// WORLD MAP ONLY (skips the minimap HUD, like the legend below).
 /// A static key (<see cref="BuildLegendTexture"/>, baked once as a Cairo texture) is pinned to the
 /// bottom-right corner of the map, drawn above every other overlay this mod adds to the world map so nothing
 /// (e.g. the wind arrows) can render over it; toggle the whole layer in the map legend.
@@ -44,6 +45,15 @@ public class DopplerRadarMapLayer : DynamicWindWorldMapLayerBase
     private const double RampFullPrecip = 0.9;  // precip level mapped to the red (storm-core) end
     private const double RampExponent = 2.0;    // >1 keeps light/edge rain green; only intense precip → red
     private const float SnowThresholdTemp = 4f; // °C; matches vanilla WeatherDataSnapshot.snowThresholdTemp default
+
+    // Standalone rain-vs-snow climate estimate (see EstimateIsSnow): a rough real-world temperature curve
+    // built purely from season + hemisphere + latitude, with no block/chunk data at all, so it works
+    // identically at any distance instead of needing the chunk loaded. Not meant to reproduce vanilla's
+    // actual worldgen climate exactly — just "would this probably be cold enough for snow right now".
+    private const double SnowEquatorTemp = 27.0;    // °C — approx. average equatorial temperature, all year
+    private const double SnowPoleTempSwing = 55.0;  // °C — how much colder the poles average vs. the equator
+    private const double SnowSeasonalSwing = 18.0;  // °C — peak seasonal swing at full poleward-ness; tapers to ~0 at the equator
+    private const double SnowSummerPeakRel = 0.59725; // matches TerrainThermal/WindFieldSimulation's own SummerPeakRel
 
     private static readonly Vec4f LightGreen = Rgb(0x86, 0xF4, 0x68);
     private static readonly Vec4f MedGreen = Rgb(0x3C, 0x93, 0x25);
@@ -278,22 +288,37 @@ public class DopplerRadarMapLayer : DynamicWindWorldMapLayerBase
                 if (norm > 1) norm = 1;
                 double t = Math.Pow(norm, RampExponent);
 
-                var pos = new BlockPos((int)cx, (int)playerY, (int)cz, 0);
-                // GetClimateAt returns a plain (non-nullable) ClimateCondition — it can't return null, so
-                // a "?? fallback" never actually triggers. NowValues silently reads garbage/default data
-                // for a position whose chunk isn't loaded (RadarRange can exceed the loaded/view distance
-                // on a zoomed-out world map), which always evaluated as "not snow" there. Explicitly check
-                // whether the chunk is loaded and pick WorldGenValues (the yearly-average climate map,
-                // available everywhere — same fix TerrainHumidity uses for the same reason) when it isn't.
-                bool chunkLoaded = capi.World.BlockAccessor.GetChunkAtBlockPos(pos) != null;
-                ClimateCondition cc = chunkLoaded
-                    ? capi.World.BlockAccessor.GetClimateAt(pos, EnumGetClimateMode.NowValues, th)
-                    : capi.World.BlockAccessor.GetClimateAt(pos, EnumGetClimateMode.WorldGenValues, 0.0);
-                bool isSnow = cc.Temperature < SnowThresholdTemp;
+                bool isSnow = EstimateIsSnow(cx, cz);
                 Vec4f color = RampColor(isSnow ? SnowStops : RainStops, (float)t, (float)(0.3 + 0.5 * t));
                 cells.Add(new Cell { X = cx, Z = cz, Color = color });
             }
         }
+    }
+
+    /// <summary>
+    /// Standalone "would this probably be cold enough for snow right now" estimate — season + hemisphere
+    /// + closeness to a pole/equator, no block/chunk data at all (see the class remarks for why
+    /// <c>GetClimateAt</c> isn't usable here). <see cref="WindField.LatitudeFunc"/> gives real climate
+    /// latitude (0 = equator, 1 = pole, already |·|-clamped — see its own callers in
+    /// <c>WindFieldSimulation.ComputeAirMassTemp</c>); <c>Calendar.GetSeasonRel</c> is hemisphere-aware on
+    /// its own (a Southern-hemisphere position already reads its OWN winter as winter), so no separate
+    /// hemisphere flip is needed on top of it. The approximate temperature curve: warm year-round at the
+    /// equator, colder toward the poles, with a seasonal swing that itself grows toward the poles (real
+    /// climate: the equator barely varies by season; high latitudes swing widely) and peaks at
+    /// <see cref="SnowSummerPeakRel"/> (matching <c>TerrainThermal</c>/<c>WindFieldSimulation</c>'s own
+    /// seasonal-warmth convention) — snow if that estimate falls below <see cref="SnowThresholdTemp"/>.
+    /// </summary>
+    private bool EstimateIsSnow(double x, double z)
+    {
+        WindField? field = DynamicWindRuntime.ClientField;
+        double poleward = field?.LatitudeFunc != null ? GameMath.Clamp((float)Math.Abs(field.LatitudeFunc(z)), 0f, 1f) : 0.5f;
+
+        var pos = new BlockPos((int)x, 0, (int)z, 0);
+        float seasonRel = capi!.World.Calendar.GetSeasonRel(pos); // hemisphere-aware
+        double seasonWarmth = Math.Cos(2.0 * Math.PI * (seasonRel - SnowSummerPeakRel)); // +1 midsummer, -1 midwinter
+
+        double approxTemp = SnowEquatorTemp - poleward * SnowPoleTempSwing + seasonWarmth * SnowSeasonalSwing * poleward;
+        return approxTemp < SnowThresholdTemp;
     }
 
     private static Vec4f RampColor(Vec4f[] stops, float t, float alpha)

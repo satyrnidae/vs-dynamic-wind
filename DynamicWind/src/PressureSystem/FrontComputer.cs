@@ -25,21 +25,6 @@ public struct FrontMarker
     public float Orientation;
 }
 
-/// <summary>A single isobar (constant-pressure contour) ring around one pressure cell. Since a lone
-/// cell's own pressure contribution is exactly <c>Strength * exp(-norm2)</c> (see
-/// <see cref="WindField.CellPressureAt(double,double,double,int)"/>) and <c>norm2 == 1</c> exactly at
-/// <see cref="Utils.EllipseGeometry.RadiusToward(PressureCell,double,double)"/>'s own boundary, the
-/// contour at any pressure level below the cell's peak strength is just that same ellipse uniformly
-/// scaled — see <see cref="FrontComputer.BuildIsobarRing"/>. Like the front-line arc, this ignores
-/// neighbouring cells' contribution to the shape (a single-dominant-cell approximation).</summary>
-public struct IsobarRing
-{
-    public Vec2d[] Points; // closed loop (first point == last point)
-    public bool IsLow;
-    public float Level;      // pressure magnitude this ring represents (always positive)
-    public int RingIndex;    // 0 = innermost (highest |pressure|) ring for this cell
-}
-
 /// <summary>
 /// A weather front for one LOW pressure system (highs carry no fronts — see FrontComputer). Every front —
 /// Warm/Cold (a moving low's SINGLE front line, poleward for a warm-natured low or equatorward for a
@@ -110,23 +95,25 @@ public static class FrontComputer
     private const double ArcHalfAngle = 50.0 * Math.PI / 180.0; // half-span of the leading-edge arc
     private const int ArcStepCount = 24;                        // arc sample steps (ArcStepCount+1 points)
 
-    // Isobars: real-chart style — a FIXED absolute pressure step, so a weak system shows a ring or two and
-    // a strong one shows many tightly-packed rings (that density variation is the point, same as a real
-    // surface chart, not something to normalize away). A single cell's own contribution is exactly
-    // Strength * exp(-norm2) (see WindField.CellPressureAt) and norm2 == 1 exactly at
-    // EllipseGeometry.RadiusToward's boundary, so the contour at level L < |Strength| is that same ellipse
-    // scaled by sqrt(ln(|Strength| / L)) — see BuildIsobarRing. Applies to EVERY significant cell (highs
-    // included), unlike fronts (lows only) — a real chart draws isobars around anticyclones too.
-    private const double IsobarStep = 0.2;
-    private const int MaxIsobarsPerCell = 12; // safety cap for a near-max-strength cell (e.g. a heat/cold wave)
-    private const int IsobarRingSteps = 48;   // sample points around the full closed ring
+    // Overlap-aware fallback: the single-cell analytic arc above ignores every OTHER cell's contribution
+    // to the pressure field, which is exact when systems are isolated but wrong once two footprints
+    // genuinely overlap (the real combined field pinches/merges between them, not two ellipses crossing
+    // through each other). When overlap is detected, trace the ACTUAL combined field
+    // (WindField.CellPressureAt, summed over every cell) with marching squares instead — see
+    // BuildFrontLine/BuildFrontLineViaOverlap. Isolated systems (by far the common case, given the low
+    // MaxActiveCells cap and spawn logic that already keeps new cells apart) are unaffected: this path
+    // only engages when it's actually needed.
+    private const double OverlapDistanceFactor = 1.3;   // × (radius_i + radius_j) — overlap trigger threshold
+    private const int OverlapGridResolution = 64;        // grid divisions along the longer axis of the sampled box
+    private const int OverlapGridMaxCells = 6000;        // safety cap on total grid points
+    private const double OverlapBoxMarginFactor = 1.5;   // × own radius — margin around a lone cell's box
+    private const double OverlapWedgeMaxDistFactor = 3.0; // × own radius — discard traced segments farther than this
+    private const double OverlapChainMergeStepFactor = 0.6; // × grid step — endpoint-merge tolerance for chaining
 
-    public static void Compute(WindField field, double totalHours, List<FrontMarker> markers, List<FrontLine> lines,
-        List<IsobarRing> isobars)
+    public static void Compute(WindField field, double totalHours, List<FrontMarker> markers, List<FrontLine> lines)
     {
         markers.Clear();
         lines.Clear();
-        isobars.Clear();
         lock (field.CellsLock)
         {
             if (field.Cells.Count == 0) return;
@@ -151,21 +138,6 @@ public static class FrontComputer
                     X = ex[i], Z = ez[i], IsHigh = !c.IsLow,
                     Radius = c.Radius, RadiusMinor = c.RadiusMinor, Orientation = c.Orientation
                 });
-
-                float absStrength = Math.Abs(c.Strength);
-                for (int ring = 0; ring < MaxIsobarsPerCell; ring++)
-                {
-                    double level = (ring + 1) * IsobarStep;
-                    if (level >= absStrength) break;
-                    double scale = Math.Sqrt(Math.Log(absStrength / level));
-                    isobars.Add(new IsobarRing
-                    {
-                        Points = BuildIsobarRing(c, ex[i], ez[i], scale),
-                        IsLow = c.IsLow,
-                        Level = (float)level,
-                        RingIndex = ring
-                    });
-                }
 
                 significantIndices.Add(i);
                 if (!c.IsLow) continue;
@@ -198,7 +170,7 @@ public static class FrontComputer
                     double occPoleAngle = field.PolewardZSign(ez[i]) > 0 ? Math.PI / 2.0 : -Math.PI / 2.0;
                     double coldAngle = occPoleAngle + Math.PI; // equatorward — the catching side
 
-                    Vec2d[] occPts = BuildLeadingEdgeArc(c, ex[i], ez[i], coldAngle, c.ColdFrontReach);
+                    Vec2d[] occPts = BuildFrontLine(field, totalHours, elapsed, i, c, ex[i], ez[i], coldAngle, c.ColdFrontReach);
 
                     // Own travel direction where it's meaningful; an occluded low can be near-stationary, so
                     // fall back to the catch direction itself rather than dividing by a near-zero speed.
@@ -223,7 +195,7 @@ public static class FrontComputer
                         : fallbackAngle;
                     float statReach = (c.ColdFrontReach + c.WarmFrontReach) * 0.5f;
 
-                    Vec2d[] statPts = BuildLeadingEdgeArc(c, ex[i], ez[i], bearingAngle, statReach);
+                    Vec2d[] statPts = BuildFrontLine(field, totalHours, elapsed, i, c, ex[i], ez[i], bearingAngle, statReach);
 
                     double relVelX = neighbour >= 0 ? field.Cells[neighbour].VelX - c.VelX : Math.Cos(bearingAngle);
                     double relVelZ = neighbour >= 0 ? field.Cells[neighbour].VelZ - c.VelZ : Math.Sin(bearingAngle);
@@ -241,15 +213,15 @@ public static class FrontComputer
                 // (warm leads AND tilts poleward — where warm air overruns; cold trails AND tilts
                 // equatorward — where cold air digs in), giving the classic "comma"/wave shape rather than
                 // two lines sitting exactly opposite each other — see WindField.MovingFrontAngles, the
-                // single source of truth for this split (also used by StormBiasAt/FrontRegimeBiasAt so
-                // precipitation intensifies along these exact same two edges, not some independently
-                // drifting geography split). `WarmFrontReach`/`ColdFrontReach` (which already grow at
-                // different rates — see "Front reach") give the two sides their own, independently
-                // evolving extent.
+                // single source of truth for this split (also used by FrontRegimeBiasAt so precipitation
+                // intensity-type weighting lines up with these exact same two edges, not some
+                // independently drifting geography split). `WarmFrontReach`/`ColdFrontReach` (which
+                // already grow at different rates — see "Front reach") give the two sides their own,
+                // independently evolving extent.
                 field.MovingFrontAngles(c.VelX, c.VelZ, ez[i], out double waveWarmAngle, out double waveColdAngle);
 
-                Vec2d[] warmPts = BuildLeadingEdgeArc(c, ex[i], ez[i], waveWarmAngle, c.WarmFrontReach);
-                Vec2d[] coldPts = BuildLeadingEdgeArc(c, ex[i], ez[i], waveColdAngle, c.ColdFrontReach);
+                Vec2d[] warmPts = BuildFrontLine(field, totalHours, elapsed, i, c, ex[i], ez[i], waveWarmAngle, c.WarmFrontReach);
+                Vec2d[] coldPts = BuildFrontLine(field, totalHours, elapsed, i, c, ex[i], ez[i], waveColdAngle, c.ColdFrontReach);
 
                 double refX = c.VelX / speed, refZ = c.VelZ / speed; // speed >= StationarySpeed here, never zero
 
@@ -337,21 +309,133 @@ public static class FrontComputer
         return pts;
     }
 
-    /// <summary>Samples <see cref="IsobarRingSteps"/>+1 points around a cell's own elliptical footprint,
-    /// scaled by <paramref name="scale"/>, closing the loop (first point == last). See
-    /// <see cref="IsobarRing"/> for the derivation of <paramref name="scale"/> from a target pressure
-    /// level.</summary>
-    private static Vec2d[] BuildIsobarRing(PressureCell cell, double ex, double ez, double scale)
+    /// <summary>Builds one front's line, picking the cheap single-cell analytic arc
+    /// (<see cref="BuildLeadingEdgeArc"/>) when <paramref name="cell"/> is isolated, or the marching-squares
+    /// trace of the ACTUAL combined field (<see cref="BuildFrontLineViaOverlap"/>) when it meaningfully
+    /// overlaps another significant cell — see <see cref="OverlapDistanceFactor"/>.</summary>
+    private static Vec2d[] BuildFrontLine(WindField field, double totalHours, double elapsed, int selfIndex,
+        PressureCell cell, double cx, double cz, double biasAngle, float reach)
     {
-        var pts = new Vec2d[IsobarRingSteps + 1];
-        for (int s = 0; s <= IsobarRingSteps; s++)
+        double ownRadius = Math.Max(cell.Radius, cell.RadiusMinor);
+        if (HasSignificantOverlap(field, selfIndex, cx, cz, ownRadius, elapsed))
+            return BuildFrontLineViaOverlap(field, totalHours, elapsed, selfIndex, cell, cx, cz, ownRadius, biasAngle, reach);
+        return BuildLeadingEdgeArc(cell, cx, cz, biasAngle, reach);
+    }
+
+    /// <summary>True if any OTHER significant cell's footprint sits close enough to <paramref name="cell"/>
+    /// that the single-cell analytic arc would no longer match the true (summed) pressure field — a plain
+    /// distance-between-centres check against the sum of the two cells' own (major-axis) radii, scaled by
+    /// <see cref="OverlapDistanceFactor"/>. Deliberately approximate (ellipse orientation isn't accounted
+    /// for): this only decides whether to pay for the more expensive marching-squares path, not the traced
+    /// geometry itself.</summary>
+    private static bool HasSignificantOverlap(WindField field, int selfIndex, double cx, double cz, double ownRadius, double elapsed)
+    {
+        for (int j = 0; j < field.Cells.Count; j++)
         {
-            double angle = 2.0 * Math.PI * s / IsobarRingSteps;
-            double dirX = Math.Cos(angle), dirZ = Math.Sin(angle);
-            double r = EllipseGeometry.RadiusToward(cell, dirX, dirZ) * scale;
-            pts[s] = new Vec2d(ex + dirX * r, ez + dirZ * r);
+            if (j == selfIndex) continue;
+            PressureCell o = field.Cells[j];
+            if (Math.Abs(o.Strength) < MarkerMinStrength) continue;
+            double ox = o.X + o.VelX * elapsed, oz = o.Z + o.VelZ * elapsed;
+            double dx = ox - cx, dz = oz - cz;
+            double oRadius = Math.Max(o.Radius, o.RadiusMinor);
+            double threshold = (ownRadius + oRadius) * OverlapDistanceFactor;
+            if (dx * dx + dz * dz < threshold * threshold) return true;
         }
-        return pts;
+        return false;
+    }
+
+    /// <summary>
+    /// Traces this front's line from the ACTUAL combined pressure field (every cell, not just
+    /// <paramref name="cell"/> alone) via <see cref="MarchingSquares"/>, for the case where a nearby
+    /// system's footprint would otherwise make the single-cell analytic ellipse visibly wrong (crossing
+    /// through the other system instead of the real merged/pinched boundary between them).
+    ///
+    /// The target LEVEL is derived the same way the analytic arc's radius-scaling works: scaling a single
+    /// cell's own boundary radius by <paramref name="reach"/> is equivalent to contouring at
+    /// <c>|Strength| * exp(-reach²)</c> (since the elliptical falloff's <c>norm2</c> at radius×reach is
+    /// exactly reach²) — so reach still controls how far out the front sits, just expressed as a pressure
+    /// level instead of a radius multiplier, and both formulas agree exactly at reach = 1.
+    ///
+    /// A LOCAL grid (this cell's own footprint plus any cell it overlaps, not the whole map) is sampled
+    /// once and marched at that level; raw segments are then restricted to a wedge around
+    /// <paramref name="biasAngle"/> (matching <see cref="ArcHalfAngle"/>) and within
+    /// <see cref="OverlapWedgeMaxDistFactor"/>×radius of <paramref name="cell"/>'s own centre, so an
+    /// unrelated contour elsewhere in the sampled box (e.g. the far side of the overlapping neighbour) is
+    /// never picked up. The filtered segments are chained into one polyline
+    /// (<see cref="MarchingSquares.ChainSegments"/>) and the longest chain is returned — falling back to
+    /// the analytic arc if the grid was too coarse to catch anything at all in the wedge.
+    /// </summary>
+    private static Vec2d[] BuildFrontLineViaOverlap(WindField field, double totalHours, double elapsed, int selfIndex,
+        PressureCell cell, double cx, double cz, double ownRadius, double biasAngle, float reach)
+    {
+        double absStrength = Math.Abs(cell.Strength);
+        double signedLevel = Math.Sign(cell.Strength) * absStrength * Math.Exp(-(double)reach * reach);
+
+        // Local sample box: this cell's own footprint, expanded to include any cell it overlaps (so the
+        // merged/pinched boundary between them is fully captured, not cut off at the box edge).
+        double minX = cx - ownRadius * OverlapBoxMarginFactor, maxX = cx + ownRadius * OverlapBoxMarginFactor;
+        double minZ = cz - ownRadius * OverlapBoxMarginFactor, maxZ = cz + ownRadius * OverlapBoxMarginFactor;
+        for (int j = 0; j < field.Cells.Count; j++)
+        {
+            if (j == selfIndex) continue;
+            PressureCell o = field.Cells[j];
+            if (Math.Abs(o.Strength) < MarkerMinStrength) continue;
+            double ox = o.X + o.VelX * elapsed, oz = o.Z + o.VelZ * elapsed;
+            double oRadius = Math.Max(o.Radius, o.RadiusMinor);
+            double dx = ox - cx, dz = oz - cz;
+            if (dx * dx + dz * dz >= (ownRadius + oRadius) * OverlapDistanceFactor * (ownRadius + oRadius) * OverlapDistanceFactor) continue;
+            minX = Math.Min(minX, ox - oRadius); maxX = Math.Max(maxX, ox + oRadius);
+            minZ = Math.Min(minZ, oz - oRadius); maxZ = Math.Max(maxZ, oz + oRadius);
+        }
+
+        double spanX = maxX - minX, spanZ = maxZ - minZ;
+        double step = Math.Max(spanX, spanZ) / OverlapGridResolution;
+        if (step < 1.0) step = 1.0;
+        while ((spanX / step) * (spanZ / step) > OverlapGridMaxCells) step *= 1.5;
+
+        int nx = (int)Math.Ceiling(spanX / step) + 2;
+        int nz = (int)Math.Ceiling(spanZ / step) + 2;
+        var values = new float[nx * nz];
+        for (int j = 0; j < nz; j++)
+            for (int i = 0; i < nx; i++)
+                values[j * nx + i] = (float)field.CellPressureAt(minX + i * step, minZ + j * step, totalHours);
+
+        List<MarchingSquares.Segment> rawSegs = MarchingSquares.Trace(values, nx, nz, minX, minZ, step, signedLevel);
+
+        double maxDist = ownRadius * OverlapWedgeMaxDistFactor;
+        var filtered = new List<MarchingSquares.Segment>(rawSegs.Count);
+        foreach (MarchingSquares.Segment seg in rawSegs)
+        {
+            double mx = (seg.A.X + seg.B.X) * 0.5, mz = (seg.A.Y + seg.B.Y) * 0.5;
+            double dx = mx - cx, dz = mz - cz;
+            if (dx * dx + dz * dz > maxDist * maxDist) continue;
+            double angle = Math.Atan2(dz, dx);
+            double diff = Math.Atan2(Math.Sin(angle - biasAngle), Math.Cos(angle - biasAngle));
+            if (Math.Abs(diff) > ArcHalfAngle) continue;
+            filtered.Add(seg);
+        }
+        if (filtered.Count == 0) return BuildLeadingEdgeArc(cell, cx, cz, biasAngle, reach);
+
+        List<Vec2d[]> chains = MarchingSquares.ChainSegments(filtered, step * OverlapChainMergeStepFactor);
+        Vec2d[] best = chains[0];
+        double bestLen = ChainLength(best);
+        for (int k = 1; k < chains.Count; k++)
+        {
+            double len = ChainLength(chains[k]);
+            if (len > bestLen) { bestLen = len; best = chains[k]; }
+        }
+        return best;
+    }
+
+    private static double ChainLength(Vec2d[] pts)
+    {
+        double len = 0;
+        for (int i = 1; i < pts.Length; i++)
+        {
+            double dx = pts[i].X - pts[i - 1].X, dz = pts[i].Y - pts[i - 1].Y;
+            len += Math.Sqrt(dx * dx + dz * dz);
+        }
+        return len;
     }
 
     /// <summary>Picks whichever ±90° perpendicular of a (normalized) tangent best aligns with

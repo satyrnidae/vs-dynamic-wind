@@ -150,9 +150,9 @@ public class WindField
     public double ThermalStaticScale = 1.0;
 
     /// <summary>|velocity| (blocks/hour) below which a low is treated as "stationary" rather than a
-    /// moving open-wave system — shared by <see cref="FrontRegimeBiasAt"/>, <see cref="StormBiasAt"/>,
-    /// and <see cref="DynamicWind.PressureSystem.FrontComputer"/> (which renders the closed encircling
-    /// contour for exactly this regime), so all three agree on the same threshold.</summary>
+    /// moving open-wave system — shared by <see cref="FrontRegimeBiasAt"/> and
+    /// <see cref="DynamicWind.PressureSystem.FrontComputer"/> (which renders the closed encircling
+    /// contour for exactly this regime), so both agree on the same threshold.</summary>
     public const double StationarySpeed = 60.0;
 
     /// <summary>Tilt (radians) of a moving low's warm/cold front bias angle off the pure travel/anti-travel
@@ -166,8 +166,8 @@ public class WindField
     /// <summary>Leading (warm) and trailing (cold) bias angles for a MOVING open-wave low — see
     /// <see cref="WaveFrontTiltAngle"/>. The single source of truth for this split, called by both
     /// <see cref="DynamicWind.PressureSystem.FrontComputer"/> (to draw the two front lines) and this
-    /// class's own <see cref="StormBiasAt"/>/<see cref="FrontRegimeBiasAt"/> (to bias precipitation/storm
-    /// intensity toward the same two edges), so they can never drift out of sync with each other again.</summary>
+    /// class's own <see cref="FrontRegimeBiasAt"/> (to weight precipitation-type intensity toward the same
+    /// two edges), so they can never drift out of sync with each other again.</summary>
     public void MovingFrontAngles(double velX, double velZ, double z, out double warmAngle, out double coldAngle)
     {
         double travelAngle = Math.Atan2(velZ, velX);
@@ -232,6 +232,31 @@ public class WindField
         double a = Math.Sin(x * 0.0005 * freq + totalHours * 0.012 * freq);
         double b = Math.Sin(z * 0.0009 * freq - totalHours * 0.020 * freq);
         double c = Math.Sin((x + z) * 0.0004 * freq + totalHours * 0.010 * freq);
+        return (a + b + c) / 3.0;
+    }
+
+    // Weather texture: noticeably denser (higher spatial frequency) than Meander's own world-scale
+    // wander above — a pressure system's own weather noise map is meant to show internal texture (rain
+    // bands, patchy clearing) at a finer grain than the broad, slowly-evolving background pattern, the
+    // same way real radar imagery shows fine structure inside a synoptic-scale system.
+    private const double WeatherNoiseFreqX = 0.006;
+    private const double WeatherNoiseFreqZ = 0.008;
+    private const double WeatherNoiseFreqXZ = 0.005;
+    private const double WeatherNoiseTimeFreq = 0.05;
+
+    /// <summary>
+    /// A pressure cell's own organic weather-texture noise in [-1, 1] — see <see cref="WeatherNoiseFreqX"/>
+    /// remarks. Seeded per-cell by <see cref="PressureCell.BornTotalHours"/> (offsetting each sine's phase),
+    /// so different cells show different, uncorrelated texture instead of all lows/highs pulsing in
+    /// lockstep. Used by <c>WeatherCoupling</c> to add (for a low) or subtract (for a high) fine-grained
+    /// variation on top of vanilla's own broad rain-cloudness noise, rather than a smooth uniform push.
+    /// </summary>
+    public static double CellWeatherNoise(PressureCell cell, double x, double z, double totalHours)
+    {
+        double seed = cell.BornTotalHours;
+        double a = Math.Sin(x * WeatherNoiseFreqX + seed * 7.3 + totalHours * WeatherNoiseTimeFreq);
+        double b = Math.Sin(z * WeatherNoiseFreqZ - seed * 4.1 - totalHours * WeatherNoiseTimeFreq * 1.3);
+        double c = Math.Sin((x + z) * WeatherNoiseFreqXZ + seed * 2.9 + totalHours * WeatherNoiseTimeFreq * 0.7);
         return (a + b + c) / 3.0;
     }
 
@@ -490,123 +515,13 @@ public class WindField
         }
     }
 
-    // Minimum |Strength| for a cell to count as a "significant" neighbour for the Stationary-low bearing
-    // search below — mirrors FrontComputer.MarkerMinStrength (same significance bar as marker/front
-    // eligibility there).
-    private const float StormSignificantMinStrength = 0.15f;
-    // Softens StormBiasAt's along-axis half-plane cutoff (× cell radius) so forcing eases smoothly to zero
-    // across this width instead of creasing sharply exactly at the axis through the low's own centre — see
-    // SmoothPositive. Cell footprints are now large enough that a hard crease there reads as a visibly
-    // sharp edge in precipitation.
-    private const double StormBandSoftenFactor = 0.15;
-
-    /// <summary>
-    /// Extra storm-likelihood forcing at a position. Real fronts trail a LOW, not a high — a high is
-    /// fair-weather subsidence and contributes nothing here. The bias axis/axes for each low EXACTLY match
-    /// whichever front geometry <see cref="DynamicWind.PressureSystem.FrontComputer"/> actually draws for
-    /// it (occluded: the single catch/equatorward axis; stationary: bearing to its nearest other
-    /// significant cell; moving: BOTH the leading/warm and trailing/cold axes from
-    /// <see cref="MovingFrontAngles"/>) — so precipitation always intensifies right where the front lines
-    /// on the map actually are, not some independently-chosen geography split that can drift out of sync
-    /// with what's drawn (as the old, purely poleward/equatorward convention did once fronts switched to
-    /// leading/trailing the low's own direction of travel). Scaled by the cell's own
-    /// <see cref="PressureCell.StormLikelihood"/>; a moving low gets a synergy bonus near its own centre
-    /// where the warm and cold side biases overlap. Independent of <see cref="PressureAt(double,double,double)"/>;
-    /// meant to be added into the precipitation gate scaled by a caller-owned strength knob (see
-    /// WeatherCoupling).
-    /// </summary>
-    public double StormBiasAt(double x, double z, double totalHours)
-    {
-        lock (CellsLock)
-        {
-            double total = 0;
-            double elapsed = totalHours - AnchorHours;
-            for (int i = 0; i < Cells.Count; i++)
-            {
-                PressureCell c = Cells[i];
-                if (!c.IsLow || c.StormLikelihood <= 0f) continue; // highs are fair weather; no front bias
-
-                double cx = c.X + c.VelX * elapsed;
-                double cz = c.Z + c.VelZ * elapsed;
-                double dx = x - cx, dz = z - cz;
-                double falloff = Math.Exp(-EllipseGeometry.Norm2(c, dx, dz));
-                if (falloff < 1e-4) continue;
-
-                double soften = Math.Max(1.0, c.Radius) * StormBandSoftenFactor;
-
-                if (totalHours < c.OccludedUntilTotalHours)
-                {
-                    // Occluded: a single merged front on the catch (equatorward) side — see
-                    // FrontComputer's Occluded branch.
-                    double poleSign = PolewardZSign(cz);
-                    double catchAngle = (poleSign > 0 ? Math.PI / 2.0 : -Math.PI / 2.0) + Math.PI;
-                    double along = dx * Math.Cos(catchAngle) + dz * Math.Sin(catchAngle);
-                    total += SmoothPositive(along, soften) * falloff * c.StormLikelihood;
-                    continue;
-                }
-
-                double speed = Math.Sqrt(c.VelX * c.VelX + c.VelZ * c.VelZ);
-                if (speed < StationarySpeed)
-                {
-                    // Stationary: a single connecting line toward the nearest OTHER significant cell — see
-                    // FrontComputer's Stationary branch (FindNearestSignificantCell).
-                    double bearingAngle = FindNearestSignificantBearing(i, cx, cz, elapsed, PolewardZSign(cz));
-                    double along = dx * Math.Cos(bearingAngle) + dz * Math.Sin(bearingAngle);
-                    total += SmoothPositive(along, soften) * falloff * c.StormLikelihood;
-                    continue;
-                }
-
-                // Moving open-wave: BOTH the leading (warm) and trailing (cold) axes, exactly matching
-                // FrontComputer's dual front lines, with a synergy bonus near the centre where they overlap.
-                MovingFrontAngles(c.VelX, c.VelZ, cz, out double warmAngle, out double coldAngle);
-                double warmAlong = dx * Math.Cos(warmAngle) + dz * Math.Sin(warmAngle);
-                double coldAlong = dx * Math.Cos(coldAngle) + dz * Math.Sin(coldAngle);
-                double warm = SmoothPositive(warmAlong, soften) * falloff * c.StormLikelihood;
-                double cold = SmoothPositive(coldAlong, soften) * falloff * c.StormLikelihood;
-                total += warm + cold + 2.0 * Math.Min(warm, cold);
-            }
-            return total;
-        }
-    }
-
-    /// <summary>Smooth replacement for <c>Math.Max(0, x)</c>: converges to it for |x| much greater than
-    /// <paramref name="soften"/>, but eases through zero over a width of about <paramref name="soften"/>
-    /// instead of creasing sharply there (a plain Max has a derivative discontinuity at x=0).</summary>
-    private static double SmoothPositive(double x, double soften)
-        => 0.5 * (x + Math.Sqrt(x * x + soften * soften));
-
-    /// <summary>Bearing (radians) from low <paramref name="selfIndex"/> to its nearest OTHER significant
-    /// cell (any type) — the same neighbour <see cref="DynamicWind.PressureSystem.FrontComputer"/>'s
-    /// Stationary branch points its connecting line toward. Falls back to the plain poleward
-    /// (<paramref name="poleSign"/> &gt; 0) or equatorward direction if there's no other significant cell
-    /// at all.</summary>
-    private double FindNearestSignificantBearing(int selfIndex, double cx, double cz, double elapsed, double poleSign)
-    {
-        int best = -1;
-        double bestDist = double.MaxValue;
-        for (int j = 0; j < Cells.Count; j++)
-        {
-            if (j == selfIndex) continue;
-            PressureCell o = Cells[j];
-            if (Math.Abs(o.Strength) < StormSignificantMinStrength) continue;
-            double ox = o.X + o.VelX * elapsed, oz = o.Z + o.VelZ * elapsed;
-            double dist = Math.Sqrt((ox - cx) * (ox - cx) + (oz - cz) * (oz - cz));
-            if (dist < bestDist) { bestDist = dist; best = j; }
-        }
-        if (best < 0) return poleSign > 0 ? Math.PI / 2.0 : -Math.PI / 2.0;
-
-        PressureCell nb = Cells[best];
-        double nx = nb.X + nb.VelX * elapsed, nz = nb.Z + nb.VelZ * elapsed;
-        return Math.Atan2(nz - cz, nx - cx);
-    }
-
     /// <summary>
     /// Falloff+<see cref="PressureCell.StormLikelihood"/>-weighted share of nearby lows' influence at a
     /// position, bucketed by which weather REGIME each contributing low is currently in — Occluded (its
     /// cold front has caught its warm front), Stationary (near-zero own velocity), or Moving (split
-    /// Warm/Cold by real geography, same poleward/equatorward convention as <see cref="StormBiasAt"/>).
-    /// Lighter-weight than <see cref="StormBiasAt"/> (a single O(cells) pass, no neighbour-JOIN banding)
-    /// since it's meant to answer "what KIND of front is this" for intensity weighting, not to trace the
+    /// Warm/Cold by real geography, same leading/trailing convention <see cref="MovingFrontAngles"/> uses
+    /// for the front lines themselves). Meant to answer "what KIND of front is this" for intensity
+    /// weighting (see WeatherCoupling's per-cell weather-noise texture), not to trace the
     /// precise spatial extent of the storm band itself.
     /// </summary>
     public struct FrontRegimeBias

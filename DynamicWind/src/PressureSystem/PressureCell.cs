@@ -39,8 +39,9 @@ public class PressureCell
     /// <summary>Rolling storm-likelihood scalar in [0,1] for this front. Starts at a random value at
     /// spawn and slowly builds over the cell's lifetime (see WindFieldSimulation.Advect) until its cold
     /// front catches another pressure cell and it occludes (see WindFieldSimulation.ApplyOcclusion),
-    /// after which it drops hard — the storm winds down once occluded. Feeds
-    /// <see cref="DynamicWind.WindSystem.WindField.StormBiasAt"/>. Cells saved before this field existed deserialize it to the
+    /// after which it drops hard — the storm winds down once occluded. Gates whether this low's own
+    /// weather-noise texture contributes at all (see <c>WeatherCoupling</c>'s per-cell noise-map
+    /// mechanic). Cells saved before this field existed deserialize it to the
     /// protobuf default 0; WindFieldSimulation.Load migrates those to 1.0 (see the requirement that
     /// migrated cells default to full storm likelihood).</summary>
     public float StormLikelihood;
