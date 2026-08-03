@@ -11,7 +11,7 @@ namespace DynamicWind.Client.MapLayers;
 /// Shared plumbing for the client-side wind/weather map overlays (<see cref="WindArrowMapLayer"/>,
 /// <see cref="DopplerRadarMapLayer"/>, <see cref="FrontMapLayer"/>): the resample-cache timer, the
 /// world→screen projection helper, the standard shader-setup boilerplate, the world-map-only
-/// (not-minimap) guard, and an RGBA lerp helper.
+/// (not-minimap) guard, an RGBA lerp helper, and per-layer legend-toggle persistence.
 /// </summary>
 public abstract class DynamicWindWorldMapLayerBase : MapLayer
 {
@@ -23,7 +23,33 @@ public abstract class DynamicWindWorldMapLayerBase : MapLayer
     private double accum;
     private bool haveCache;
 
+    // The base MapLayer.Active property is purely in-memory (the world map dialog's legend checkbox just
+    // sets it directly — see WorldMapManager/GuiDialogWorldMap — with no persistence of its own, for
+    // vanilla layers either); a game restart otherwise always resets every layer back to whatever OnLoaded
+    // sets it to. RestoreActiveState/PersistActiveState round-trip it through a client setting instead, so
+    // toggling one of our layers off in the legend actually stays off next session.
+    private string ActiveSettingsKey => "dynamicwind-maplayer-active-" + LayerGroupCode;
+
     protected DynamicWindWorldMapLayerBase(ICoreAPI api, IWorldMapManager mapSink) : base(api, mapSink) { }
+
+    /// <summary>Sets <see cref="MapLayer.Active"/> from the previously-persisted client setting for this
+    /// layer, if any, falling back to <paramref name="configDefault"/> (the mod config's own
+    /// "visible by default" value) the first time this layer has ever been toggled. Call from
+    /// <c>OnLoaded</c> in place of assigning <c>Active</c> directly.</summary>
+    protected void RestoreActiveState(bool configDefault)
+    {
+        Active = api is ICoreClientAPI capi && capi.Settings.Bool.Exists(ActiveSettingsKey)
+            ? capi.Settings.Bool[ActiveSettingsKey]
+            : configDefault;
+    }
+
+    /// <summary>Persists the current <see cref="MapLayer.Active"/> value so it survives a game restart —
+    /// called whenever the world map dialog closes, which is when the legend checkboxes the user might
+    /// have just clicked actually take effect.</summary>
+    public override void OnMapClosedClient()
+    {
+        if (api is ICoreClientAPI capi) capi.Settings.Bool.Set(ActiveSettingsKey, Active, false);
+    }
 
     /// <summary>True if this GUI map element is the minimap HUD (snaps to the player), i.e. NOT the full world map.</summary>
     protected static bool IsMinimap(GuiElementMap mapElem) => fSnapToPlayer?.GetValue(mapElem) is bool snap && snap;

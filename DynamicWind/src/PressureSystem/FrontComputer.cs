@@ -8,12 +8,36 @@ namespace DynamicWind.PressureSystem;
 
 public enum FrontType { Cold, Warm, Stationary, Occluded, ColdOcclusion, WarmOcclusion }
 
-/// <summary>A pressure-system marker (the "H"/"L" letter) at a cell's current effective centre.</summary>
+/// <summary>A pressure-system marker (the "H"/"L" letter) at a cell's current effective centre. Carries
+/// the cell's own elliptical footprint (<see cref="Radius"/>/<see cref="RadiusMinor"/>/
+/// <see cref="Orientation"/>) so a renderer whose true centre has scrolled off-screen can clamp the
+/// marker to the system's own boundary (see <see cref="Utils.EllipseGeometry.RadiusToward(double,double,double,double,double)"/>)
+/// instead of placing it at an arbitrary on-screen position — the same boundary a front's own
+/// leading-edge arc traces (<see cref="FrontComputer.BuildLeadingEdgeArc"/>), so the icon never reads as
+/// further "ahead" than the system's actual influence reaches.</summary>
 public struct FrontMarker
 {
     public double X;
     public double Z;
     public bool IsHigh;
+    public float Radius;
+    public float RadiusMinor;
+    public float Orientation;
+}
+
+/// <summary>A single isobar (constant-pressure contour) ring around one pressure cell. Since a lone
+/// cell's own pressure contribution is exactly <c>Strength * exp(-norm2)</c> (see
+/// <see cref="WindField.CellPressureAt(double,double,double,int)"/>) and <c>norm2 == 1</c> exactly at
+/// <see cref="Utils.EllipseGeometry.RadiusToward(PressureCell,double,double)"/>'s own boundary, the
+/// contour at any pressure level below the cell's peak strength is just that same ellipse uniformly
+/// scaled — see <see cref="FrontComputer.BuildIsobarRing"/>. Like the front-line arc, this ignores
+/// neighbouring cells' contribution to the shape (a single-dominant-cell approximation).</summary>
+public struct IsobarRing
+{
+    public Vec2d[] Points; // closed loop (first point == last point)
+    public bool IsLow;
+    public float Level;      // pressure magnitude this ring represents (always positive)
+    public int RingIndex;    // 0 = innermost (highest |pressure|) ring for this cell
 }
 
 /// <summary>
@@ -29,11 +53,10 @@ public struct FrontMarker
 public struct FrontLine
 {
     public FrontType Type;
-    public double Seed;
     public float Strength;
 
-    // Open marched polyline, world-space, ordered outward from the low's elliptical LEADING EDGE (not its
-    // centre — see FrontComputer.MarchOrJoin/EllipseGeometry.RadiusToward).
+    // The low's own elliptical LEADING EDGE, world-space (not its centre) — see
+    // FrontComputer.BuildLeadingEdgeArc/EllipseGeometry.RadiusToward.
     public Vec2d[] Points;
     // Cumulative arc-length along Points (CumulativeLength[0] == 0, CumulativeLength[^1] == total length),
     // precomputed once alongside Points so SampleAt doesn't rebuild it on every call.
@@ -58,42 +81,52 @@ public struct FrontLine
 /// is stateful/side-dependent and was what made fronts jump on every reload).
 ///
 /// Only LOW cells carry fronts — a real high is fair-weather subsidence with no frontal boundary of its
-/// own. A moving low renders a SINGLE front line, chosen by its own <see cref="PressureCell.AirMassTemp"/>:
-/// a warm-natured low draws its warm front on the poleward side (where warm air overruns, advancing
-/// poleward); a cold-natured low draws its cold front on the equatorward side (where cold air digs in,
-/// advancing equatorward) — consistent with the poleward/equatorward advection bias AirMassTemp also
-/// drives (see WindFieldSimulation.Advect/AirMassBiasedAngle). Side is still split by real geography
-/// (<see cref="WindField.PolewardZSign"/>), not the system's own direction of travel. A near-stationary low instead renders one
-/// line toward its nearest significant neighbour — the "connecting line" a stationary front actually
-/// sits on — flagged Stationary, and a low mid-occlusion (see WindFieldSimulation.ApplyOcclusion) renders
-/// one line toward whatever pressure cell its cold front caught, flagged Occluded/ColdOcclusion/
-/// WarmOcclusion per <see cref="PressureCell.OcclusionKind"/>. Highs still get an H marker, just no front
-/// line. Markers (H/L) are emitted for every significant cell.
+/// own. A moving low renders the classic Norwegian-cyclone-model pair: BOTH a warm front (leading, ahead
+/// of the low's own direction of travel, tilted poleward — where warm air overruns) and a cold front
+/// (trailing, behind it, tilted equatorward — where cold air digs in), meeting at the low's own centre —
+/// see the MOVING branch of <see cref="Compute"/> and <see cref="WindField.PolewardZSign"/> for the
+/// geography split. A near-stationary low instead renders one line toward its nearest significant
+/// neighbour — the "connecting line" a stationary front actually sits on — flagged Stationary, and a low
+/// mid-occlusion (see WindFieldSimulation.ApplyOcclusion) renders one line toward whatever pressure cell
+/// its cold front caught, flagged Occluded/ColdOcclusion/WarmOcclusion per
+/// <see cref="PressureCell.OcclusionKind"/>. Highs still get an H marker, just no front line. Markers
+/// (H/L) are emitted for every significant cell.
 /// </summary>
 public static class FrontComputer
 {
     private const float MarkerMinStrength = 0.15f; // mark/draw systems down to this |strength|
     private const double StationarySpeed = WindField.StationarySpeed;
 
-    // Warm/Cold open-curve tracing. If a low has a real NEIGHBOUR low on a given side (poleward for
-    // Warm, equatorward for Cold), that curve is an explicit Bezier JOIN out to the midpoint between the
-    // two systems — real fronts often chain low-to-low ("join to the nearest, even a different front
-    // type"), which a purely emergent gradient march kept getting wrong (it paired same-type curves and
-    // tangled). With no neighbour on that side, the curve FREE-marches outward instead: nearly straight,
-    // gently deflected by whatever else is nearby, trailing off along the contour.
-    private const int OpenMarchStepCount = 40;           // steps per curve
-    private const double MaxOpenCurveLengthFactor = 4.0; // FREE march length cap, × the cell radius
-    private const double OpenContourFrac = 0.35;         // FREE march stop threshold, fraction of centre pressure
-    private const double GradSampleDistFront = 64.0;     // central-difference probe distance
-    private const double GradMinMag = 1e-6;              // below this, nothing nearby to deflect toward
-    private const double PullGain = 400.0;               // background gradient magnitude -> deflection strength
-    private const double MaxFreeDeflect = 0.12;           // per-step cap on how far FREE deflects from straight
-    private const int MinOpenCurvePoints = 3;             // guaranteed minimum output points
+    // Warm/Cold front tracing: the line traces the pressure cell's OWN elliptical boundary across a wide
+    // angular span (centered on the bias direction — travel heading for Warm/Cold, catch direction for
+    // Occluded, bearing-to-neighbour for Stationary), scaled outward by that side's ColdFrontReach/
+    // WarmFrontReach — a front literally IS the system's edge, growing as the reach grows, never anything
+    // free-marched or wobbled beyond it. (Two earlier approaches were tried and discarded: an explicit
+    // Bezier JOIN out to a neighbouring low, which could self-intersect/degenerate when systems sat close
+    // together; and a free march trailing outward from the arc's ends with pressure-gradient deflection
+    // plus a sine "wobble" for organic texture, which — especially once cells grew to synoptic scale —
+    // read as jagged/noisy rather than a smooth boundary. Both were removed in favour of this simpler,
+    // purely elliptical contour.)
+    private const double ArcHalfAngle = 50.0 * Math.PI / 180.0; // half-span of the leading-edge arc
+    private const int ArcStepCount = 24;                        // arc sample steps (ArcStepCount+1 points)
 
-    public static void Compute(WindField field, double totalHours, List<FrontMarker> markers, List<FrontLine> lines)
+    // Isobars: real-chart style — a FIXED absolute pressure step, so a weak system shows a ring or two and
+    // a strong one shows many tightly-packed rings (that density variation is the point, same as a real
+    // surface chart, not something to normalize away). A single cell's own contribution is exactly
+    // Strength * exp(-norm2) (see WindField.CellPressureAt) and norm2 == 1 exactly at
+    // EllipseGeometry.RadiusToward's boundary, so the contour at level L < |Strength| is that same ellipse
+    // scaled by sqrt(ln(|Strength| / L)) — see BuildIsobarRing. Applies to EVERY significant cell (highs
+    // included), unlike fronts (lows only) — a real chart draws isobars around anticyclones too.
+    private const double IsobarStep = 0.2;
+    private const int MaxIsobarsPerCell = 12; // safety cap for a near-max-strength cell (e.g. a heat/cold wave)
+    private const int IsobarRingSteps = 48;   // sample points around the full closed ring
+
+    public static void Compute(WindField field, double totalHours, List<FrontMarker> markers, List<FrontLine> lines,
+        List<IsobarRing> isobars)
     {
         markers.Clear();
         lines.Clear();
+        isobars.Clear();
         lock (field.CellsLock)
         {
             if (field.Cells.Count == 0) return;
@@ -101,32 +134,42 @@ public static class FrontComputer
             double elapsed = totalHours - field.AnchorHours;
 
             // First pass: effective positions + which cells are significant (needed up front so the
-            // neighbour lookups below can see every cell regardless of its index in the list).
+            // nearest-neighbour lookup below can see every cell regardless of its index in the list).
             var ex = new double[field.Cells.Count];
             var ez = new double[field.Cells.Count];
-            // Every marker-eligible cell (lows AND highs) — an occluded low's cold front may have caught
-            // either, so its catch-target lookup below needs the full set, not just lows.
+            // Every marker-eligible cell (lows AND highs).
             var significantIndices = new List<int>();
             var lowIndices = new List<int>();
-            // Subset of lowIndices eligible as a JOIN target: MOVING, open-wave lows only. A Stationary
-            // system already draws its own full closed loop, so a curve marching INTO it would either
-            // duplicate that loop or read as attaching to the wrong kind of boundary — those systems still
-            // get markers/their own contour, they're just excluded from other lows' neighbour search. An
-            // Occluded low, though, is itself drawn as an open curve now (see Compute below) so it's a fine
-            // JOIN target and stays in this set.
-            var movingLowIndices = new List<int>();
             for (int i = 0; i < field.Cells.Count; i++)
             {
                 PressureCell c = field.Cells[i];
                 if (Math.Abs(c.Strength) < MarkerMinStrength) continue;
                 ex[i] = c.X + c.VelX * elapsed;
                 ez[i] = c.Z + c.VelZ * elapsed;
-                markers.Add(new FrontMarker { X = ex[i], Z = ez[i], IsHigh = !c.IsLow });
+                markers.Add(new FrontMarker
+                {
+                    X = ex[i], Z = ez[i], IsHigh = !c.IsLow,
+                    Radius = c.Radius, RadiusMinor = c.RadiusMinor, Orientation = c.Orientation
+                });
+
+                float absStrength = Math.Abs(c.Strength);
+                for (int ring = 0; ring < MaxIsobarsPerCell; ring++)
+                {
+                    double level = (ring + 1) * IsobarStep;
+                    if (level >= absStrength) break;
+                    double scale = Math.Sqrt(Math.Log(absStrength / level));
+                    isobars.Add(new IsobarRing
+                    {
+                        Points = BuildIsobarRing(c, ex[i], ez[i], scale),
+                        IsLow = c.IsLow,
+                        Level = (float)level,
+                        RingIndex = ring
+                    });
+                }
+
                 significantIndices.Add(i);
                 if (!c.IsLow) continue;
                 lowIndices.Add(i);
-                double spd = Math.Sqrt(c.VelX * c.VelX + c.VelZ * c.VelZ);
-                if (spd >= StationarySpeed) movingLowIndices.Add(i);
             }
 
             foreach (int i in lowIndices)
@@ -141,11 +184,10 @@ public static class FrontComputer
                 if (totalHours < c.OccludedUntilTotalHours)
                 {
                     // OCCLUDED: the cold front physically caught another pressure cell on the equatorward
-                    // side (see WindFieldSimulation.ApplyOcclusion) — a directed catch, not a system encircling
-                    // itself, so this renders a single open curve heading toward whatever was caught (a JOIN
-                    // curve if that cell is still there and significant, otherwise a FREE march in the same
-                    // direction), using the cold/warm symbol per PressureCell.OcclusionKind (0/unset falls back
-                    // to the generic occluded symbol, e.g. for saves migrated from before OcclusionKind existed).
+                    // side (see WindFieldSimulation.ApplyOcclusion) — this renders a single open curve
+                    // FREE-marching in that direction, using the cold/warm symbol per
+                    // PressureCell.OcclusionKind (0/unset falls back to the generic occluded symbol, e.g.
+                    // for saves migrated from before OcclusionKind existed).
                     FrontType occType = c.OcclusionKind switch
                     {
                         1 => FrontType.ColdOcclusion,
@@ -155,29 +197,25 @@ public static class FrontComputer
 
                     double occPoleAngle = field.PolewardZSign(ez[i]) > 0 ? Math.PI / 2.0 : -Math.PI / 2.0;
                     double coldAngle = occPoleAngle + Math.PI; // equatorward — the catching side
-                    FindSidedNeighbour(significantIndices, i, ex, ez, Math.Cos(coldAngle), Math.Sin(coldAngle),
-                        out int catchTarget, out _);
 
-                    Vec2d[] occPts = MarchOrJoin(field, i, ex[i], ez[i], centre, c, coldAngle, c.ColdFrontReach,
-                        c.VelX, c.VelZ, catchTarget >= 0, catchTarget >= 0 ? ex[catchTarget] : 0, catchTarget >= 0 ? ez[catchTarget] : 0,
-                        totalHours);
+                    Vec2d[] occPts = BuildLeadingEdgeArc(c, ex[i], ez[i], coldAngle, c.ColdFrontReach);
 
                     // Own travel direction where it's meaningful; an occluded low can be near-stationary, so
                     // fall back to the catch direction itself rather than dividing by a near-zero speed.
                     NormalizeOrFallback(c.VelX, c.VelZ, speed, coldAngle, out double occRefX, out double occRefZ);
 
-                    lines.Add(MakeLine(occType, c.BornTotalHours, strength, occPts, occRefX, occRefZ));
+                    lines.Add(MakeLine(occType, strength, occPts, occRefX, occRefZ));
                     continue;
                 }
 
                 if (speed < StationarySpeed)
                 {
                     // STATIONARY: a real stationary front sits on the (non-advancing) boundary between two
-                    // systems, not a closed loop encircling one — so this renders a single open curve toward
-                    // this low's nearest significant neighbour (a JOIN curve, or a FREE march in a fallback
-                    // direction if truly isolated). Its facing follows how that connecting line is actually
-                    // moving — the neighbour's velocity RELATIVE to this low's own, since a stationary low's
-                    // own velocity is by definition near zero and useless as a facing reference on its own.
+                    // systems, not a closed loop encircling one — so this renders a single open curve
+                    // FREE-marching toward this low's nearest significant neighbour (a fallback direction if
+                    // truly isolated). Its facing follows how that connecting line is actually moving — the
+                    // neighbour's velocity RELATIVE to this low's own, since a stationary low's own velocity
+                    // is by definition near zero and useless as a facing reference on its own.
                     int neighbour = FindNearestSignificantCell(significantIndices, i, ex, ez);
                     double fallbackAngle = field.PolewardZSign(ez[i]) > 0 ? Math.PI / 2.0 : -Math.PI / 2.0;
                     double bearingAngle = neighbour >= 0
@@ -185,45 +223,38 @@ public static class FrontComputer
                         : fallbackAngle;
                     float statReach = (c.ColdFrontReach + c.WarmFrontReach) * 0.5f;
 
-                    Vec2d[] statPts = MarchOrJoin(field, i, ex[i], ez[i], centre, c, bearingAngle, statReach,
-                        c.VelX, c.VelZ, neighbour >= 0, neighbour >= 0 ? ex[neighbour] : 0, neighbour >= 0 ? ez[neighbour] : 0,
-                        totalHours);
+                    Vec2d[] statPts = BuildLeadingEdgeArc(c, ex[i], ez[i], bearingAngle, statReach);
 
                     double relVelX = neighbour >= 0 ? field.Cells[neighbour].VelX - c.VelX : Math.Cos(bearingAngle);
                     double relVelZ = neighbour >= 0 ? field.Cells[neighbour].VelZ - c.VelZ : Math.Sin(bearingAngle);
                     double relSpeed = Math.Sqrt(relVelX * relVelX + relVelZ * relVelZ);
                     NormalizeOrFallback(relVelX, relVelZ, relSpeed, bearingAngle, out double statRefX, out double statRefZ);
 
-                    lines.Add(MakeLine(FrontType.Stationary, c.BornTotalHours, strength, statPts, statRefX, statRefZ));
+                    lines.Add(MakeLine(FrontType.Stationary, strength, statPts, statRefX, statRefZ));
                     continue;
                 }
 
-                // MOVING, open wave: which SINGLE line is drawn depends on this low's own air-mass character
-                // (PressureCell.AirMassTemp), consistent with the poleward/equatorward advection bias it also
-                // drives (see WindFieldSimulation.Advect/AirMassBiasedAngle) — a warm-natured low's leading
-                // edge is its warm front, out the POLEWARD side (warm air overruns, advancing poleward into
-                // cold territory); a cold-natured low's leading edge is its cold front, out the EQUATORWARD
-                // side (cold air digs in, advancing equatorward into warm territory). Side is still split by
-                // real geography, not the system's own direction of travel. See WindField.PolewardZSign.
-                double poleAngle = field.PolewardZSign(ez[i]) > 0 ? Math.PI / 2.0 : -Math.PI / 2.0;
-                double poleX = Math.Cos(poleAngle), poleZ = Math.Sin(poleAngle);
-                bool warm = c.AirMassTemp >= 0f;
-                double sideAngle = warm ? poleAngle : poleAngle + Math.PI;
-                double sideX = warm ? poleX : -poleX, sideZ = warm ? poleZ : -poleZ;
-                float reach = warm ? c.WarmFrontReach : c.ColdFrontReach;
+                // MOVING, open wave: matching the classic Norwegian cyclone model, a mature wave low shows
+                // BOTH a warm front (leading, ahead of the low's own direction of travel) and a cold front
+                // (trailing, behind it) at once, meeting at the low's own centre — not just one or the
+                // other. Each is tilted off the pure travel/anti-travel axis toward its real-world side
+                // (warm leads AND tilts poleward — where warm air overruns; cold trails AND tilts
+                // equatorward — where cold air digs in), giving the classic "comma"/wave shape rather than
+                // two lines sitting exactly opposite each other — see WindField.MovingFrontAngles, the
+                // single source of truth for this split (also used by StormBiasAt/FrontRegimeBiasAt so
+                // precipitation intensifies along these exact same two edges, not some independently
+                // drifting geography split). `WarmFrontReach`/`ColdFrontReach` (which already grow at
+                // different rates — see "Front reach") give the two sides their own, independently
+                // evolving extent.
+                field.MovingFrontAngles(c.VelX, c.VelZ, ez[i], out double waveWarmAngle, out double waveColdAngle);
 
-                // A real neighbouring low strictly on this side becomes this front's JOIN target — the nearest
-                // in that direction, regardless of what type of front the neighbour itself ends up drawing.
-                // With no neighbour on this side, the curve FREE-marches instead (see MarchOrJoin).
-                FindSidedNeighbour(movingLowIndices, i, ex, ez, sideX, sideZ, out int sideNeighbour, out _);
-
-                Vec2d[] pts = MarchOrJoin(field, i, ex[i], ez[i], centre, c, sideAngle, reach,
-                    c.VelX, c.VelZ, sideNeighbour >= 0, sideNeighbour >= 0 ? ex[sideNeighbour] : 0, sideNeighbour >= 0 ? ez[sideNeighbour] : 0,
-                    totalHours);
+                Vec2d[] warmPts = BuildLeadingEdgeArc(c, ex[i], ez[i], waveWarmAngle, c.WarmFrontReach);
+                Vec2d[] coldPts = BuildLeadingEdgeArc(c, ex[i], ez[i], waveColdAngle, c.ColdFrontReach);
 
                 double refX = c.VelX / speed, refZ = c.VelZ / speed; // speed >= StationarySpeed here, never zero
 
-                lines.Add(MakeLine(warm ? FrontType.Warm : FrontType.Cold, c.BornTotalHours, strength, pts, refX, refZ));
+                lines.Add(MakeLine(FrontType.Warm, strength, warmPts, refX, refZ));
+                lines.Add(MakeLine(FrontType.Cold, strength, coldPts, refX, refZ));
             }
         }
     }
@@ -241,10 +272,9 @@ public static class FrontComputer
 
     /// <summary>Builds a computed <see cref="FrontLine"/> from its traced points — shared by all four
     /// branches in <see cref="Compute"/> (Occluded, Stationary, Warm, Cold).</summary>
-    private static FrontLine MakeLine(FrontType type, double seed, float strength, Vec2d[] pts, double refX, double refZ) => new()
+    private static FrontLine MakeLine(FrontType type, float strength, Vec2d[] pts, double refX, double refZ) => new()
     {
         Type = type,
-        Seed = seed,
         Strength = strength,
         Points = pts,
         CumulativeLength = BuildCumulative(pts),
@@ -263,27 +293,6 @@ public static class FrontComputer
             cumLen[i] = cumLen[i - 1] + Math.Sqrt(dx * dx + dz * dz);
         }
         return cumLen;
-    }
-
-    /// <summary>Finds the nearest OTHER candidate low strictly on the (<paramref name="dirX"/>,
-    /// <paramref name="dirZ"/>) side of low <paramref name="self"/> (dot product of the offset with that
-    /// direction &gt; 0) — used to find each front curve's explicit JOIN target, if any. <paramref
-    /// name="candidateIndices"/> should already be restricted to eligible join targets (MOVING lows —
-    /// see <c>movingLowIndices</c> in <see cref="Compute"/>), not every low.</summary>
-    private static void FindSidedNeighbour(List<int> candidateIndices, int self, double[] ex, double[] ez,
-        double dirX, double dirZ, out int neighbourIndex, out double neighbourDist)
-    {
-        neighbourIndex = -1;
-        neighbourDist = double.MaxValue;
-        for (int k = 0; k < candidateIndices.Count; k++)
-        {
-            int j = candidateIndices[k];
-            if (j == self) continue;
-            double dx = ex[j] - ex[self], dz = ez[j] - ez[self];
-            if (dx * dirX + dz * dirZ <= 0) continue; // not on this side
-            double dist = Math.Sqrt(dx * dx + dz * dz);
-            if (dist < neighbourDist) { neighbourDist = dist; neighbourIndex = j; }
-        }
     }
 
     /// <summary>Finds the nearest OTHER significant cell to <paramref name="self"/> in ANY direction (low
@@ -306,218 +315,51 @@ public static class FrontComputer
         return best;
     }
 
-    /// <summary>
-    /// Builds one front open curve: a FREE march outward if there's no candidate neighbour, blended
-    /// toward an explicit Bezier JOIN to <paramref name="neighbourX"/>/<paramref name="neighbourZ"/> as
-    /// that neighbour gets close enough (see <see cref="JoinBlend"/>) — eased in/out by distance rather
-    /// than switched abruptly the instant a neighbour becomes eligible. Starts at the cell's own elliptical
-    /// LEADING EDGE in the bias direction (<see cref="EllipseGeometry.RadiusToward"/>), not its centre. See
-    /// <see cref="MarchFree"/>/<see cref="BuildJoinCurve"/>/<see cref="BlendCurves"/>.
-    /// </summary>
-    private static Vec2d[] MarchOrJoin(WindField field, int cellIndex, double ex, double ez, double centre,
-        PressureCell cell, double biasAngle, float reach, double velX, double velZ,
-        bool hasNeighbour, double neighbourX, double neighbourZ, double totalHours)
+    /// <summary>Samples <see cref="ArcStepCount"/>+1 points along the pressure cell's OWN elliptical
+    /// boundary (<see cref="EllipseGeometry.RadiusToward"/>, so an elongated/oriented cell's true edge is
+    /// used, not a circular approximation), spanning <see cref="ArcHalfAngle"/> either side of
+    /// <paramref name="biasAngle"/>, with the boundary radius scaled by <paramref name="reach"/>
+    /// (ColdFrontReach/WarmFrontReach — grows over the front's life, so the traced edge visibly grows
+    /// with it). This IS the whole front line: no free march, no added noise — a front is drawn exactly as
+    /// the system's own (reach-scaled) edge, matching how a real synoptic chart traces a front along the
+    /// system's boundary rather than an arbitrary curve trailing away from it.</summary>
+    private static Vec2d[] BuildLeadingEdgeArc(PressureCell cell, double ex, double ez, double biasAngle, float reach)
     {
-        double biasX = Math.Cos(biasAngle), biasZ = Math.Sin(biasAngle);
-        double edgeDist = EllipseGeometry.RadiusToward(cell, biasX, biasZ);
-        double startX = ex + biasX * edgeDist;
-        double startZ = ez + biasZ * edgeDist;
-        double cellRadius = cell.Radius; // still the scale reference for MarchFree's max-length cap + JOIN-blend fade distances
-
-        Vec2d[] freePts = MarchFree(field, cellIndex, ex, ez, centre, startX, startZ, biasX, biasZ, cellRadius, reach, velX, velZ, totalHours);
-        if (!hasNeighbour) return freePts;
-
-        double dx = neighbourX - ex, dz = neighbourZ - ez;
-        double blend = JoinBlend(Math.Sqrt(dx * dx + dz * dz), cellRadius);
-        if (blend <= 0.0) return freePts;
-
-        Vec2d[] joinPts = BuildJoinCurve(startX, startZ, biasX, biasZ, ex, ez, neighbourX, neighbourZ);
-        return blend >= 1.0 ? joinPts : BlendCurves(freePts, joinPts, blend);
+        var pts = new Vec2d[ArcStepCount + 1];
+        for (int s = 0; s <= ArcStepCount; s++)
+        {
+            double t = (double)s / ArcStepCount;
+            double angle = biasAngle - ArcHalfAngle + t * (2.0 * ArcHalfAngle);
+            double dirX = Math.Cos(angle), dirZ = Math.Sin(angle);
+            double r = EllipseGeometry.RadiusToward(cell, dirX, dirZ) * Math.Max(1.0, reach);
+            pts[s] = new Vec2d(ex + dirX * r, ez + dirZ * r);
+        }
+        return pts;
     }
 
-    /// <summary>Smooth (1 near, 0 far) JOIN weight from the distance to a candidate neighbour, scaled by
-    /// this low's own radius: full JOIN within <see cref="JoinFadeStartFactor"/>×radius, fully FREE beyond
-    /// <see cref="JoinFadeEndFactor"/>×radius, smoothstep-interpolated between. Used so a front curve
-    /// EASES toward a connection as the neighbour drifts closer and eases back out as it drifts away,
-    /// instead of popping between the FREE march and the JOIN curve the instant one becomes the nearest
-    /// candidate on a side.</summary>
-    private const double JoinFadeStartFactor = 3.0;
-    private const double JoinFadeEndFactor = 6.0;
-
-    private static double JoinBlend(double dist, double cellRadius)
+    /// <summary>Samples <see cref="IsobarRingSteps"/>+1 points around a cell's own elliptical footprint,
+    /// scaled by <paramref name="scale"/>, closing the loop (first point == last). See
+    /// <see cref="IsobarRing"/> for the derivation of <paramref name="scale"/> from a target pressure
+    /// level.</summary>
+    private static Vec2d[] BuildIsobarRing(PressureCell cell, double ex, double ez, double scale)
     {
-        double start = JoinFadeStartFactor * cellRadius;
-        double end = JoinFadeEndFactor * cellRadius;
-        if (dist <= start) return 1.0;
-        if (dist >= end) return 0.0;
-        double t = (dist - start) / (end - start);
-        return 1.0 - t * t * (3.0 - 2.0 * t); // smoothstep, inverted so near = 1, far = 0
-    }
-
-    /// <summary>Blends two open curves point-by-point at matching normalized arc-length fractions (each
-    /// curve parametrized independently by its own length, so curves of different point counts/lengths —
-    /// a FREE march's variable trail-off vs. a JOIN curve's fixed reach — still blend smoothly) rather
-    /// than needing matching geometry. <paramref name="blend"/> in [0,1]: 0 = pure <paramref name="a"/>
-    /// (FREE), 1 = pure <paramref name="b"/> (JOIN).</summary>
-    private static Vec2d[] BlendCurves(Vec2d[] a, Vec2d[] b, double blend)
-    {
-        double[] cumA = BuildCumulative(a);
-        double[] cumB = BuildCumulative(b);
-        var result = new Vec2d[OpenMarchStepCount + 1];
-        for (int s = 0; s <= OpenMarchStepCount; s++)
+        var pts = new Vec2d[IsobarRingSteps + 1];
+        for (int s = 0; s <= IsobarRingSteps; s++)
         {
-            double t = (double)s / OpenMarchStepCount;
-            Vec2d pa = SamplePolylineAt(a, cumA, t);
-            Vec2d pb = SamplePolylineAt(b, cumB, t);
-            result[s] = new Vec2d(pa.X + (pb.X - pa.X) * blend, pa.Y + (pb.Y - pa.Y) * blend);
+            double angle = 2.0 * Math.PI * s / IsobarRingSteps;
+            double dirX = Math.Cos(angle), dirZ = Math.Sin(angle);
+            double r = EllipseGeometry.RadiusToward(cell, dirX, dirZ) * scale;
+            pts[s] = new Vec2d(ex + dirX * r, ez + dirZ * r);
         }
-        return result;
-    }
-
-    /// <summary>Position at normalized arc-length fraction <paramref name="t"/> along a polyline — the
-    /// same interpolation <see cref="SampleAt"/> uses, minus the curvature wobble/facing it also computes,
-    /// for <see cref="BlendCurves"/>'s per-sample lerp.</summary>
-    private static Vec2d SamplePolylineAt(Vec2d[] pts, double[] cumLen, double t)
-    {
-        if (pts.Length == 1) return pts[0];
-        double target = t * cumLen[pts.Length - 1];
-        int seg = 0;
-        while (seg < pts.Length - 2 && cumLen[seg + 1] < target) seg++;
-        double segLen = cumLen[seg + 1] - cumLen[seg];
-        double frac = segLen > 1e-9 ? (target - cumLen[seg]) / segLen : 0;
-        return new Vec2d(
-            pts[seg].X + (pts[seg + 1].X - pts[seg].X) * frac,
-            pts[seg].Y + (pts[seg + 1].Y - pts[seg].Y) * frac);
-    }
-
-    /// <summary>
-    /// JOIN case: a quadratic Bezier from just outside the low's own centre out to the midpoint between
-    /// it and a real neighbouring low on this side — "join to the nearest, even a different front type"
-    /// instead of independently marching two curves that may tangle. The control point keeps the curve
-    /// leaving along the initial bias direction (poleward/equatorward) before bending toward the
-    /// neighbour, so it still reads as a front leaving its own low first. Always connects the FULL way to
-    /// the midpoint once <see cref="JoinBlend"/> reaches 1 — a low's ColdFrontReach/WarmFrontReach grow at
-    /// different rates, so gating the join geometry itself on either side's own reach let the two ends of
-    /// the same connection grow in at different speeds and visibly fail to meet; the distance-based
-    /// blend above is what eases the connection in, not the curve's own endpoint.
-    /// </summary>
-    private static Vec2d[] BuildJoinCurve(double startX, double startZ, double biasX, double biasZ,
-        double ex, double ez, double neighbourX, double neighbourZ)
-    {
-        // Midpoint of the two low CENTRES (not the offset start points) so both sides of a join —
-        // computed independently from each low's own perspective — always agree on the exact same
-        // target and therefore always meet, regardless of where each curve's own start point sits.
-        double endX = (ex + neighbourX) / 2.0;
-        double endZ = (ez + neighbourZ) / 2.0;
-
-        double legLen = Math.Sqrt((endX - startX) * (endX - startX) + (endZ - startZ) * (endZ - startZ));
-        double ctrlX = startX + biasX * legLen * 0.5;
-        double ctrlZ = startZ + biasZ * legLen * 0.5;
-
-        var points = new Vec2d[OpenMarchStepCount + 1];
-        for (int s = 0; s <= OpenMarchStepCount; s++)
-        {
-            double t = (double)s / OpenMarchStepCount;
-            double omt = 1 - t;
-            double px = omt * omt * startX + 2 * omt * t * ctrlX + t * t * endX;
-            double pz = omt * omt * startZ + 2 * omt * t * ctrlZ + t * t * endZ;
-            points[s] = new Vec2d(px, pz);
-        }
-        return points;
-    }
-
-    /// <summary>
-    /// FREE case (no neighbour on this side): marches outward in a nearly straight line, gently deflected
-    /// by the "background" pressure field induced by every OTHER cell (<see
-    /// cref="WindField.CellPressureAt(double,double,double,int)"/> excluding this low) — an isolated low
-    /// has ~zero background gradient anywhere along the march, so it stays straight (fixing the old
-    /// isobar-following march, which for a lone radially-symmetric low was by definition a closed contour
-    /// and always spiralled). Trails off once the low's own pressure falls under <paramref name="reach"/>
-    /// (ColdFrontReach/WarmFrontReach)'s threshold, but is also truncated the moment the drawn symbol
-    /// would end up facing away from the low's own direction of travel (<paramref name="velX"/>/<paramref
-    /// name="velZ"/>) — beyond that point it no longer reads as a front trailing a moving system.
-    /// </summary>
-    private static Vec2d[] MarchFree(WindField field, int cellIndex, double ex, double ez, double centre,
-        double startX, double startZ, double biasX, double biasZ, double cellRadius, float reach,
-        double velX, double velZ, double totalHours)
-    {
-        double maxLen = MaxOpenCurveLengthFactor * cellRadius;
-        double stepLen = maxLen / OpenMarchStepCount;
-        double level = OpenContourFrac / Math.Max(1.0, reach) * centre;
-
-        var points = new List<Vec2d> { new Vec2d(startX, startZ) };
-        double px = startX, pz = startZ;
-        double dirX = biasX, dirZ = biasZ;
-
-        for (int step = 0; step < OpenMarchStepCount; step++)
-        {
-            double d = GradSampleDistFront;
-            double gx = (field.CellPressureAt(px + d, pz, totalHours, cellIndex) - field.CellPressureAt(px - d, pz, totalHours, cellIndex)) / (2 * d);
-            double gz = (field.CellPressureAt(px, pz + d, totalHours, cellIndex) - field.CellPressureAt(px, pz - d, totalHours, cellIndex)) / (2 * d);
-            double gmag = Math.Sqrt(gx * gx + gz * gz);
-
-            double newX = dirX, newZ = dirZ; // default: keep marching straight (nothing nearby)
-            if (gmag > GradMinMag)
-            {
-                double pullX = gx / gmag, pullZ = gz / gmag;
-                double deflect = Math.Min(MaxFreeDeflect, gmag * PullGain);
-                double bx = dirX + pullX * deflect;
-                double bz = dirZ + pullZ * deflect;
-                double blen = Math.Sqrt(bx * bx + bz * bz);
-                if (blen > 1e-9) { newX = bx / blen; newZ = bz / blen; }
-            }
-
-            double nx = px + newX * stepLen, nz = pz + newZ * stepLen;
-            double p = field.CellPressureAt(nx, nz, totalHours);
-            bool stopHere = Math.Abs(p) <= Math.Abs(level);
-
-            points.Add(new Vec2d(nx, nz));
-            px = nx; pz = nz; dirX = newX; dirZ = newZ;
-
-            if (stopHere) break;
-        }
-
-        // Geometric fallback: guarantee MinOpenCurvePoints even in a degenerate field, no more sampling.
-        while (points.Count < MinOpenCurvePoints)
-        {
-            px += dirX * stepLen; pz += dirZ * stepLen;
-            points.Add(new Vec2d(px, pz));
-        }
-
-        // Trail off, but stop once the drawn symbol would face away from the system's own direction of
-        // travel — beyond that the curve has bent back far enough it no longer reads as this (moving)
-        // low's own trailing front. Uses the SAME reference (the low's own travel direction) SampleAt
-        // renders facing with (see ChooseFacing) — since that's also the disambiguating reference, the
-        // chosen facing is by construction never more than ~90° from travel, so this rarely trims
-        // anything; it exists for the sharp-bend edge cases where travel briefly aligns with the tangent.
-        double travelLen = Math.Sqrt(velX * velX + velZ * velZ);
-        if (travelLen > 1e-6 && points.Count > MinOpenCurvePoints)
-        {
-            double travelX = velX / travelLen, travelZ = velZ / travelLen;
-            int cut = points.Count;
-            for (int k = 1; k < points.Count; k++)
-            {
-                double tx = points[k].X - points[k - 1].X, tz = points[k].Y - points[k - 1].Y;
-                double tl = Math.Sqrt(tx * tx + tz * tz);
-                if (tl < 1e-9) continue;
-                tx /= tl; tz /= tl;
-                ChooseFacing(tx, tz, travelX, travelZ, out double faceX, out double faceZ);
-                if (faceX * travelX + faceZ * travelZ < 0) { cut = k; break; }
-            }
-            if (cut >= MinOpenCurvePoints) points.RemoveRange(cut, points.Count - cut);
-        }
-
-        return points.ToArray();
+        return pts;
     }
 
     /// <summary>Picks whichever ±90° perpendicular of a (normalized) tangent best aligns with
     /// <paramref name="refX"/>/<paramref name="refZ"/> (the low's own direction of travel — real front
-    /// symbols point in the direction the front is advancing). Used both when rendering
-    /// (<see cref="SampleAt"/>) and when trimming a FREE curve, so a front symbol stays correctly oriented
-    /// along a curve's whole length instead of a sign fixed once at the (possibly near-degenerate) start.
-    /// Travel is roughly perpendicular to a poleward/equatorward-biased curve in the common case, so this
-    /// comparison is well-conditioned — unlike comparing against the curve's own (near-parallel) bias
-    /// direction, which made the two candidates indistinguishable.</summary>
+    /// symbols point in the direction the front is advancing). Used when rendering (<see cref="SampleAt"/>)
+    /// so a front symbol stays correctly oriented along the curve's whole length. Can become near-degenerate
+    /// — both candidates close to equally aligned — once the curve's tangent nears parallel to ref (e.g. a
+    /// front whose FREE march has bent nearly back onto its own asymptotic trail direction).</summary>
     private static void ChooseFacing(double tanX, double tanZ, double refX, double refZ, out double faceX, out double faceZ)
     {
         double p1x = -tanZ, p1z = tanX;
@@ -541,12 +383,12 @@ public static class FrontComputer
 
     /// <summary>
     /// Uniform curve-parameter sample: <paramref name="t"/> in [0,1] spans the whole open curve. Returns
-    /// a world position (with the per-tile curvature wobble already applied) and the local facing angle
-    /// (whichever tangent-perpendicular best matches <see cref="FrontLine.RefX"/>/<see cref="FrontLine.RefZ"/>
-    /// — see <see cref="ChooseFacing"/>).
+    /// the exact world position on the traced polyline (no added noise/wobble — a front IS the system's
+    /// own edge, see <see cref="BuildLeadingEdgeArc"/>) and the local facing angle (whichever
+    /// tangent-perpendicular best matches <see cref="FrontLine.RefX"/>/<see cref="FrontLine.RefZ"/> — see
+    /// <see cref="ChooseFacing"/>).
     /// </summary>
-    public static void SampleAt(in FrontLine f, double t, double curveAmpL, double totalHours,
-        out double wx, out double wz, out double facingAngle)
+    public static void SampleAt(in FrontLine f, double t, out double wx, out double wz, out double facingAngle)
     {
         Vec2d[] pts = f.Points;
         if (pts.Length < 2)
@@ -571,18 +413,7 @@ public static class FrontComputer
         wx = pts[seg].X + (pts[seg + 1].X - pts[seg].X) * frac;
         wz = pts[seg].Y + (pts[seg + 1].Y - pts[seg].Y) * frac;
 
-        double wob = curveAmpL * Curve(target, f.Seed, totalHours);
-        wx += wob * -tanZ;
-        wz += wob * tanX;
-
         ChooseFacing(tanX, tanZ, f.RefX, f.RefZ, out double faceX, out double faceZ);
         facingAngle = Math.Atan2(faceZ, faceX);
-    }
-
-    /// <summary>Smooth, slowly-evolving curvature offset (in [-~1.5, ~1.5]) along the front.</summary>
-    public static double Curve(double u, double seed, double totalHours)
-    {
-        return Math.Sin(u * 0.0025 + seed + totalHours * 0.05)
-             + 0.5 * Math.Sin(u * 0.006 - seed * 1.3 + totalHours * 0.03);
     }
 }

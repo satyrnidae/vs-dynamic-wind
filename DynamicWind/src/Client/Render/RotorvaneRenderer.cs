@@ -15,6 +15,12 @@ namespace DynamicWind.Client.Render;
 /// </summary>
 public class RotorvaneRenderer : IRenderer
 {
+    // Real fan blades have rotational inertia — easing the spinner's angular speed toward its raw target
+    // instead of snapping to it every frame keeps gusty/noisy wind readings (and GetDirectionalMod, which
+    // depends on the assembly's still-swinging yaw) from making it visibly jerk speed up/down or flicker
+    // direction.
+    private const float SpinSpeedEaseRatePerSecond = 2f;
+
     private readonly ICoreClientAPI capi;
     private readonly BlockEntityRotorvane be;
     private readonly Vec3d pos;
@@ -24,6 +30,7 @@ public class RotorvaneRenderer : IRenderer
     private MeshRef? spinnerMeshref;
     private float currentYaw;
     private float spinAngle;
+    private float currentSpinSpeed;
     private readonly TurnSqueakSound turnSqueak;
 
     public double RenderOrder => 0.5;
@@ -64,7 +71,9 @@ public class RotorvaneRenderer : IRenderer
             }
             turnSqueak.Update(currentYaw, target);
 
-            spinAngle += be.GetSpinSpeed() * dt;
+            float targetSpinSpeed = be.GetSpinSpeed();
+            currentSpinSpeed += (targetSpinSpeed - currentSpinSpeed) * Math.Min(1f, dt * SpinSpeedEaseRatePerSecond);
+            spinAngle += currentSpinSpeed * dt;
             spinAngle = GameMath.Mod(spinAngle, GameMath.TWOPI);
         }
 

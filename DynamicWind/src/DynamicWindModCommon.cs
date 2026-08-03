@@ -136,10 +136,12 @@ public abstract class DynamicWindModCommon : ModSystem
     /// Directional wind hook. Vanilla's weather system runs first and stores its own scalar wind speed
     /// (SimplexNoise over time, not diurnal) in <c>windSpeed.X</c>. We keep that as the baseline
     /// jetstream speed and just point it along the true wind direction from <see cref="WindField.WindAt"/>;
-    /// then pressure fronts (cells/gradients that push the field magnitude above the calm baseline) ADD
-    /// wind on top. This is additive, NOT multiplicative — so a calm vanilla pattern can't zero the wind
-    /// globally, fronts still blow when vanilla is calm, and an area with no pressure differential simply
-    /// falls back to vanilla's own (possibly near-zero) speed. Every consumer that calls
+    /// then pressure CELLS (fronts/highs/lows — NOT the ever-present terrain-thermal sea-breeze gradient,
+    /// which still steers direction but is deliberately excluded from this excess — see
+    /// <see cref="ComputeWindSpeed"/>) push the field magnitude above the calm baseline, and that excess
+    /// gets ADDED on top. This is additive, NOT multiplicative — so a calm vanilla pattern can't zero the
+    /// wind globally, fronts still blow when vanilla is calm, and an area with no active pressure cell
+    /// simply falls back to vanilla's own (possibly near-zero) speed. Every consumer that calls
     /// <c>GetWindSpeedAt</c> (particles, foliage, blowing snow, dropped items, ground-movement) follows it.
     /// </summary>
     protected void OnGetWindSpeed(Vec3d pos, ref Vec3d windSpeed)
@@ -167,15 +169,22 @@ public abstract class DynamicWindModCommon : ModSystem
         double mag = w.Length();
         if (mag < 1e-6) return new Vec3d(vsSpeed, 0, 0); // degenerate field → leave vanilla value
 
-        // Front strength is read from the field magnitude BEFORE orographic slowdown, so a system's
-        // intensity isn't double-counted once here and again when the terrain factor is applied below.
-        double preOroMag = oroFactor > 1e-6 ? mag / oroFactor : mag;
+        // Front-driven excess is measured from pressure CELLS only (excludeTerrainGradient) — the
+        // full field above (used for direction/bearing) also includes the ever-present terrain-thermal
+        // sea-breeze gradient (TerrainThermal.PressureAt via WindField.PressureAt), which is real and
+        // legitimately steers wind everywhere there's land/water/terrain contrast, but isn't a "front":
+        // folding it into frontExcess would add FrontWindStrength-scaled speed near every coastline or
+        // terrain edge even with zero active pressure cells nearby, inflating average speed well outside
+        // any actual weather system.
+        Vec2d cellW = Field.WindAt(pos.X, pos.Z, totalHours, -1, out double cellOroFactor, includeTerrainGradient: false);
+        double cellMag = cellW.Length();
+        double preOroCellMag = cellOroFactor > 1e-6 ? cellMag / cellOroFactor : cellMag;
 
         // Baseline jetstream speed = vanilla's, modulated by a slow jet-streak noise (faster/slower
         // segments, never zero). Pressure fronts then ADD wind on top of that. Orographic interaction
         // (windward climb, lee wake) then scales the WHOLE total down, so terrain slows baseline wind
         // too, not just front-driven excess.
-        double frontExcess = preOroMag - Field.BaseStrength;
+        double frontExcess = preOroCellMag - Field.BaseStrength;
         if (frontExcess < 0) frontExcess = 0;
 
         // Weight that excess by which front regime(s) influence this position — see the *WindMult

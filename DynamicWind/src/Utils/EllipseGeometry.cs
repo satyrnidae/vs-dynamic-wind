@@ -61,11 +61,22 @@ internal static class EllipseGeometry
     /// <see cref="Norm2"/>, evaluated along this one direction rather than at a point.
     /// </summary>
     public static double RadiusToward(PressureCell cell, double dx, double dz)
+        => RadiusToward(cell.Radius, cell.RadiusMinor, cell.Orientation, dx, dz);
+
+    /// <summary>As <see cref="RadiusToward(PressureCell,double,double)"/> but from the raw ellipse
+    /// parameters directly, for callers (e.g. <c>FrontMapLayer</c>'s off-screen marker clamp) that only
+    /// carry a snapshot of a cell's footprint (<c>FrontMarker</c>) rather than a live <see cref="PressureCell"/>.</summary>
+    public static double RadiusToward(double radius, double radiusMinor, double orientation, double dx, double dz)
     {
         double dist = Math.Sqrt(dx * dx + dz * dz);
-        if (dist < 1e-6) return cell.Radius;
-        ProjectAxes(cell, dx / dist, dz / dist, out double along, out double cross, out double rMinor, out double rMajor,
-            out _, out _, out _, out _);
+        if (dist < 1e-6) return radius;
+        double crossX = Math.Cos(orientation), crossZ = Math.Sin(orientation);
+        double alongX = -crossZ, alongZ = crossX;
+        double ndx = dx / dist, ndz = dz / dist;
+        double along = ndx * alongX + ndz * alongZ;
+        double cross = ndx * crossX + ndz * crossZ;
+        double rMinor = radiusMinor > 1e-3 ? radiusMinor : radius;
+        double rMajor = radius;
         double f = (along * along) / (rMinor * rMinor) + (cross * cross) / (rMajor * rMajor);
         return f > 1e-9 ? 1.0 / Math.Sqrt(f) : rMajor;
     }

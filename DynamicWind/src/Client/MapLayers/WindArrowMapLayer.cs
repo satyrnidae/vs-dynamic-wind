@@ -1,5 +1,6 @@
 using System;
 using DynamicWind.Config;
+using DynamicWind.Utils;
 using DynamicWind.WindSystem;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
@@ -38,8 +39,8 @@ public class WindArrowMapLayer : DynamicWindWorldMapLayerBase
 
     // Pressure tint endpoints (arrow art is greyscale; rgbaIn multiplies it).
     private static readonly Vec4f White = new(1f, 1f, 1f, 1f);
-    private static readonly Vec4f LowColor = new(0xFF / 255f, 0x10 / 255f, 0f, 1f);  // crimson #FF1000
-    private static readonly Vec4f HighColor = new(0x26 / 255f, 0x51 / 255f, 0xFF / 255f, 1f); // cobalt #2651FF
+    private static readonly Vec4f LowColor = FrontColors.WarmCrimson; // shared with warm-front rendering
+    private static readonly Vec4f HighColor = FrontColors.ColdBlue; // shared with cold-front rendering
 
     // Per-cell cache (index = row*Grid + col), sampled over the world-view bounds at the time of the
     // last Resample. The render grid itself is screen-fixed; between resamples we re-map each fixed
@@ -66,7 +67,7 @@ public class WindArrowMapLayer : DynamicWindWorldMapLayerBase
         weather = capi.ModLoader.GetModSystem<WeatherSystemClient>();
         quadModel = capi.Render.UploadMesh(QuadMeshUtil.GetQuad());
         arrowTexId = capi.Render.GetOrLoadTexture(new AssetLocation("dynamicwind", "textures/icons/wind-direction.png"));
-        Active = cfg?.WindDirectionMapLayerVisibleByDefault ?? false; // hidden by default; the map legend can still toggle it
+        RestoreActiveState(cfg?.WindDirectionMapLayerVisibleByDefault ?? false); // hidden by default; the map legend can still toggle it
     }
 
     public override void Render(GuiElementMap mapElem, float dt)

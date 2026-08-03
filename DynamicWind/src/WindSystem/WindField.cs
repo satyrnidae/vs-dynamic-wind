@@ -150,13 +150,44 @@ public class WindField
     public double ThermalStaticScale = 1.0;
 
     /// <summary>|velocity| (blocks/hour) below which a low is treated as "stationary" rather than a
-    /// moving open-wave system — shared by <see cref="FrontRegimeBiasAt"/>, the storm-bias neighbour
-    /// search below, and <see cref="DynamicWind.PressureSystem.FrontComputer"/> (which renders the
-    /// closed encircling contour for exactly this regime), so all three agree on the same threshold.</summary>
+    /// moving open-wave system — shared by <see cref="FrontRegimeBiasAt"/>, <see cref="StormBiasAt"/>,
+    /// and <see cref="DynamicWind.PressureSystem.FrontComputer"/> (which renders the closed encircling
+    /// contour for exactly this regime), so all three agree on the same threshold.</summary>
     public const double StationarySpeed = 60.0;
+
+    /// <summary>Tilt (radians) of a moving low's warm/cold front bias angle off the pure travel/anti-travel
+    /// axis toward its real-world side — shared by <see cref="DynamicWind.PressureSystem.FrontComputer"/>'s
+    /// actual dual front lines and <see cref="MovingFrontAngles"/> (storm-forcing/weather-intensity bias),
+    /// so the weather always lines up with what's actually drawn instead of drifting out of sync with it
+    /// (as the old poleward/equatorward-only convention did once fronts switched to leading/trailing the
+    /// low's own direction of travel).</summary>
+    public const double WaveFrontTiltAngle = 20.0 * Math.PI / 180.0;
+
+    /// <summary>Leading (warm) and trailing (cold) bias angles for a MOVING open-wave low — see
+    /// <see cref="WaveFrontTiltAngle"/>. The single source of truth for this split, called by both
+    /// <see cref="DynamicWind.PressureSystem.FrontComputer"/> (to draw the two front lines) and this
+    /// class's own <see cref="StormBiasAt"/>/<see cref="FrontRegimeBiasAt"/> (to bias precipitation/storm
+    /// intensity toward the same two edges), so they can never drift out of sync with each other again.</summary>
+    public void MovingFrontAngles(double velX, double velZ, double z, out double warmAngle, out double coldAngle)
+    {
+        double travelAngle = Math.Atan2(velZ, velX);
+        double poleSign = PolewardZSign(z);
+        warmAngle = travelAngle + poleSign * WaveFrontTiltAngle;
+        coldAngle = travelAngle + Math.PI - poleSign * WaveFrontTiltAngle;
+    }
 
     private const double GradSampleDist = 48.0;
     private const double GradMaxWind = 1.5;
+
+    // Directional steering: a pressure cell's rotational influence should keep bending the AMBIENT wind's
+    // DIRECTION well beyond the (narrower) range at which it still meaningfully pushes extra SPEED — real
+    // large-scale steering flow around a system reaches much farther than its local wind-speed footprint.
+    // Implemented as a magnitude-preserving blend of the wind bearing toward each cell's circulation
+    // direction, weighted by a WIDER falloff than the one gating the additive speed push below, so it
+    // never adds speed on its own — only reorients whatever speed the rest of the field already produced.
+    private const double DirectionalFalloffFactor = 0.2;   // <1 widens the steering falloff vs. the speed falloff (exp(-norm2 * factor))
+    private const double DirectionalSteeringStrength = 1.2; // weighted influence -> bearing-blend fraction
+    private const double MaxDirectionalBlend = 0.6;         // cap on how far the bearing can be pulled per cell pass
     private const double OroGradDist = 24.0;   // terrain gradient sample spacing
     private const double OroSlopeSens = 3.0;   // slope (blocks/block) → climb factor
     private const double OroWakeProbe = 48.0;  // how far upwind to look for a sheltering rise
@@ -228,8 +259,15 @@ public class WindField
         WindAt(x, z, totalHours, excludeCell, out _);
 
     /// <summary>As <see cref="WindAt(double,double,double,int)"/> plus the orographic factor (see the
-    /// <c>out</c> overload above).</summary>
-    public Vec2d WindAt(double x, double z, double totalHours, int excludeCell, out double orographicFactor)
+    /// <c>out</c> overload above). <paramref name="includeTerrainGradient"/> controls whether the
+    /// down-gradient term (below) reads the full field (cells + the ever-present terrain-thermal
+    /// baseline — the default, correct for direction/visuals everywhere) or cell pressure alone (pass
+    /// <c>false</c> — used by <see cref="DynamicWindModCommon.ComputeWindSpeed"/> to isolate genuine
+    /// pressure-cell-driven excess speed from the terrain sea-breeze term, which is real and drives
+    /// direction, but shouldn't itself count as "front wind" and add speed near every coastline/terrain
+    /// contrast regardless of whether any pressure system is nearby).</summary>
+    public Vec2d WindAt(double x, double z, double totalHours, int excludeCell, out double orographicFactor,
+        bool includeTerrainGradient = true)
     {
         double wx, wz;
         lock (CellsLock)
@@ -245,6 +283,8 @@ public class WindField
             double sinIn = Math.Sin(CyclonicInflowAngle);
             double elapsed = totalHours - AnchorHours;
 
+            double dirTargetX = 0, dirTargetZ = 0, dirWeightSum = 0;
+
             for (int i = 0; i < Cells.Count; i++)
             {
                 if (i == excludeCell) continue;
@@ -255,8 +295,12 @@ public class WindField
                 double dz = z - cellZ;
 
                 double norm2 = EllipseGeometry.Norm2(cell, dx, dz);
-                double falloff = Math.Exp(-norm2); // elliptical gaussian
-                if (falloff < 1e-4) continue;
+                // Directional falloff is deliberately wider than the speed falloff below (see
+                // DirectionalFalloffFactor), so this is the gate that actually gets checked first — a
+                // position can be irrelevant for steering (skip) while still, in principle, closer than
+                // that; the narrower speed falloff below still applies its own independent check.
+                double dirFalloff = Math.Exp(-norm2 * DirectionalFalloffFactor);
+                if (dirFalloff < 1e-4) continue;
 
                 // Radial unit (center → sample, generalized to the cell's elliptical footprint) and tangent.
                 // With +X=East, +Z=South (north-up map view), (rz, -rx) is the COUNTER-clockwise tangent on
@@ -266,20 +310,77 @@ public class WindField
                 double tx = rz;
                 double tz = -rx;
 
-                // windCell = s * falloff * (cos(inflow)*tangent - sin(inflow)*radial)
-                //   low  (s>0): CCW tangent + inflow toward center  (cyclonic)
-                //   high (s<0): CW tangent  + outflow from center   (anticyclonic)
-                double scale = cell.Strength * falloff * CirculationStrength;
-                wx += scale * (cosIn * tx - sinIn * rx);
-                wz += scale * (cosIn * tz - sinIn * rz);
+                // sideX/Z = cos(inflow)*tangent - sin(inflow)*radial — the (unscaled) direction a low's
+                // circulation pulls the wind toward at this point (cyclonic: CCW tangent + inflow); a high
+                // pulls the opposite way, applied via cell.Strength's sign below.
+                double sideX = cosIn * tx - sinIn * rx;
+                double sideZ = cosIn * tz - sinIn * rz;
+
+                // Speed push: the narrower (original) falloff — a cell's actual contribution to wind SPEED
+                // still fades quickly with distance, unlike the wider steering effect above.
+                double falloff = Math.Exp(-norm2);
+                if (falloff >= 1e-4)
+                {
+                    double scale = cell.Strength * falloff * CirculationStrength;
+                    wx += scale * sideX;
+                    wz += scale * sideZ;
+                }
+
+                // Directional steering: accumulate a weighted target bearing (this cell's own circulation
+                // direction, sign-only — magnitude-independent) using the WIDE falloff, blended into the
+                // final bearing (magnitude-preserving) once after the loop.
+                double sideLen = Math.Sqrt(sideX * sideX + sideZ * sideZ);
+                if (sideLen > 1e-9)
+                {
+                    double dirWeight = dirFalloff * Math.Abs(cell.Strength);
+                    double sgn = Math.Sign(cell.Strength);
+                    dirTargetX += dirWeight * sgn * sideX / sideLen;
+                    dirTargetZ += dirWeight * sgn * sideZ / sideLen;
+                    dirWeightSum += dirWeight;
+                }
+            }
+
+            // Apply the directional steering blend to whatever bearing the jetstream+circulation sum has
+            // so far — a pure rotation-toward-target that preserves the CURRENT magnitude exactly, so this
+            // only reorients the flow, never adds speed on its own (see DirectionalFalloffFactor remarks).
+            // Applied before the pressure-gradient term below, which is a separate physical mechanism
+            // (down-gradient bleed) left untouched by this circulation-only steering.
+            if (dirWeightSum > 1e-6)
+            {
+                double dtx = dirTargetX / dirWeightSum, dtz = dirTargetZ / dirWeightSum;
+                double dtLen = Math.Sqrt(dtx * dtx + dtz * dtz);
+                double curLen = Math.Sqrt(wx * wx + wz * wz);
+                if (dtLen > 1e-9 && curLen > 1e-9)
+                {
+                    dtx /= dtLen; dtz /= dtLen;
+                    double curX = wx / curLen, curZ = wz / curLen;
+                    double blend = Math.Min(MaxDirectionalBlend, dirWeightSum * DirectionalSteeringStrength);
+                    double newX = curX * (1.0 - blend) + dtx * blend;
+                    double newZ = curZ * (1.0 - blend) + dtz * blend;
+                    double newLen = Math.Sqrt(newX * newX + newZ * newZ);
+                    if (newLen > 1e-9)
+                    {
+                        wx = newX / newLen * curLen;
+                        wz = newZ / newLen * curLen;
+                    }
+                }
             }
 
             // 3. Down-gradient flow: air bleeds from high toward low pressure (+∇P points to lows).
             if (GradientWindScale > 0)
             {
                 double d = GradSampleDist;
-                double gx = (PressureAt(x + d, z, totalHours, excludeCell) - PressureAt(x - d, z, totalHours, excludeCell)) / (2 * d);
-                double gz = (PressureAt(x, z + d, totalHours, excludeCell) - PressureAt(x, z - d, totalHours, excludeCell)) / (2 * d);
+                double gx, gz;
+                if (includeTerrainGradient)
+                {
+                    gx = (PressureAt(x + d, z, totalHours, excludeCell) - PressureAt(x - d, z, totalHours, excludeCell)) / (2 * d);
+                    gz = (PressureAt(x, z + d, totalHours, excludeCell) - PressureAt(x, z - d, totalHours, excludeCell)) / (2 * d);
+                }
+                else
+                {
+                    gx = (CellPressureAt(x + d, z, totalHours, excludeCell) - CellPressureAt(x - d, z, totalHours, excludeCell)) / (2 * d);
+                    gz = (CellPressureAt(x, z + d, totalHours, excludeCell) - CellPressureAt(x, z - d, totalHours, excludeCell)) / (2 * d);
+                }
                 double gwx = GradientWindScale * gx;
                 double gwz = GradientWindScale * gz;
                 double gm = Math.Sqrt(gwx * gwx + gwz * gwz);
@@ -389,37 +490,36 @@ public class WindField
         }
     }
 
-    // Storm-band narrowing when a low has a real JOIN neighbour on a side — mirrors
-    // FrontComputer.MarkerMinStrength/BuildJoinCurve so weather intensifies along the same lines the
-    // front map layer draws, rather than a symmetric poleward/equatorward half-cone.
-    private const float StormNeighbourMinStrength = 0.15f;
-    private const double StormBandWidthFactor = 0.5; // × cell radius
+    // Minimum |Strength| for a cell to count as a "significant" neighbour for the Stationary-low bearing
+    // search below — mirrors FrontComputer.MarkerMinStrength (same significance bar as marker/front
+    // eligibility there).
+    private const float StormSignificantMinStrength = 0.15f;
+    // Softens StormBiasAt's along-axis half-plane cutoff (× cell radius) so forcing eases smoothly to zero
+    // across this width instead of creasing sharply exactly at the axis through the low's own centre — see
+    // SmoothPositive. Cell footprints are now large enough that a hard crease there reads as a visibly
+    // sharp edge in precipitation.
+    private const double StormBandSoftenFactor = 0.15;
 
     /// <summary>
     /// Extra storm-likelihood forcing at a position. Real fronts trail a LOW, not a high — a high is
-    /// fair-weather subsidence and contributes nothing here. Each low is treated as carrying both a warm
-    /// front (its POLEWARD side, where warm air overruns, advancing poleward) and a cold front (its
-    /// EQUATORWARD side, where cold air digs in, advancing equatorward) — real geography, not the system's
-    /// own direction of travel — regardless of which single side <see
-    /// cref="DynamicWind.PressureSystem.FrontComputer"/> actually renders for that low (chosen by its own
-    /// AirMassTemp): storminess is a genuinely independent calculation that still legitimately biases
-    /// toward both sides of the synoptic pattern, not just whichever one is drawn — scaled by that cell's
-    /// own
-    /// <see cref="PressureCell.StormLikelihood"/>, with a synergy bonus near the low's centre where the
-    /// two sides' influence overlaps (strongest weather sits close to the low itself). When a side has a
-    /// real neighbouring low (the same JOIN a front curve would connect to — see
-    /// <see cref="DynamicWind.PressureSystem.FrontComputer"/>'s BuildJoinCurve), that side's bias is
-    /// narrowed into a band hugging the axis toward the neighbour's midpoint instead of spread across the
-    /// whole half-plane, so storminess visibly develops ALONG the same connecting line the map draws
-    /// rather than just somewhere in that general direction. Independent of
-    /// <see cref="PressureAt(double,double,double)"/>; meant to be added into the precipitation gate
-    /// scaled by a caller-owned strength knob (see WeatherCoupling).
+    /// fair-weather subsidence and contributes nothing here. The bias axis/axes for each low EXACTLY match
+    /// whichever front geometry <see cref="DynamicWind.PressureSystem.FrontComputer"/> actually draws for
+    /// it (occluded: the single catch/equatorward axis; stationary: bearing to its nearest other
+    /// significant cell; moving: BOTH the leading/warm and trailing/cold axes from
+    /// <see cref="MovingFrontAngles"/>) — so precipitation always intensifies right where the front lines
+    /// on the map actually are, not some independently-chosen geography split that can drift out of sync
+    /// with what's drawn (as the old, purely poleward/equatorward convention did once fronts switched to
+    /// leading/trailing the low's own direction of travel). Scaled by the cell's own
+    /// <see cref="PressureCell.StormLikelihood"/>; a moving low gets a synergy bonus near its own centre
+    /// where the warm and cold side biases overlap. Independent of <see cref="PressureAt(double,double,double)"/>;
+    /// meant to be added into the precipitation gate scaled by a caller-owned strength knob (see
+    /// WeatherCoupling).
     /// </summary>
     public double StormBiasAt(double x, double z, double totalHours)
     {
         lock (CellsLock)
         {
-            double warm = 0, cold = 0;
+            double total = 0;
             double elapsed = totalHours - AnchorHours;
             for (int i = 0; i < Cells.Count; i++)
             {
@@ -432,67 +532,72 @@ public class WindField
                 double falloff = Math.Exp(-EllipseGeometry.Norm2(c, dx, dz));
                 if (falloff < 1e-4) continue;
 
-                double poleSign = PolewardZSign(cz);
-                double bandWidth = Math.Max(1.0, c.Radius) * StormBandWidthFactor;
+                double soften = Math.Max(1.0, c.Radius) * StormBandSoftenFactor;
 
-                FindSidedLowNeighbourAxis(i, cx, cz, elapsed, totalHours, -poleSign, out double coldAxisX, out double coldAxisZ, out bool coldJoined);
-                double coldAlong = dx * coldAxisX + dz * coldAxisZ;
-                double coldPerp = dx * -coldAxisZ + dz * coldAxisX;
-                double coldBand = coldJoined ? Math.Exp(-(coldPerp * coldPerp) / (bandWidth * bandWidth)) : 1.0;
-                cold += Math.Max(0.0, coldAlong) * falloff * c.StormLikelihood * coldBand;
+                if (totalHours < c.OccludedUntilTotalHours)
+                {
+                    // Occluded: a single merged front on the catch (equatorward) side — see
+                    // FrontComputer's Occluded branch.
+                    double poleSign = PolewardZSign(cz);
+                    double catchAngle = (poleSign > 0 ? Math.PI / 2.0 : -Math.PI / 2.0) + Math.PI;
+                    double along = dx * Math.Cos(catchAngle) + dz * Math.Sin(catchAngle);
+                    total += SmoothPositive(along, soften) * falloff * c.StormLikelihood;
+                    continue;
+                }
 
-                FindSidedLowNeighbourAxis(i, cx, cz, elapsed, totalHours, poleSign, out double warmAxisX, out double warmAxisZ, out bool warmJoined);
-                double warmAlong = dx * warmAxisX + dz * warmAxisZ;
-                double warmPerp = dx * -warmAxisZ + dz * warmAxisX;
-                double warmBand = warmJoined ? Math.Exp(-(warmPerp * warmPerp) / (bandWidth * bandWidth)) : 1.0;
-                warm += Math.Max(0.0, warmAlong) * falloff * c.StormLikelihood * warmBand;
+                double speed = Math.Sqrt(c.VelX * c.VelX + c.VelZ * c.VelZ);
+                if (speed < StationarySpeed)
+                {
+                    // Stationary: a single connecting line toward the nearest OTHER significant cell — see
+                    // FrontComputer's Stationary branch (FindNearestSignificantCell).
+                    double bearingAngle = FindNearestSignificantBearing(i, cx, cz, elapsed, PolewardZSign(cz));
+                    double along = dx * Math.Cos(bearingAngle) + dz * Math.Sin(bearingAngle);
+                    total += SmoothPositive(along, soften) * falloff * c.StormLikelihood;
+                    continue;
+                }
+
+                // Moving open-wave: BOTH the leading (warm) and trailing (cold) axes, exactly matching
+                // FrontComputer's dual front lines, with a synergy bonus near the centre where they overlap.
+                MovingFrontAngles(c.VelX, c.VelZ, cz, out double warmAngle, out double coldAngle);
+                double warmAlong = dx * Math.Cos(warmAngle) + dz * Math.Sin(warmAngle);
+                double coldAlong = dx * Math.Cos(coldAngle) + dz * Math.Sin(coldAngle);
+                double warm = SmoothPositive(warmAlong, soften) * falloff * c.StormLikelihood;
+                double cold = SmoothPositive(coldAlong, soften) * falloff * c.StormLikelihood;
+                total += warm + cold + 2.0 * Math.Min(warm, cold);
             }
-            // Strongest near the low's own centre, where the warm and cold side biases overlap.
-            return warm + cold + 2.0 * Math.Min(warm, cold);
+            return total;
         }
     }
 
-    /// <summary>
-    /// Finds the nearest OTHER significant, MOVING (open-wave) low strictly on the <paramref
-    /// name="poleSign"/> side (pure poleward if +1, equatorward if −1) of low <paramref
-    /// name="selfIndex"/> — the same neighbour a front curve would JOIN to (FrontComputer excludes
-    /// Stationary/Occluded lows from that search too, since those already draw their own closed loop).
-    /// Returns a unit axis toward that neighbour's midpoint with <paramref name="selfIndex"/>'s own
-    /// position (<paramref name="joined"/> = true), or the plain poleward/equatorward direction with
-    /// <paramref name="joined"/> = false if there's no such neighbour.
-    /// </summary>
-    private void FindSidedLowNeighbourAxis(int selfIndex, double cx, double cz, double elapsed, double totalHours, double poleSign,
-        out double axisX, out double axisZ, out bool joined)
-    {
-        axisX = 0.0; axisZ = poleSign; // plain poleward/equatorward direction (PolewardZSign is Z-only)
-        joined = false;
+    /// <summary>Smooth replacement for <c>Math.Max(0, x)</c>: converges to it for |x| much greater than
+    /// <paramref name="soften"/>, but eases through zero over a width of about <paramref name="soften"/>
+    /// instead of creasing sharply there (a plain Max has a derivative discontinuity at x=0).</summary>
+    private static double SmoothPositive(double x, double soften)
+        => 0.5 * (x + Math.Sqrt(x * x + soften * soften));
 
-        int bestIdx = -1;
+    /// <summary>Bearing (radians) from low <paramref name="selfIndex"/> to its nearest OTHER significant
+    /// cell (any type) — the same neighbour <see cref="DynamicWind.PressureSystem.FrontComputer"/>'s
+    /// Stationary branch points its connecting line toward. Falls back to the plain poleward
+    /// (<paramref name="poleSign"/> &gt; 0) or equatorward direction if there's no other significant cell
+    /// at all.</summary>
+    private double FindNearestSignificantBearing(int selfIndex, double cx, double cz, double elapsed, double poleSign)
+    {
+        int best = -1;
         double bestDist = double.MaxValue;
         for (int j = 0; j < Cells.Count; j++)
         {
             if (j == selfIndex) continue;
             PressureCell o = Cells[j];
-            if (!o.IsLow || Math.Abs(o.Strength) < StormNeighbourMinStrength) continue;
-            if (totalHours < o.OccludedUntilTotalHours) continue; // occluded: excluded, same as FrontComputer
-            double oSpeed = Math.Sqrt(o.VelX * o.VelX + o.VelZ * o.VelZ);
-            if (oSpeed < StationarySpeed) continue; // stationary: excluded, same as FrontComputer
+            if (Math.Abs(o.Strength) < StormSignificantMinStrength) continue;
             double ox = o.X + o.VelX * elapsed, oz = o.Z + o.VelZ * elapsed;
-            double ddx = ox - cx, ddz = oz - cz;
-            if (ddx * axisX + ddz * axisZ <= 0) continue; // not on this side
-            double dist = Math.Sqrt(ddx * ddx + ddz * ddz);
-            if (dist < bestDist) { bestDist = dist; bestIdx = j; }
+            double dist = Math.Sqrt((ox - cx) * (ox - cx) + (oz - cz) * (oz - cz));
+            if (dist < bestDist) { bestDist = dist; best = j; }
         }
-        if (bestIdx < 0) return;
+        if (best < 0) return poleSign > 0 ? Math.PI / 2.0 : -Math.PI / 2.0;
 
-        PressureCell nb = Cells[bestIdx];
+        PressureCell nb = Cells[best];
         double nx = nb.X + nb.VelX * elapsed, nz = nb.Z + nb.VelZ * elapsed;
-        double midX = (cx + nx) / 2.0, midZ = (cz + nz) / 2.0;
-        double toMidX = midX - cx, toMidZ = midZ - cz;
-        double len = Math.Sqrt(toMidX * toMidX + toMidZ * toMidZ);
-        if (len < 1e-6) return;
-        axisX = toMidX / len; axisZ = toMidZ / len;
-        joined = true;
+        return Math.Atan2(nz - cz, nx - cx);
     }
 
     /// <summary>
@@ -548,12 +653,15 @@ public class WindField
                 double speed = Math.Sqrt(c.VelX * c.VelX + c.VelZ * c.VelZ);
                 if (speed < StationarySpeed) { result.Stationary += weight; continue; }
 
-                // Moving open-wave low: poleward side is the warm front, equatorward the cold front — same
-                // convention as StormBiasAt/FrontComputer, but apportioned smoothly across a band straddling
-                // the low's own latitude line rather than switched abruptly at it.
-                double poleSign = PolewardZSign(cz);
+                // Moving open-wave low: warm = leading, cold = trailing — the SAME MovingFrontAngles axes
+                // FrontComputer's dual front lines and StormBiasAt use, apportioned smoothly by how much
+                // closer this position projects toward one axis than the other (Tanh over a band straddling
+                // the midline between them) rather than switched abruptly.
+                MovingFrontAngles(c.VelX, c.VelZ, cz, out double warmAngle, out double coldAngle);
+                double warmAlong = dx * Math.Cos(warmAngle) + dz * Math.Sin(warmAngle);
+                double coldAlong = dx * Math.Cos(coldAngle) + dz * Math.Sin(coldAngle);
                 double blendWidth = Math.Max(1.0, c.Radius) * RegimeBlendWidthFactor;
-                double warmFrac = 0.5 * (1.0 + Math.Tanh(dz * poleSign / blendWidth));
+                double warmFrac = 0.5 * (1.0 + Math.Tanh((warmAlong - coldAlong) / blendWidth));
                 result.Warm += weight * warmFrac;
                 result.Cold += weight * (1.0 - warmFrac);
             }

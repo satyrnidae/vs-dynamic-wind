@@ -42,11 +42,18 @@ public class BlockEntityRotorvane : BlockEntity
     private const float MinPitch = 0.6f;
     private const float MaxPitch = 1.4f;
     private const int SoundUpdateMs = 150;
+    // Raw wind speed (and GetDirectionalMod, which depends on the assembly's still-swinging yaw) is noisy
+    // tick-to-tick, especially at high wind-speed timescales/gusts — easing pitch AND volume toward their
+    // raw targets instead of snapping every tick keeps the whirring from warbling.
+    private const float PitchEaseRatePerSecond = 2f;
+    private const float VolumeEaseRatePerSecond = 2f;
 
     private MeshData? baseMesh;
     private RotorvaneRenderer? renderer;
     private ILoadedSound? sound;
     private ICoreClientAPI? capi;
+    private float currentPitch = MinPitch;
+    private float currentVolume;
 
     public override void Initialize(ICoreAPI api)
     {
@@ -90,8 +97,15 @@ public class BlockEntityRotorvane : BlockEntity
         double frac = GetWindSpeed() / RefSpeed;
         if (frac > 1) frac = 1;
 
-        sound.SetVolume((float)(MaxVolume * frac));
-        sound.SetPitch((float)(MinPitch + (MaxPitch - MinPitch) * frac) * Math.Abs(GetDirectionalMod()));
+        float dtSeconds = SoundUpdateMs / 1000f;
+
+        float targetVolume = (float)(MaxVolume * frac);
+        currentVolume += (targetVolume - currentVolume) * Math.Min(1f, dtSeconds * VolumeEaseRatePerSecond);
+        sound.SetVolume(currentVolume);
+
+        float targetPitch = (float)(MinPitch + (MaxPitch - MinPitch) * frac) * Math.Abs(GetDirectionalMod());
+        currentPitch += (targetPitch - currentPitch) * Math.Min(1f, dtSeconds * PitchEaseRatePerSecond);
+        sound.SetPitch(currentPitch);
     }
 
     private void BuildMeshesAndRenderer(ICoreClientAPI capi)

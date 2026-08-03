@@ -162,6 +162,12 @@
     "command-cell-heatwave": "HEAT",
     "command-cell-coldwave": "COLD",
 
+    "maplegend-doppler-rain": "Rain",
+    "maplegend-doppler-snow": "Snow",
+    "maplegend-light": "Light",
+    "maplegend-storm": "Storm",
+    "maplegend-heavy": "Heavy",
+
     "game:maplayer-dynamicwind": "Wind direction and speed",
     "game:maplayer-dynamicwindradar": "Precipitation radar",
     "game:maplayer-dynamicwindfronts": "Weather fronts",

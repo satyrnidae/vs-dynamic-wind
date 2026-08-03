@@ -60,21 +60,21 @@ public class DynamicWindConfig
     // ── Pressure systems ────────────────────────────────────────────────────
     [Range(0.0, 24.0)]
     [Description("description-LowSpawnRatePerDay")]
-    public float LowSpawnRatePerDay { get; set; } = 3.0f;
+    public float LowSpawnRatePerDay { get; set; } = 1.5f;
 
     [Range(0.0, 24.0)]
     [Description("description-HighSpawnRatePerDay")]
-    public float HighSpawnRatePerDay { get; set; } = 2.0f;
+    public float HighSpawnRatePerDay { get; set; } = 1.0f;
 
     [Category("logarithmic")]
-    [Range(50.0, 8000.0)]
+    [Range(50.0, 30000.0)]
     [Description("description-CellRadiusMin")]
-    public float CellRadiusMin { get; set; } = 4000f;
+    public float CellRadiusMin { get; set; } = 15000f;
 
     [Category("logarithmic")]
-    [Range(50.0, 32000.0)]
+    [Range(50.0, 60000.0)]
     [Description("description-CellRadiusMax")]
-    public float CellRadiusMax { get; set; } = 16000f;
+    public float CellRadiusMax { get; set; } = 30000f;
 
     [Range(0.0, 60.0)]
     [Description("description-CyclonicInflowAngleDeg")]
@@ -84,9 +84,9 @@ public class DynamicWindConfig
     [Description("description-CirculationStrength")]
     public float CirculationStrength { get; set; } = 2.5f;
 
-    [Range(0.0, 64.0)]
+    [Range(0.0, 3.0)]
     [Description("description-MaxActiveCells")]
-    public int MaxActiveCells { get; set; } = 9;
+    public int MaxActiveCells { get; set; } = 2;
 
     // ── Weather coupling ────────────────────────────────────────────────────
     [Range(0.0, 2.0)]
@@ -224,7 +224,7 @@ public class DynamicWindConfig
 
     [Range(0.0, 1.0)]
     [Description("description-WindmillMinEfficiency")]
-    public float WindmillMinEfficiency { get; set; } = 0.0f;
+    public float WindmillMinEfficiency { get; set; } = 0.5f;
 
     // ── Sailboat ────────────────────────────────────────────────────────────
     [Description("description-SailboatEnabled")]

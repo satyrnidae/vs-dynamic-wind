@@ -4,6 +4,7 @@ using System.Threading;
 using DynamicWind.Config;
 using DynamicWind.Network;
 using DynamicWind.PressureSystem;
+using DynamicWind.TerrainSystem;
 using DynamicWind.Utils;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
@@ -33,13 +34,18 @@ public class WindFieldSimulation
 {
     private const string SaveKey = "dynamicwind:state";
 
-    // Dispersal: radius growth + strength decay per game-hour at DispersalRate = 1.
+    // Dispersal: radius growth + strength decay per game-hour at DispersalRate = 1. Decay was slowed
+    // (0.15 → 0.05) alongside the larger CellRadius/SpawnDistanceBlocks scale-up: at the old rate a
+    // cell's natural decay-driven lifespan (~50-90h at default DispersalRate) fell well short of the
+    // ~95-190h it now takes to advect in from the farther spawn distance, so systems faded out long
+    // before ever reaching a player — leaving the jetstream's own circulation/direction effectively
+    // unopposed. At 0.05 the decay-driven lifespan (~150-280h) comfortably covers that travel time.
     private const double DispersalSpreadPerHour = 120.0; // blocks/hour radius growth
-    private const double DispersalDecayPerHour = 0.15;   // strength e-folding rate
+    private const double DispersalDecayPerHour = 0.05;   // strength e-folding rate
     private const double BernoulliPerHour = 0.5;         // strength push per (speed−1) per hour at strength 1
     private const double MaxStrength = 3.0;
     private const double MinStrength = 0.04;             // below this a cell has dispersed away
-    private const double MaxRadius = 32000.0;
+    private const double MaxRadius = 80000.0;
     private const double DespawnMargin = 30000.0; // a cell despawns once it's farther than this PLUS its own radius (toward the player) from EVERY online player
 
     // Velocity easing (AdvectWithWind): a cell doesn't snap straight to the local background wind each
@@ -109,21 +115,22 @@ public class WindFieldSimulation
 
     // Pressure systems are scattered across a wide region centred on (and leaning west of) the
     // population centre, so several systems span the visible map at once instead of a few tiny cells
-    // clustered far to the west. Cell radii are a fraction of this range so neighbours overlap into
-    // broad, merging blobs.
-    private const double SpawnRangeBlocks = 6000.0; // scale reference for cell radii (see Spawn/TrySeedOne)
+    // clustered far to the west. Spawn-time radius is sampled directly from [CellRadiusMin, CellRadiusMax]
+    // (or a sub-band of it — see SpawnRadiusSubBandFraction) rather than from a fixed scale reference, so
+    // it stays correct under user retuning instead of drifting relative to a hardcoded constant.
+    private const double SpawnRadiusSubBandFraction = 0.25; // sub-band width, as a fraction of the full range
 
     // Spawn placement: a new front starts far out from a random player — like a real system approaching
     // from a distance — generally upwind so it drifts back through the player's area, scattered across a
     // spread of bearings rather than pinned to the exact upwind line. Distance is capped by the cell's own
     // radius so it never lands close enough to the DespawnMargin threshold to vanish the same tick it
     // spawns (see IsTooFarFromAllPlayers) — a bigger cell can safely spawn a little farther out.
-    private const double SpawnDistanceBlocks = 8000.0;       // target distance from the anchor player
-    private const double SpawnDistanceJitter = 1500.0;       // ± random spread on top of the target
-    private const double SpawnDespawnSafetyMargin = 3000.0;  // stay this far inside the despawn threshold
+    private const double SpawnDistanceBlocks = 40000.0;      // target distance from the anchor player
+    private const double SpawnDistanceJitter = 8000.0;       // ± random spread on top of the target
+    private const double SpawnDespawnSafetyMargin = 10000.0; // stay this far inside the despawn threshold
     private const double SpawnAngleSpreadRad = Math.PI / 3.0; // ± scatter around the pure-upwind bearing
-    private const double SpawnPlayerAvoidRadius = 2000.0;    // never spawn this close to ANY online player
-    private const double SpawnPlayerAvoidPush = 500.0;       // extra clearance pushed past the avoid radius
+    private const double SpawnPlayerAvoidRadius = 6000.0;    // never spawn this close to ANY online player
+    private const double SpawnPlayerAvoidPush = 1500.0;      // extra clearance pushed past the avoid radius
 
     // Terrain thermal seeding: spawn mobile cells from terrain hotspots near players. Kept deliberately
     // modest — terrain pressure cell spawning was cluttering the field with far too many short-lived
@@ -669,9 +676,11 @@ public class WindFieldSimulation
             if (field.Cells.Count >= config.MaxActiveCells) return;
             if (!TryGetSpawnAnchor(out double cx, out double cz)) return;
 
-            // Size cells to a fraction of the spawn range so neighbours overlap into broad blobs that span
-            // the visible map. Config radii (CellRadiusMin/Max, user-set) are the only clamp.
-            float radius = GameMath.Clamp((float)((0.15 + rand.NextDouble() * 0.2) * SpawnRangeBlocks), config.CellRadiusMin, config.CellRadiusMax);
+            // Full-range variety across the configured [CellRadiusMin, CellRadiusMax] span — synoptic
+            // systems (unlike thermal seeds/heat-cold-waves below) span the whole configured size range.
+            float radius = GameMath.Clamp(
+                (float)(config.CellRadiusMin + rand.NextDouble() * (config.CellRadiusMax - config.CellRadiusMin)),
+                config.CellRadiusMin, config.CellRadiusMax);
 
             // Mean jetstream bearing (seasonally tilted N/S). Systems spawn UPWIND of this bearing (± a
             // scatter spread) so they drift back down the jet THROUGH the player's area rather than being
@@ -692,8 +701,12 @@ public class WindFieldSimulation
             double velX = fx * advect;
             double velZ = fz * advect;
 
-            // Lifetime: lows are shorter-lived/sharper than highs.
-            double durationHours = isLow ? (12 + rand.NextDouble() * 24) : (24 + rand.NextDouble() * 48);
+            // Lifetime: lows are shorter-lived/sharper than highs. Raised well past the ~50-90h dispersal-
+            // decay lifespan (see DispersalDecayPerHour) so decay — not this hard cap — is what actually
+            // ends a cell's life; at the old 12-72h range this cap fired first, cutting cells off long
+            // before they'd naturally fade, which (at the current, farther spawn distance) meant most never
+            // survived long enough to advect within range of a player at all.
+            double durationHours = isLow ? (100 + rand.NextDouble() * 100) : (150 + rand.NextDouble() * 150);
 
             double upwindAngle = travelAngle + Math.PI; // opposite the EXPECTED downwind bearing
             double bearing = upwindAngle + (rand.NextDouble() - 0.5) * 2.0 * SpawnAngleSpreadRad;
@@ -765,9 +778,14 @@ public class WindFieldSimulation
         => (float)(Math.Atan2(velZ, velX) + Math.PI / 2.0);
 
     /// <summary>
-    /// Spawn a mobile, dispersing pressure cell from a terrain thermal hotspot (hot dry land → low,
-    /// deep water → high). These then advect with the wind, so terrain influence is no longer pinned
-    /// to the terrain — it drifts and spreads downwind. Rate-limited and kept clear of existing cells.
+    /// Spawn a mobile, dispersing pressure cell from a terrain thermal hotspot, restricted to water/ocean
+    /// sites (<see cref="TerrainThermal.IsWater"/>) — land hotspots still feed the static terrain-pressure
+    /// baseline (<c>ThermalStaticScale</c>) but no longer seed mobile cells. Water's own pressure sign is
+    /// seasonal (<see cref="TerrainThermal.PressureAt"/>): a warm-season site seeds a HIGH (cool water is
+    /// stabilizing, the marine-layer/sea-breeze pattern), a cold-season site seeds a LOW (relatively warm
+    /// water under cold air is destabilizing, matching real nor'easters/polar lows/lake-effect systems).
+    /// These then advect with the wind, so terrain influence is no longer pinned to the terrain — it drifts
+    /// and spreads downwind. Rate-limited and kept clear of existing cells.
     /// </summary>
     private void MaybeSeedThermal(double now, double dGameHours)
     {
@@ -792,6 +810,7 @@ public class WindFieldSimulation
 
             double sx = cx + (rand.NextDouble() - 0.5) * 2.0 * SeedScanRadius;
             double sz = cz + (rand.NextDouble() - 0.5) * 2.0 * SeedScanRadius;
+            if (!TerrainThermal.IsWater(sapi.World, sx, sz)) return; // local mobile cells: water/ocean sites only
             double th = field.ThermalPressureFunc!(sx, sz, now);
             if (Math.Abs(th) < SeedThreshold) return;
 
@@ -804,7 +823,11 @@ public class WindFieldSimulation
                 if (dx * dx + dz * dz < SeedMinSeparation * SeedMinSeparation) return;
             }
 
-            float radius = GameMath.Clamp((float)(0.12 * SpawnRangeBlocks), config.CellRadiusMin, config.CellRadiusMax);
+            // Bottom sub-band of the configured range — thermal seeds stay visibly smaller than full
+            // synoptic systems (see Spawn) even as CellRadiusMin/Max are retuned.
+            float radius = GameMath.Clamp(
+                (float)(config.CellRadiusMin + rand.NextDouble() * SpawnRadiusSubBandFraction * (config.CellRadiusMax - config.CellRadiusMin)),
+                config.CellRadiusMin, config.CellRadiusMax);
             float strength = (float)Math.Max(-2.0, Math.Min(2.0, th * SeedGain));
             double durationHours = 8 + rand.NextDouble() * 16;
             // Born stationary — a thermal hotspot itself isn't moving, so the cell it seeds shouldn't either.
@@ -838,10 +861,12 @@ public class WindFieldSimulation
     }
 
     /// <summary>
-    /// Spawn a heat-wave/cold-wave high: sited on a genuine terrain-thermal hotspot like ordinary thermal
-    /// seeding (<see cref="TrySeedOne"/>), but always a strong HIGH regardless of the hotspot's own sign —
-    /// a heat dome and an arctic-high cold snap are both anticyclonic. Warm-season vs. cold-season (and
-    /// therefore heat wave vs. cold wave) is decided by the season at the spawn site, not by the hotspot.
+    /// Spawn a heat-wave/cold-wave high: sited on a genuine terrain-thermal hotspot, restricted to
+    /// water/ocean sites (<see cref="TerrainThermal.IsWater"/>) like ordinary thermal seeding
+    /// (<see cref="TrySeedOne"/>) — land hotspots no longer seed mobile cells (see TrySeedOne). Always a
+    /// strong HIGH regardless of the hotspot's own (now seasonal) sign — a heat dome and an arctic-high
+    /// cold snap are both anticyclonic. Warm-season vs. cold-season (and therefore heat wave vs. cold wave)
+    /// is decided by the season at the spawn site, not by the hotspot.
     /// Spawned near-max strength and near-stationary (see HeatColdWaveVelocityEaseRatePerHour in Advect):
     /// that large initial magnitude is what gives it "a lot of inertia" — the same proportional dispersal
     /// decay every cell gets takes far longer to fade a near-max-strength cell below MinStrength, so it
@@ -856,6 +881,7 @@ public class WindFieldSimulation
 
             double sx = cx + (rand.NextDouble() - 0.5) * 2.0 * SeedScanRadius;
             double sz = cz + (rand.NextDouble() - 0.5) * 2.0 * SeedScanRadius;
+            if (!TerrainThermal.IsWater(sapi.World, sx, sz)) return; // local mobile cells: water/ocean sites only
             double th = field.ThermalPressureFunc!(sx, sz, now);
             if (Math.Abs(th) < SeedThreshold) return; // needs a genuine terrain thermal condition to anchor to
 
@@ -881,7 +907,10 @@ public class WindFieldSimulation
             double waveDelta = (HeatColdWaveTempMin + rand.NextDouble() * (HeatColdWaveTempMax - HeatColdWaveTempMin))
                 * (isHeatWave ? 1.0 : -1.0);
 
-            float radius = GameMath.Clamp((float)(0.15 * SpawnRangeBlocks), config.CellRadiusMin, config.CellRadiusMax);
+            // Top sub-band of the configured range — heat domes/cold snaps are large, dominant systems.
+            float radius = GameMath.Clamp(
+                (float)(config.CellRadiusMax - rand.NextDouble() * SpawnRadiusSubBandFraction * (config.CellRadiusMax - config.CellRadiusMin)),
+                config.CellRadiusMin, config.CellRadiusMax);
             float strength = -(float)(HeatColdWaveStrengthMin + rand.NextDouble() * (HeatColdWaveStrengthMax - HeatColdWaveStrengthMin)); // always a strong HIGH
             double durationHours = HeatColdWaveDurationMinHours + rand.NextDouble() * (HeatColdWaveDurationMaxHours - HeatColdWaveDurationMinHours);
             double minorRatio = SpawnMinorRatioMin + rand.NextDouble() * (SpawnMinorRatioMax - SpawnMinorRatioMin);
