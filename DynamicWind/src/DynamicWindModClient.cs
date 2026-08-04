@@ -22,6 +22,7 @@ public class DynamicWindModClient : DynamicWindModCommon
     private ICoreClientAPI capi = null!;
     private IClientNetworkChannel ClientChannel => (IClientNetworkChannel)Channel;
     private Harmony? harmony;
+    private SailTrimInput? sailTrimInput;
 
     public override bool ShouldLoad(EnumAppSide side) => side == EnumAppSide.Client;
 
@@ -46,8 +47,16 @@ public class DynamicWindModClient : DynamicWindModCommon
         ClientChannel.SetMessageHandler<DynamicWindConfig>(OnConfigReceived);
         ClientChannel.SetMessageHandler<WindFieldState>(OnStateReceived);
 
+        // Hold-to-swing sail trim keybinds (they send intent; the server owns the sail angle).
+        sailTrimInput = new SailTrimInput(api, ClientChannel);
+        sailTrimInput.Register();
+
         harmony = new Harmony("dynamicwind.client");
         CloudRendererPatch.Apply(harmony, api, Mod.Logger);
+        // Sailboat thrust runs on BOTH sides: EntityBoat drives SeatsToMotion from OnRenderFrame on the
+        // client for prediction and from OnGameTick on the server. Trim makes any divergence between the
+        // two visible, so the client has to evaluate the same model rather than vanilla's constant.
+        SailboatWind.Apply(harmony, Mod.Logger);
         // Gate precipitation by pressure on the client too, so the Doppler radar (which reads the
         // client's GetPrecipitation) matches the clouds/rain. Idempotent: in singleplayer the server
         // already patched the shared base method; the static guard makes this a no-op there.
@@ -140,6 +149,8 @@ public class DynamicWindModClient : DynamicWindModCommon
             capi.Event.OnGetWindSpeed -= OnGetWindSpeed;
             capi.Event.OnGetClimate -= OnGetClimate;
         }
+        sailTrimInput?.Dispose();
+        sailTrimInput = null;
         harmony?.UnpatchAll("dynamicwind.client");
         DynamicWindRuntime.ClientField = null;
         DynamicWindRuntime.ClientConfig = null;

@@ -46,3 +46,17 @@ public class ConfigUpdateRequestPacket
 {
     public DynamicWindConfig Config = new();
 }
+
+/// <summary>
+/// Client→server sail trim INTENT — not an increment. <see cref="Dir"/> is −1 (to port), 0 (stop) or
+/// +1 (to starboard); the server holds the latest value per boat and integrates it into the sail
+/// angle each tick. Sending intent rather than deltas means a dropped or duplicated packet can't
+/// accumulate drift, the wire traffic is one packet per key press/release rather than per tick, and
+/// the intent clears itself when the player dismounts or disconnects.
+/// </summary>
+[ProtoContract(ImplicitFields = ImplicitFields.AllPublic)]
+public class SailTrimRequestPacket
+{
+    public long BoatEntityId;
+    public sbyte Dir;
+}

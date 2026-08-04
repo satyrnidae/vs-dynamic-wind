@@ -40,8 +40,154 @@ systems, and couples the rest of the world to it:
   full reverse in one tick. Exactly edge-on, the alignment sign is numerical noise and a square-on rotor
   would chatter every tick, so inside `PerpendicularDeadBand` the direction comes from which SIDE the wind
   passes on (the cross product) rather than from the alignment sign.
-- **Sailboats** — Harmony postfix on `EntityBoat.SeatsToMotion`: tailwind +50%, crosswind base,
-  headwind −10% (piecewise by heading-vs-wind alignment). Tacking is out of scope.
+- **Sailboats** — the sail is **trimmable**, and thrust comes from how the wind meets the SAIL rather than
+  merely the hull. `EntityBehaviorSailTrim` (`src/Entities/`, both sides, attached to the vanilla boat by
+  `patches/boat-sailed-sailtrim.json`) swings the rig through ±`SailboatMaxTrimAngleDeg` (90° = fully
+  feathered). **The whole swing — mast, yard AND both clew-rope sheets — is a real, BAKED shape
+  `Animation`** (code `sailtrim`, added by `patches/boat-sailed-shape.json`), not a live per-frame pose
+  write. Two things drove that: (1) an element that only INHERITS its mesh's joint id from an ancestor
+  (rather than owning one itself) is skinned from THAT ancestor's captured transform, so writing
+  `ElementPose.degOff*` directly on it renders as nothing — `MastORIGIN` and the clew-rope roots all do
+  this by default, and an early attempt at swinging `MastORIGIN` via a live `degOffY` write (with
+  `requireJointsForElements` covering it) never rendered any movement; (2) the clew-rope aim-and-stretch
+  solve (see "Clew ropes" below) turned out to have its own live-math bug — reused scratch `Mat4f`
+  matrices across `GetLocalTransformMatrix` calls without resetting them to identity in between (that
+  method does NOT reset its own `output` — it post-multiplies onto whatever is already there), silently
+  compounding stale data from the previous loop iteration into a wrong, non-obviously-wrong result. Real
+  shape `Animation` keyframes sidestep both: elements referenced by a keyframe get their own joint through
+  the engine's own (well-tested) animation-joint path regardless of `requireJointsForElements`, and the
+  geometry itself is baked OFFLINE by `tools/keyframegen` (a standalone console tool referencing the real
+  `VintagestoryAPI.dll` primitives — `Mat4f`/`Quaternionf`/`ShapeElement`, so it can't silently disagree
+  with how the game itself poses the model) rather than solved live every frame, so there's no scratch-
+  matrix reuse bug to reintroduce. `sailtrim` is keyframed every 1° across the full ±90° range (frame =
+  angle + 90, 181 frames), covering `MastORIGIN`/`Mast7`'s rotation and — every frame, since the solve is
+  nonlinear, not just the two endpoints — both sheets' rotation + Y-stretch, for all three sail positions
+  at once (elements absent from whichever branch is currently tessellated are simply never resolved
+  against, same as any other unreferenced element in a keyframe). `EntityBehaviorSailTrim.Pose()` just
+  starts the animation and scrubs `RunningAnimation.CurrentFrame = 90 - CurrentAngleDeg` — MIRRORED, not
+  `+ CurrentAngleDeg`: the keyframes were baked with `MastORIGIN`'s own `rotationY` set directly to
+  `frame - 90`, which turned out to swing the visual sail normal opposite to what `SailboatWind`'s cos/sin
+  convention assumes for the same signed `CurrentAngleDeg` (facing the wind visually read as feathered to
+  the thrust model and vice versa). Requesting the mirror frame flips mast, yard AND both clew sheets
+  together and self-consistently — each sheet was baked per-frame against whatever the mast's rotation
+  WAS at that frame, not against an assumed port/starboard meaning, so mirroring the frame lookup alone
+  fixes it without touching the baked keyframe data itself. This exactly mirrors the technique vanilla
+  itself uses to drive the weathervane flag's frame from live wind (see below) — no per-frame matrix math
+  left in the mod at all for this. `MastORIGIN` and `Mast7` both swing within THIS
+  one animation (opposite sign — see "Mast7 counter-swing" below); the mast/yard/sail assembly needs no
+  `requireJointsForElements` entry any more either, since being animation-keyframed already earns it a
+  joint, though the clew-rope elements still need theirs listed there (nothing in their own keyframes
+  triggers it, since they're the animation'S target, not its trigger — `requireJointsForElements` and
+  keyframe-reference are two independent paths to the same joint assignment, and only one is needed per
+  element). `MastORIGIN`'s authored `rotationOrigin` sits **10.5px forward of the mast column's true
+  axis**, so the shape patch moves it onto the centre-line (`[24,2,1]` → `[34.5,2,1]`) — otherwise the mast
+  would swing through an arc rather than spin in place; it carries no rotation of its own, so at rest that
+  pivot move is a no-op. The target angle lives in `WatchedAttributes` (`dynamicwind:sailAngle`) so it is
+  server-authoritative, synced and persisted for free; both sides then ease their own copy toward it at
+  `SailboatSwingRateDegPerSec`, which keeps them converged without streaming the angle, and BOTH sides now
+  drive the identical animation-scrub in `OnGameTick` — the earlier client/server split (client posing from
+  `IAnimationManager.HeadController`, to win a per-frame ordering race against the animator's own blend)
+  is gone, because scrubbing `CurrentFrame` has no such race: unlike a live pose write, it doesn't matter
+  whether it happens before or after that frame's blend, only before the NEXT one. `Pose()` re-checks
+  `IAnimationManager.IsAnimationActive` every tick before scrubbing, NOT `GetAnimationState(...) == null`
+  — `GetAnimationState` looks up the animator's static table of every animation the SHAPE defines, so it
+  returns non-null forever once the animator exists, regardless of whether that particular animation is
+  currently active. Gating `StartAnimation` on that nullity (an earlier version of this did) means it only
+  ever fires once, on the very first tick, and silently never again if the animation is ever deactivated
+  (e.g. a re-tessellation rebuilds the animator with fresh, inactive `RunningAnimation` objects) — which
+  read as "the animation just doesn't apply," no crash, no log. `IsAnimationActive` checks the real
+  active-state flag instead; this is the exact pattern vanilla's own `EntityBoat.OnRenderFrame` uses to
+  keep the weathervane animation continuously running. Two controls:
+  hold-to-swing keybinds (`[` / `]`, `src/Client/SailTrimInput.cs` — **not** `,`/`.`: period opens chat to
+  type a client command, so a period binding never reaches the hotkey) and right-clicking either sheet
+  handle (`SheetLAP`/`SheetRAP`) for a `SailboatTrimStepDeg` nudge. Those two boxes come from invisible
+  `SheetHandleL`/`SheetHandleR` elements the shape patch adds under `ORIGIN` — 7px cubes covering the deck
+  cleat (`RibNc5` port / `knob6` starboard) AND every branch's knot. They hang on the HULL, not the rope:
+  the knots are pinned to fixed anchors so a hull box covers them at any trim angle, it can't swing away
+  from the cursor, and there are just two APs total instead of one per branch. Sizing matters because
+  `EntityBehaviorSelectionBoxes` takes the box from the AP's PARENT element, and the knots alone are
+  ~4×2.5×3px — under a third of a block, and far too easy to slip off while the boat rocks.
+  `/dynamicwind sail` reports the whole chain (behaviour attached? swing animation active? angle moving?)
+  for the boat you are sitting in, so an inert control localises to a link instead of needing a guess. The
+  keybinds send **intent** (−1/0/+1), not increments — the server integrates it, so a lost packet can't
+  accumulate drift and the sail stops by itself on dismount/disconnect. The Harmony postfix on
+  `EntityBoat.SeatsToMotion` then computes `lift · drive`: how squarely the wind hits the sail's front
+  face, times how much of that push points where the boat is going, scaled by wind magnitude via
+  `SailboatWindSpeedInfluence` and floored at `SailboatMinThrust` so a badly trimmed boat still creeps
+  rather than dying in the water. Vanilla zeroes `paddleForce` whenever sails are up, so with
+  `sailPosition > 0` the whole of `__result.X` IS the sail term and scaling it is a complete substitution.
+  `SailboatSailAngleEnabled = false` restores the old heading-vs-wind curve (tailwind +50% / headwind
+  −10%) for existing worlds. Trim works in all three sail positions — see the clew-rope rig below. Tacking
+  remains out of scope.
+- **Mast7 counter-swing** — `MastORIGIN`'s subtree also holds the halyard rope (`RopeKnot`/
+  `HalyardForeMast*`) and the weathervane flag (`FlagWrap`/`Flag`, see below), both of which run to fixed
+  points and must NOT swing with the sail — but they hang off `Mast7`, a SIBLING of the sail/spar/pulley
+  branches rather than a descendant of them, so there is no single node under `MastORIGIN` that captures
+  "everything that should swing" without also capturing `Mast7`. The `sailtrim` animation keyframes
+  `Mast7`'s own `rotationY` equal-and-opposite to `MastORIGIN`'s (−90°↔+90° where the mast is +90°↔−90°),
+  cancelling the inherited swing for its subtree while leaving Mast1-6, the spar and the sails swinging
+  normally. The tiny resulting position drift (`Mast7`'s pivot sits ~0.5px off the mast's true rotation
+  axis) is sub-pixel and not worth solving for.
+- **Weathervane flag** (`FlagWrap`/`Flag`, atop `Mast7`) — vanilla's `EntityBoat.OnRenderFrame` already
+  scrubs this animation's frame to `atan2(CurrentWindSpeedClient.X, CurrentWindSpeedClient.Z) − boat.Yaw`
+  every client frame, i.e. it's wired to follow real wind for free — but only if the entity attribute
+  `weatherVaneAnimCode` is set; the base `boat-sailed.json` instead ships `disabledweatherVaneAnimCode`
+  (a deliberately different key vanilla's own code never reads), which is vanilla's way of shipping this
+  feature switched off. `boat-sailed-sailtrim.json` adds the real `weatherVaneAnimCode: "weathervane"`
+  attribute to turn it back on. Because `CurrentWindSpeedClient` is exactly the vector this mod's client
+  `OnGetWindSpeed` postfix rewrites, the flag then tracks true wind direction with no code of our own —
+  same "vanilla already routes through the vector we control" pattern as particles/foliage/snow. Purely
+  client-side and cosmetic (driven from `OnRenderFrame`, gated on `capi`); no interaction with sail trim
+  or `Mast7`'s counter-rotation above beyond both targeting elements in the same branch.
+- **REMOVED: sail billow.** A first attempt drove the cloth's own curvature (a second baked animation,
+  rotating specific `SailUnfurled`/`SailHalf` panel joints) off `SailboatWind`'s `lift` value. Pulled back
+  out — badly broken in practice (several panels went missing/misshapen) and needs a real redesign, likely
+  with the affected sail sections remodelled rather than just rotated, before trying again. Don't
+  reintroduce the old panel-rotation approach without addressing why those panels broke.
+- **Clew ropes** (baked into the `sailtrim` animation — see "Sailboats" above; the live-solving code that
+  used to compute this every frame, `src/Entities/ClewRopeRig.cs`, is REMOVED) — each sheet runs from a
+  lower corner of the sail down to a fixed knot on the deck. In the shape the chain ROOT is at the clew,
+  parented under the sail, so it swings for free and the FREE END is what must stay pinned — the tractable
+  direction: aim the root at the fixed anchor and stretch it to reach, no IK. One rotation + one `stretchY`
+  keyframed on the root drives every segment, because bones below it are plain `[0,16,0]` steps with no
+  rotation of their own and both rotation and scale propagate straight down the pose tree to whatever hangs
+  off the root — which is exactly the problem for the two leaves at the end of that chain, so BOTH now get
+  their own keyframe track alongside the root:
+  - **Pulley block** — gets the root's `stretchY` **reciprocally** (`1/scale`, its own `stretchY` keyframe)
+    so it rides the rope without stretching along with it.
+  - **Knot** — a knot tied to a fixed deck post shouldn't visibly SPIN just because the rope above it
+    swings, but with no rotation of its own it inherits the root's full solved rotation verbatim (every
+    bone in between is a pure translation). Its own keyframe rotation is the counter-rotation that undoes
+    that and restores its REST orientation instead — `mC⁻¹ · RestRotation` composed with its own authored
+    baseline, where `mC` is the root's per-frame solved rotation matrix (computed in `Solve()` right before
+    the Euler extraction that becomes the root's own keyframe). Both leaves are keyframed at EVERY frame
+    (not just the two endpoints), same as the root, since neither the scale nor the rotation is linear in
+    trim angle.
+
+  The root's own solve is EXACT, not axial: aiming the root's local +Y at the anchor leaves each knot up
+  to a third of a block adrift at full trim (they hang a few px off the centreline), so the aim targets the
+  knot's own offset `u` — scale follows from `|S·u| = |d|` alone, then the rotation is the rest orientation
+  composed with the minimal rotation carrying the scaled offset onto the target. Rest pose (frame 90, angle
+  0) reproduces vanilla exactly for all three keyframed elements (rotation ~1e-6°, scale ~1.0000000) so
+  nothing shifts on load. `tools/keyframegen/Program.cs` computes this per branch:
+  anchors are captured ONCE per branch at rest, lifted into **`MastORIGIN`'s parent space** — the nearest
+  frame that does not move when the rig swings, so a deck knot is fixed there by definition — by walking
+  the parent links from the clew root back up to the rotator, so the shape's nesting can change without the
+  tool knowing the intermediate bone names. The three branches' deck ends differ by ~1px, so sharing one
+  anchor would jump the knot when furling — hence a separate capture (and separate keyframe track) per
+  branch. Frame maths goes through the engine's own primitives (`ShapeElement.GetLocalTransformMatrix`,
+  `Mat4f`, `Quaternionf.RotationTo`) rather than a private reimplementation, so it cannot silently disagree
+  with how the renderer poses the model — hence everything is in BLOCKS, not shape pixels. The one
+  exception is the Rx·Ry·Rz euler extraction: the engine ships `Quaternionf.ToEulerAngles`, but that is a
+  **ZYX** yaw-pitch-roll triple while `ShapeElement` composes **Rx·Ry·Rz**, so feeding one into the other
+  would quietly skew the rope. **`GetLocalTransformMatrix` does NOT reset its own `output` matrix to
+  identity** — it post-multiplies Translate/Rotate/Scale directly onto whatever `output` already holds, so
+  a scratch matrix reused across a loop's iterations (as the original live `ClewRopeRig` did, and as the
+  first draft of `keyframegen` also did before this was caught) silently compounds stale data from the
+  previous element instead of producing that element's own transform — the result isn't visibly
+  degenerate, just quietly WRONG (e.g. reasonable-looking but nonzero rotation/scale at rest, where the
+  correct answer is exactly zero/one). Every `GetLocalTransformMatrix` call site in `keyframegen` calls
+  `Mat4f.Identity()` on its scratch matrix immediately first because of this.
 - **Weather** — `WeatherCoupling` (Harmony postfix on `WeatherSystemBase.GetRainCloudness`) raises
   cloudness/rain inside lows and lowers it in highs — storms form in **low** pressure, highs are
   fair-weather subsidence, matching real synoptic charts (see [noaa.gov/jetstream/wxmaps](https://www.noaa.gov/jetstream/wxmaps)).
@@ -411,6 +557,10 @@ Cell positions are advected from a single anchor time, so one snapshot stays cor
   the torque result instead would stall or, in the braking branch, accelerate without limit. Alignment is
   taken against the perpendicular of `ownFacing` (the sail-disc faces across the axle).
 - `Vintagestory.GameContent.EntityBoat.SeatsToMotion` (both sides) — also `EntityShipwrightBoat` if present.
+  Genuinely both sides: `EntityBoat` drives it from `OnRenderFrame` client-side for prediction and from
+  `OnGameTick` server-side, and trim makes any divergence visibly rubber-band.
+- **No patch needed for sail trim itself** — `EntityBoat.OnInteract` already walks `SidedProperties.Behaviors`
+  and calls each one, so `EntityBehaviorSailTrim.OnInteract` picks up the clew-knot clicks for free.
 - **No patch needed for maple seeds / dropped items** — vanilla `EntityItem.OnGameTick` already adds
   `GetWindSpeedAt` to motion (scaled by `1000/MaterialDensity`); our hook makes that directional for free.
 
@@ -436,6 +586,11 @@ Local git repo (iterating locally; not pushed anywhere yet). Conventions:
 - Release/package: `./build.sh` (Cake) produces a zip under `Releases/`.
 - Install: copy the zip into `../../VintagestoryData/Mods/` (next to `algernonsterrainsampler_*.zip`),
   or run the game via the launch profile in `Properties/launchSettings.json`.
+- `tools/keyframegen/` — standalone console tool (own `.csproj`, NOT part of `DynamicWind.sln`/the mod
+  build) that bakes the sailboat's `sailtrim` clew-rope keyframes; see "Clew ropes" above. Run with
+  `dotnet run -- <fully-patched sailed.json> <output.json>` from that directory (needs the same
+  `VINTAGE_STORY` env var), then splice the branch objects in the output into `patches/boat-sailed-shape.json`'s
+  `sailtrim` animation. Regenerate whenever the boat shape or the clew-rope shape patch changes.
 
 ## Decompiling the game (when XML docs are insufficient)
 
@@ -450,4 +605,13 @@ in the install root. Example:
   base field — a minor magnitude divergence near mountains. A coarse-grid broadcast could close it.
 - `WindAt` + orographic samples on every server `GetWindSpeedAt`; if profiling shows cost, memoize the
   terrain height by coarse tile.
-- Sailboat tacking (upwind gain by zig-zag) is intentionally not implemented.
+- Sailboat tacking (upwind gain by zig-zag) is intentionally not implemented — trim, not tacking, is the
+  mechanic. Sailing dead upwind is meant to be slow; furl and row instead.
+- The boat shape patch (`patches/boat-sailed-shape.json`) uses **positional** JSON-pointer paths
+  (`/elements/0/children/3/...`), so another mod that structurally rewrites the same shape ahead of us
+  would land our clew rig in the wrong place. Regenerate it against the current vanilla `sailed.json` if
+  the boat model ever changes; the furled clew geometry was ported from a donor model by rebasing
+  model-space positions by `−(8,0,8)` into vanilla's `SailFurled` frame. The donor also carried
+  `"shade": false` on every added element (flat, unshaded); vanilla's own rope/block geometry never sets
+  `shade` at all (normal AO shading), so the ported boxes rendered visibly flat next to it — stripped on
+  import to match.

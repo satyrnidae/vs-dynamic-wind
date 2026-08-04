@@ -1,0 +1,55 @@
+[
+	{
+		"file": "game:entities/nonliving/boat-sailed.json",
+		"op": "addmerge",
+		"path": "/behaviorConfigs/selectionboxes/selectionBoxes",
+		"value": ["SheetRAP", "SheetLAP"]
+	},
+	{
+		"file": "game:entities/nonliving/boat-sailed.json",
+		"op": "add",
+		"path": "/attributes/weatherVaneAnimCode",
+		"value": "weathervane"
+	},
+	{
+		"file": "game:entities/nonliving/boat-sailed.json",
+		"op": "add",
+		"path": "/attributes/requireJointsForElements",
+		"value": [
+			"MastORIGIN", "Mast7",
+
+			"SailFurled", "SailHalf", "SailUnfurled", "SparORIGIN",
+
+			"ClewFurledORIGIN", "ClewRopeR1Furled", "ClewRopeL1Furled", "BlockR3", "BlockL3",
+
+			"ClewRopeOrigin", "RClew1", "LClew1", "Block4", "BlockL2",
+
+			"ClewORIGIN", "ClewRopeR1", "ClewRopeL1", "Block1", "BlockL"
+		]
+	},
+	{
+		"file": "game:entities/nonliving/boat-sailed.json",
+		"op": "addmerge",
+		"path": "/client/animations",
+		"value": [
+			{
+				"code": "sailtrim",
+				"animation": "sailtrim",
+				"animationSpeed": 0,
+				"weight": 1
+			}
+		]
+	},
+	{
+		"file": "game:entities/nonliving/boat-sailed.json",
+		"op": "addmerge",
+		"path": "/client/behaviors",
+		"value": [{ "code": "dynamicwindsailtrim" }]
+	},
+	{
+		"file": "game:entities/nonliving/boat-sailed.json",
+		"op": "addmerge",
+		"path": "/server/behaviors",
+		"value": [{ "code": "dynamicwindsailtrim" }]
+	}
+]

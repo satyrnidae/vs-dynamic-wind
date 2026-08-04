@@ -1,12 +1,15 @@
 using AlgernonsTerrainSampler;
 using DynamicWind.Compat;
+using DynamicWind.Entities;
 using DynamicWind.Network;
 using DynamicWind.Patches;
 using DynamicWind.TerrainSystem;
 using DynamicWind.WindSystem;
 using HarmonyLib;
 using Vintagestory.API.Common;
+using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Server;
+using Vintagestory.GameContent;
 
 namespace DynamicWind;
 
@@ -67,6 +70,7 @@ public class DynamicWindModServer : DynamicWindModCommon
         api.Event.OnGetClimate += OnGetClimate;
 
         ServerChannel.SetMessageHandler<ConfigUpdateRequestPacket>(OnConfigUpdateRequest);
+        ServerChannel.SetMessageHandler<SailTrimRequestPacket>(OnSailTrimRequest);
 
         tickListenerId = api.Event.RegisterGameTickListener(OnServerTick, 2000);
 
@@ -114,6 +118,32 @@ public class DynamicWindModServer : DynamicWindModCommon
         // delivers packets in send order, so sending in this order is sufficient — don't reorder.
         ServerChannel.SendPacket(Config, player);
         ServerChannel.SendPacket(sim.Snapshot(), player);
+    }
+
+    /// <summary>
+    /// Applies a client's held sail-trim direction. The client only ever states intent (−1/0/+1); the
+    /// server owns the angle and integrates it, so a lost or duplicated packet cannot accumulate drift.
+    /// Only a player actually sitting in a controllable seat of that boat may steer its sail.
+    /// </summary>
+    private void OnSailTrimRequest(IServerPlayer fromPlayer, SailTrimRequestPacket packet)
+    {
+        if (packet == null || !Config.SailboatEnabled || !Config.SailboatSailAngleEnabled) return;
+
+        Entity? boat = sapi.World.GetEntityById(packet.BoatEntityId);
+        EntityBehaviorSailTrim? trim = boat?.GetBehavior<EntityBehaviorSailTrim>();
+        if (trim == null) return;
+
+        EntityBehaviorSeatable? seatable = boat!.GetBehavior<EntityBehaviorSeatable>();
+        if (seatable?.Seats == null) return;
+
+        bool controlling = false;
+        foreach (IMountableSeat seat in seatable.Seats)
+        {
+            if (seat?.Passenger == fromPlayer.Entity && seat.Config?.Controllable == true) { controlling = true; break; }
+        }
+        if (!controlling) return;
+
+        trim.SetTrimIntent(packet.Dir);
     }
 
     private void OnConfigUpdateRequest(IServerPlayer fromPlayer, ConfigUpdateRequestPacket packet)

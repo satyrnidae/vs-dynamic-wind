@@ -240,6 +240,43 @@ public class DynamicWindConfig
     [Description("description-SailboatHeadwindMaxPenalty")]
     public float SailboatHeadwindMaxPenalty { get; set; } = 0.1f;
 
+    // Trimmable sail. Off → thrust falls back to the older heading-vs-wind alignment curve above
+    // (SailboatTailwindMaxBoost/SailboatHeadwindMaxPenalty) and the sail never leaves square.
+    [Description("description-SailboatSailAngleEnabled")]
+    public bool SailboatSailAngleEnabled { get; set; } = true;
+
+    // How far the yard can swing either side of square-astern. 90° = fully feathered (fore-and-aft).
+    [Range(0.0, 90.0)]
+    [Description("description-SailboatMaxTrimAngleDeg")]
+    public float SailboatMaxTrimAngleDeg { get; set; } = 90f;
+
+    // Swing rate while a trim key is held.
+    [Range(5.0, 180.0)]
+    [Description("description-SailboatSwingRateDegPerSec")]
+    public float SailboatSwingRateDegPerSec { get; set; } = 11.25f;
+
+    // Per-click step when right-clicking a sheet's clew knot.
+    [Range(1.0, 45.0)]
+    [Description("description-SailboatTrimStepDeg")]
+    public float SailboatTrimStepDeg { get; set; } = 15f;
+
+    // Thrust floor for a badly trimmed or backwinded sail, as a fraction of vanilla's constant sail
+    // force — deliberately non-zero so a boat is never completely dead in the water.
+    [Range(0.0, 1.0)]
+    [Description("description-SailboatMinThrust")]
+    public float SailboatMinThrust { get; set; } = 0.5f;
+
+    // How much wind MAGNITUDE (rather than just trim) governs thrust. 0 = vanilla's wind-independent
+    // constant, 1 = fully proportional to wind speed.
+    [Range(0.0, 1.0)]
+    [Description("description-SailboatWindSpeedInfluence")]
+    public float SailboatWindSpeedInfluence { get; set; } = 0.6f;
+
+    // Wind magnitude that counts as "full sail wind" for the scaling above.
+    [Range(0.1, 5.0)]
+    [Description("description-SailboatReferenceWindSpeed")]
+    public float SailboatReferenceWindSpeed { get; set; } = 1.0f;
+
     #region Client-side only properties
 
     [ProtoIgnore]
@@ -352,5 +389,12 @@ public class DynamicWindConfig
         SailboatEnabled = o.SailboatEnabled;
         SailboatTailwindMaxBoost = o.SailboatTailwindMaxBoost;
         SailboatHeadwindMaxPenalty = o.SailboatHeadwindMaxPenalty;
+        SailboatSailAngleEnabled = o.SailboatSailAngleEnabled;
+        SailboatMaxTrimAngleDeg = o.SailboatMaxTrimAngleDeg;
+        SailboatSwingRateDegPerSec = o.SailboatSwingRateDegPerSec;
+        SailboatTrimStepDeg = o.SailboatTrimStepDeg;
+        SailboatMinThrust = o.SailboatMinThrust;
+        SailboatWindSpeedInfluence = o.SailboatWindSpeedInfluence;
+        SailboatReferenceWindSpeed = o.SailboatReferenceWindSpeed;
     }
 }

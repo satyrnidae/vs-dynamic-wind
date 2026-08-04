@@ -58,7 +58,11 @@ public abstract class DynamicWindModCommon : ModSystem
         Channel = (api.Network.GetChannel(ChannelName) ?? api.Network.RegisterChannel(ChannelName))
             .RegisterMessageType(typeof(DynamicWindConfig))
             .RegisterMessageType(typeof(WindFieldState))
-            .RegisterMessageType(typeof(ConfigUpdateRequestPacket));
+            .RegisterMessageType(typeof(ConfigUpdateRequestPacket))
+            // NOTE: message types must be registered in the SAME ORDER on both sides — the channel's
+            // version check compares the ordered type list, so appending here (never inserting) is
+            // what keeps client and server compatible.
+            .RegisterMessageType(typeof(SailTrimRequestPacket));
     }
 
     protected void LoadConfig(ICoreAPI api)
