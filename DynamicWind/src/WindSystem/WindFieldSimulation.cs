@@ -48,6 +48,16 @@ public class WindFieldSimulation
     private const double MaxRadius = 80000.0;
     private const double DespawnMargin = 30000.0; // a cell despawns once it's farther than this PLUS its own radius (toward the player) from EVERY online player
 
+    // Former DynamicWindConfig tunables, now fixed constants (see DynamicWindConfig's class remarks).
+    private const float LowSpawnRatePerDay = 1.5f;
+    private const float HighSpawnRatePerDay = 1.0f;
+    private const float CellRadiusMin = 15000f;
+    private const float CellRadiusMax = 30000f;
+    private const float WeatherPressureCoupling = 0.3f;
+    private const float AdvectionSpeed = 400f;
+    private const float DispersalRate = 0.3f;
+    private const float BernoulliStrength = 0.3f;
+
     // Velocity easing (AdvectWithWind): a cell doesn't snap straight to the local background wind each
     // tick, it exponentially eases its own velocity toward that target — real inertia, so a cell responds
     // to nearby circulation and the base jetstream over several hours rather than jumping to a new
@@ -355,7 +365,7 @@ public class WindFieldSimulation
             int n = field.Cells.Count;
             if (n == 0) return;
 
-            DynamicWindConfig pd = config; // settings are flat on the config now
+            bool advectWithWind = config.AdvectWithWind;
             double elapsed = now - field.AnchorHours; // effective-position extrapolation (≈ dGameHours)
 
             var newX = new double[n];
@@ -373,27 +383,25 @@ public class WindFieldSimulation
                 newX[i] = ex;
                 newZ[i] = ez;
 
-                if (pd.AdvectWithWind || pd.BernoulliStrength > 0f)
+                // BernoulliStrength is a fixed positive constant, so the background wind is always sampled
+                // (needed for both advection and the Bernoulli speed/pressure coupling below).
+                Vec2d w = field.WindAt(ex, ez, now, i); // background only (excludes this cell)
+                speed[i] = w.Length();
+                if (advectWithWind)
                 {
-                    Vec2d w = field.WindAt(ex, ez, now, i); // background only (excludes this cell)
-                    speed[i] = w.Length();
-                    if (pd.AdvectWithWind)
-                    {
-                        // Ease toward the local wind rather than snapping to it — see VelocityEaseRatePerHour.
-                        // The target bearing is also rotated toward the pole (warm) or equator (cold) side by
-                        // this cell's own AirMassTemp — see AirMassBiasedAngle.
-                        double baseAngle = Math.Atan2(w.Y, w.X);
-                        double biasedAngle = AirMassBiasedAngle(baseAngle, ez, c.AirMassTemp);
-                        double mag = speed[i] * pd.AdvectionSpeed; // speed[i] == w.Length(), sampled just above
-                        double targetVX = Math.Cos(biasedAngle) * mag;
-                        double targetVZ = Math.Sin(biasedAngle) * mag;
-                        double ease = 1.0 - Math.Exp(-VelocityEaseRatePerHour * dGameHours);
-                        newVX[i] = c.VelX + (targetVX - c.VelX) * ease;
-                        newVZ[i] = c.VelZ + (targetVZ - c.VelZ) * ease;
-                    }
-                    else { newVX[i] = c.VelX; newVZ[i] = c.VelZ; }
+                    // Ease toward the local wind rather than snapping to it — see VelocityEaseRatePerHour.
+                    // The target bearing is also rotated toward the pole (warm) or equator (cold) side by
+                    // this cell's own AirMassTemp — see AirMassBiasedAngle.
+                    double baseAngle = Math.Atan2(w.Y, w.X);
+                    double biasedAngle = AirMassBiasedAngle(baseAngle, ez, c.AirMassTemp);
+                    double mag = speed[i] * AdvectionSpeed; // speed[i] == w.Length(), sampled just above
+                    double targetVX = Math.Cos(biasedAngle) * mag;
+                    double targetVZ = Math.Sin(biasedAngle) * mag;
+                    double ease = 1.0 - Math.Exp(-VelocityEaseRatePerHour * dGameHours);
+                    newVX[i] = c.VelX + (targetVX - c.VelX) * ease;
+                    newVZ[i] = c.VelZ + (targetVZ - c.VelZ) * ease;
                 }
-                else { newVX[i] = c.VelX; newVZ[i] = c.VelZ; speed[i] = 1.0; }
+                else { newVX[i] = c.VelX; newVZ[i] = c.VelZ; }
             }
 
             // Pass 2: write positions/velocities and evolve strength + radius.
@@ -405,8 +413,8 @@ public class WindFieldSimulation
                 c.VelX = newVX[i];
                 c.VelZ = newVZ[i];
 
-                ApplyDispersal(c, pd, dGameHours);
-                ApplyBernoulli(c, pd, speed[i], dGameHours);
+                ApplyDispersal(c, dGameHours);
+                ApplyBernoulli(c, speed[i], dGameHours);
                 GrowStormLikelihood(c, dGameHours);
                 EaseOrientation(c, newVX[i], newVZ[i], dGameHours);
             }
@@ -417,26 +425,26 @@ public class WindFieldSimulation
     }
 
     /// <summary>Radius/strength dispersal — see DispersalRate/DispersalSpreadPerHour/DispersalDecayPerHour.</summary>
-    private static void ApplyDispersal(PressureCell c, DynamicWindConfig pd, double dGameHours)
+    private static void ApplyDispersal(PressureCell c, double dGameHours)
     {
-        if (pd.DispersalRate <= 0f || dGameHours <= 0) return;
+        if (dGameHours <= 0) return;
 
-        c.Radius += (float)(pd.DispersalRate * DispersalSpreadPerHour * dGameHours);
+        c.Radius += (float)(DispersalRate * DispersalSpreadPerHour * dGameHours);
         if (c.Radius > MaxRadius) c.Radius = (float)MaxRadius;
 
         float minor = c.RadiusMinor > 1e-3f ? c.RadiusMinor : c.Radius;
-        minor += (float)(pd.DispersalRate * DispersalSpreadPerHour * MinorDispersalFactor * dGameHours);
+        minor += (float)(DispersalRate * DispersalSpreadPerHour * MinorDispersalFactor * dGameHours);
         c.RadiusMinor = Math.Min(minor, c.Radius); // never overtake the major axis
 
-        c.Strength *= (float)Math.Exp(-pd.DispersalRate * DispersalDecayPerHour * dGameHours);
+        c.Strength *= (float)Math.Exp(-DispersalRate * DispersalDecayPerHour * dGameHours);
     }
 
     /// <summary>Faster-than-nominal flow lowers pressure (toward low, +); stagnant air raises it.</summary>
-    private static void ApplyBernoulli(PressureCell c, DynamicWindConfig pd, double speed, double dGameHours)
+    private static void ApplyBernoulli(PressureCell c, double speed, double dGameHours)
     {
-        if (pd.BernoulliStrength <= 0f || dGameHours <= 0) return;
+        if (dGameHours <= 0) return;
 
-        c.Strength += (float)(pd.BernoulliStrength * BernoulliPerHour * (speed - 1.0) * dGameHours);
+        c.Strength += (float)(BernoulliStrength * BernoulliPerHour * (speed - 1.0) * dGameHours);
         if (c.Strength > MaxStrength) c.Strength = (float)MaxStrength;
         else if (c.Strength < -MaxStrength) c.Strength = -(float)MaxStrength;
     }
@@ -565,7 +573,7 @@ public class WindFieldSimulation
     /// </summary>
     private void ApplyWeatherFeedback(double now, double dGameHours)
     {
-        if (dGameHours <= 0 || config.WeatherPressureCoupling <= 0f) return;
+        if (dGameHours <= 0) return;
         lock (field.CellsLock)
         {
             int n = field.Cells.Count;
@@ -590,7 +598,7 @@ public class WindFieldSimulation
                 // storms add a strong extra low-ward push (storms deepen the low that's producing them).
                 double forcing = (cloud - ClearCloudThreshold) + StormForcingGain * precip;
 
-                c.Strength += (float)(config.WeatherPressureCoupling * forcing * dGameHours);
+                c.Strength += (float)(WeatherPressureCoupling * forcing * dGameHours);
                 if (c.Strength > MaxStrength) c.Strength = (float)MaxStrength;
                 else if (c.Strength < -MaxStrength) c.Strength = -(float)MaxStrength;
             }
@@ -667,8 +675,8 @@ public class WindFieldSimulation
         lock (field.CellsLock) { if (field.Cells.Count >= config.MaxActiveCells) return; }
         // Expected count scales with elapsed GAME time, so pressure systems evolve on the world clock —
         // and speed up while a player sleeps (the calendar fast-forwards → larger dGameHours per tick).
-        SpawnExpected(now, config.LowSpawnRatePerDay / 24.0 * dGameHours, isLow: true);
-        SpawnExpected(now, config.HighSpawnRatePerDay / 24.0 * dGameHours, isLow: false);
+        SpawnExpected(now, LowSpawnRatePerDay / 24.0 * dGameHours, isLow: true);
+        SpawnExpected(now, HighSpawnRatePerDay / 24.0 * dGameHours, isLow: false);
     }
 
     /// <summary>Spawn roughly <paramref name="expected"/> cells: the whole part plus a fractional chance.</summary>
@@ -691,8 +699,8 @@ public class WindFieldSimulation
             // Full-range variety across the configured [CellRadiusMin, CellRadiusMax] span — synoptic
             // systems (unlike thermal seeds/heat-cold-waves below) span the whole configured size range.
             float radius = GameMath.Clamp(
-                (float)(config.CellRadiusMin + rand.NextDouble() * (config.CellRadiusMax - config.CellRadiusMin)),
-                config.CellRadiusMin, config.CellRadiusMax);
+                (float)(CellRadiusMin + rand.NextDouble() * (CellRadiusMax - CellRadiusMin)),
+                CellRadiusMin, CellRadiusMax);
 
             // Mean jetstream bearing (seasonally tilted N/S). Systems spawn UPWIND of this bearing (± a
             // scatter spread) so they drift back down the jet THROUGH the player's area rather than being
@@ -709,7 +717,7 @@ public class WindFieldSimulation
             double fx = Math.Cos(travelAngle), fz = Math.Sin(travelAngle); // downwind unit vector along the EXPECTED path
 
             // Advection speed in blocks/hour along the bearing, scaled by base strength.
-            double advect = (300.0 + rand.NextDouble() * 300.0) * Math.Max(0.2, config.BaseJetstreamStrength);
+            double advect = (300.0 + rand.NextDouble() * 300.0) * Math.Max(0.2, field.BaseStrength);
             double velX = fx * advect;
             double velZ = fz * advect;
 

@@ -18,7 +18,7 @@ namespace DynamicWind.Patches;
 /// occlusion). Our postfix OVERWRITES it (not scales it) with the magnitude of the real, hooked wind at
 /// this block (<see cref="IBlockAccessor.GetWindSpeedAt"/>, the same value the HUD/particles/etc. see),
 /// then scales it by |cos θ| between that wind and the rotor axle (<c>ownFacing</c>) rescaled onto
-/// [<see cref="DynamicWindConfig.WindmillMinEfficiency"/>, 1] — parallel = full power, perpendicular = the
+/// [<see cref="WindmillMinEfficiency"/>, 1] — parallel = full power, perpendicular = the
 /// configured minimum efficiency (NOT a flat floor on the result: the whole curve is remapped, so power
 /// still varies continuously across every angle) — and records the SIGN of the alignment: when the wind
 /// comes from behind the rotor (cos θ &lt; 0) the mill should turn backwards. Exactly edge-on that sign is
@@ -56,6 +56,9 @@ internal static class WindmillDirectionality
     // flip at full power instead would snap a geared assembly from +x to −x speed in a single tick.
     private const double ReversalRampRatePerSecond = 0.5;
     private const double ReversalRampFloor = 0.02; // |ramp| under this counts as "through zero"
+
+    // Former DynamicWindConfig tunable, now a fixed constant (see DynamicWindConfig's class remarks).
+    private const float WindmillMinEfficiency = 0.5f;
 
     private sealed class SmoothState
     {
@@ -156,7 +159,7 @@ internal static class WindmillDirectionality
         // would hold full MinEfficiency power right up to the crossing, so the mill snaps into reverse
         // instead of easing down through a stall the way the eased alignment below intends.
         double aligned = Math.Min(1.0, Math.Abs(state.Dot));
-        double minEff = GameMath.Clamp(cfg.WindmillMinEfficiency, 0f, 1f);
+        double minEff = WindmillMinEfficiency;
         double mag = minEff + (1.0 - minEff) * aligned;
 
         // Which way it wants to turn, from the EASED readings. Normally the alignment sign (180° flip vs

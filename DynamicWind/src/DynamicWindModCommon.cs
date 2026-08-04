@@ -42,6 +42,16 @@ public abstract class DynamicWindModCommon : ModSystem
     private const double WarmWindMult = 0.6;
     private const double StationaryWindMult = 0.3;
 
+    // Former DynamicWindConfig tunables, now fixed constants (see DynamicWindConfig's class remarks).
+    private const double FrontWindStrength = 0.4;
+    private const float FrontTemperatureMax = 3.0f;
+    private const float ThermalTemperatureMax = 1.0f;
+    private const float HumidityRainfallBlendWeight = 0.7f;
+    private const double OcclusionLightThreshold = 10.0;
+    private const double OcclusionSharpness = 3.0;
+    private const double OcclusionMinFactor = 0.0;
+    private const float SeasonalBiasMaxAngleDeg = 60f;
+
     public override bool ShouldLoad(EnumAppSide side) => false;
 
     // Load after the vanilla weather system so our OnGetWindSpeed handler is appended after its (it
@@ -118,24 +128,8 @@ public abstract class DynamicWindModCommon : ModSystem
     /// <summary>Copy the scalar field parameters from the config into the shared WindField. Cells untouched.</summary>
     public void ApplyConfigToField()
     {
-        Field.BaseStrength = Config.BaseJetstreamStrength;
-        Field.MeanderAmplitude = Config.JetstreamMeanderAmplitude;
-        Field.MeanderFrequency = Config.JetstreamMeanderFrequency;
-        Field.CyclonicInflowAngle = Config.CyclonicInflowAngleDeg * GameMath.DEG2RAD;
-        Field.CirculationStrength = Config.CirculationStrength;
-        Field.SeasonalBiasMaxAngle = Config.SeasonalBias ? Config.SeasonalBiasMaxAngleDeg * GameMath.DEG2RAD : 0.0;
-        Field.JetNoiseAmplitude = Config.JetstreamNoiseAmplitude;
-        Field.GradientWindScale = Config.PressureWindStrength;
+        Field.SeasonalBiasMaxAngle = Config.SeasonalBias ? SeasonalBiasMaxAngleDeg * GameMath.DEG2RAD : 0.0;
         Field.OrographicEnabled = Config.OrographicEnabled;
-        Field.OroHeightThreshold = Config.OrographicHeightThreshold;
-        Field.OroSlowdown = Config.OrographicSlowdownFactor;
-        Field.OroDeflection = Config.OrographicDeflectionStrength;
-        Field.OroWake = Config.OrographicWakeFactor;
-        Field.AltitudeMaxDrop = Config.AltitudePressureDrop;
-        Field.SeaBreezeStrength = Config.SeaBreezeStrength;
-        Field.HumidityWaterProximityStrength = Config.HumidityWaterProximityStrength;
-        Field.HumidityPressureStrength = Config.HumidityPressureStrength;
-        Field.HumidityNoiseAmplitude = Config.HumidityNoiseAmplitude;
     }
 
     /// <summary>
@@ -205,7 +199,7 @@ public abstract class DynamicWindModCommon : ModSystem
                + regime.Warm * WarmWindMult + regime.Stationary * StationaryWindMult) / regimeTotal
             : 1.0;
 
-        double speed = (vsSpeed * Field.JetStreak(pos.X, pos.Z, totalHours) + Config.FrontWindStrength * frontExcess * frontTypeWindMult) * oroFactor;
+        double speed = (vsSpeed * Field.JetStreak(pos.X, pos.Z, totalHours) + FrontWindStrength * frontExcess * frontTypeWindMult) * oroFactor;
 
         if (applyOcclusion && Config.OcclusionEnabled && !IsAmbientPlayerQuery(pos)) speed *= OcclusionFactor(pos);
 
@@ -239,8 +233,8 @@ public abstract class DynamicWindModCommon : ModSystem
     /// <c>ExitCount == 0</c> meaning no gaps to open air) gets flat-zero wind: a glass-roofed greenhouse
     /// still reads bright on <c>OnlySunLight</c>, so the light-based falloff below would miss it, but it
     /// has no opening for outside air to actually move through. Everywhere else falls back to a power-curve
-    /// falloff on sun-exposure light level (0 = fully enclosed, <see cref="DynamicWindConfig.OcclusionLightThreshold"/>
-    /// or above = fully open): <see cref="DynamicWindConfig.OcclusionSharpness"/> &gt; 1 keeps near-open spots
+    /// falloff on sun-exposure light level (0 = fully enclosed, <see cref="OcclusionLightThreshold"/>
+    /// or above = fully open): <see cref="OcclusionSharpness"/> &gt; 1 keeps near-open spots
     /// near full speed and only cuts hard once mostly enclosed.
     ///
     /// Both the room BFS and the light lookup touch chunk data, so skip both entirely outside loaded
@@ -261,10 +255,10 @@ public abstract class DynamicWindModCommon : ModSystem
 
         int sunLight = Api.World.BlockAccessor.GetLightLevel(bp, EnumLightLevelType.OnlySunLight);
 
-        double t = sunLight / (double)Config.OcclusionLightThreshold;
+        double t = sunLight / OcclusionLightThreshold;
         if (t < 0) t = 0; else if (t > 1) t = 1;
 
-        return Config.OcclusionMinFactor + (1.0 - Config.OcclusionMinFactor) * Math.Pow(t, Config.OcclusionSharpness);
+        return OcclusionMinFactor + (1.0 - OcclusionMinFactor) * Math.Pow(t, OcclusionSharpness);
     }
 
     // Re-entrancy guard: the terrain-thermal term below calls TerrainTempFunc → TerrainThermal →
@@ -278,9 +272,9 @@ public abstract class DynamicWindModCommon : ModSystem
     /// character (<see cref="PressureCell.AirMassTemp"/>, set at spawn from birth latitude + season +
     /// jitter) independent of whether it's a low or a high — a cold low and a warm high can both exist,
     /// same as a polar low or a subtropical high in reality. Shifts local temperature up to
-    /// <see cref="DynamicWindConfig.FrontTemperatureMax"/> °C toward that air mass's character; the
+    /// <see cref="FrontTemperatureMax"/> °C toward that air mass's character; the
     /// terrain-thermal field (warm dry land / cool deep water) adds a gentler shift up to
-    /// <see cref="DynamicWindConfig.ThermalTemperatureMax"/> °C. Both terms are read from the same
+    /// <see cref="ThermalTemperatureMax"/> °C. Both terms are read from the same
     /// synced <see cref="WindField"/> used everywhere else, so server and client agree. Worldgen base
     /// climate is left untouched — only live ("now"/dated) lookups shift.
     /// </summary>
@@ -288,8 +282,7 @@ public abstract class DynamicWindModCommon : ModSystem
     {
         if (climate == null || mode == EnumGetClimateMode.WorldGenValues) return;
         if (inClimateHandler) return;
-        bool humidityActive = Config.HumidityEnabled && Config.HumidityRainfallBlendWeight > 0f;
-        if (Config.FrontTemperatureMax <= 0f && Config.ThermalTemperatureMax <= 0f && !humidityActive) return;
+        bool humidityActive = Config.HumidityEnabled;
 
         inClimateHandler = true;
         try
@@ -298,15 +291,15 @@ public abstract class DynamicWindModCommon : ModSystem
 
             // Front term: blended air-mass character in [-1, 1] (independent of pressure sign).
             double t = Field.CellTemperatureAt(pos.X, pos.Z, totalHours);
-            double frontDelta = Config.FrontTemperatureMax * Clamp1(t);
+            double frontDelta = FrontTemperatureMax * Clamp1(t);
 
             // Terrain thermal term: + warm land / − cool water. TerrainThermal is already denominated in
-            // °C, so this only normalises its nominal amplitude to the user's configured maximum shift.
+            // °C, so this only normalises its nominal amplitude to the configured maximum shift.
             double thermalDelta = 0;
-            if (Config.ThermalTemperatureMax > 0f && Field.TerrainTempFunc != null)
+            if (Field.TerrainTempFunc != null)
             {
                 double anomaly = Field.TerrainTempFunc(pos.X, pos.Z, totalHours);
-                thermalDelta = Config.ThermalTemperatureMax * Clamp1(anomaly / TerrainThermal.Amplitude);
+                thermalDelta = ThermalTemperatureMax * Clamp1(anomaly / TerrainThermal.Amplitude);
             }
 
             climate.Temperature += (float)(frontDelta + thermalDelta);
@@ -318,9 +311,7 @@ public abstract class DynamicWindModCommon : ModSystem
             if (humidityActive)
             {
                 double humidity = Field.HumidityAt(pos.X, pos.Z, totalHours);
-                float w = Config.HumidityRainfallBlendWeight;
-                if (w > 1f) w = 1f;
-                climate.Rainfall = climate.Rainfall + (float)(w * (humidity - climate.Rainfall));
+                climate.Rainfall = climate.Rainfall + (float)(HumidityRainfallBlendWeight * (humidity - climate.Rainfall));
             }
         }
         finally

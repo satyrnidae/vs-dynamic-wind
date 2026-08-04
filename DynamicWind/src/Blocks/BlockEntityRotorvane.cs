@@ -1,7 +1,6 @@
 using System;
 using System.Text;
 using DynamicWind.Client.Render;
-using DynamicWind.Config;
 using DynamicWind.WindSystem;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
@@ -42,6 +41,9 @@ public class BlockEntityRotorvane : BlockEntity
     private const float MinPitch = 0.6f;
     private const float MaxPitch = 1.4f;
     private const int SoundUpdateMs = 150;
+
+    // Former DynamicWindConfig tunable, now a fixed constant (see DynamicWindConfig's class remarks).
+    private const float RotorvaneSpeedMult = 24f;
     // Raw wind speed (and GetDirectionalMod, which depends on the assembly's still-swinging yaw) is noisy
     // tick-to-tick, especially at high wind-speed timescales/gusts — easing pitch AND volume toward their
     // raw targets instead of snapping every tick keeps the whirring from warbling.
@@ -143,8 +145,7 @@ public class BlockEntityRotorvane : BlockEntity
     {
         if (Api == null) return 0f;
 
-        DynamicWindConfig? cfg = DynamicWindRuntime.ConfigFor(Api.Side);
-        float speed = (float)GetWindSpeed() * cfg?.RotorvaneSpeedMult ?? 8f;
+        float speed = (float)GetWindSpeed() * RotorvaneSpeedMult;
         return speed * GetDirectionalMod();
     }
 

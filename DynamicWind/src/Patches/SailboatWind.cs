@@ -22,6 +22,13 @@ namespace DynamicWind.Patches;
 /// </summary>
 internal static class SailboatWind
 {
+    // Former DynamicWindConfig tunables, now fixed constants (see DynamicWindConfig's class remarks).
+    private const float SailboatTailwindMaxBoost = 0.5f;
+    private const float SailboatHeadwindMaxPenalty = 0.1f;
+    private const float SailboatMinThrust = 0.5f;
+    private const float SailboatWindSpeedInfluence = 0.6f;
+    private const float SailboatReferenceWindSpeed = 1.0f;
+
     public static void Apply(Harmony harmony, ILogger logger)
     {
         try
@@ -80,8 +87,8 @@ internal static class SailboatWind
         // Vanilla zeroes paddleForce whenever the sails are up, so with sailPosition > 0 the whole of
         // __result.X IS the sail term — scaling it outright is a complete substitution, not a nudge.
         __result.X *= cfg.SailboatSailAngleEnabled
-            ? TrimmedFactor(__instance, cfg, tx, tz, wx, wz, len)
-            : LegacyFactor(cfg, tx, tz, wx, wz);
+            ? TrimmedFactor(__instance, tx, tz, wx, wz, len)
+            : LegacyFactor(tx, tz, wx, wz);
     }
 
     /// <summary>
@@ -91,8 +98,7 @@ internal static class SailboatWind
     /// (±90°) or backwinded therefore falls to <c>SailboatMinThrust</c> rather than to nothing, so a
     /// badly trimmed boat still creeps home instead of dying in the water.
     /// </summary>
-    private static double TrimmedFactor(EntityBoat boat, DynamicWindConfig cfg,
-                                        double tx, double tz, double wx, double wz, double windSpeed)
+    private static double TrimmedFactor(EntityBoat boat, double tx, double tz, double wx, double wz, double windSpeed)
     {
         // No behaviour → an unpatched or third-party boat whose sail cannot swing; treat it as square.
         double angle = (boat.GetBehavior<EntityBehaviorSailTrim>()?.CurrentAngleDeg ?? 0f) * GameMath.DEG2RAD;
@@ -107,20 +113,20 @@ internal static class SailboatWind
         double drive = GameMath.Clamp(nx * tx + nz * tz, 0, 1);  // ...pushing us forward rather than sideways
         double trim = lift * drive;
 
-        double spd = GameMath.Clamp(windSpeed / cfg.SailboatReferenceWindSpeed, 0, 1);
-        double speedFactor = (1.0 - cfg.SailboatWindSpeedInfluence) + cfg.SailboatWindSpeedInfluence * spd;
+        double spd = GameMath.Clamp(windSpeed / SailboatReferenceWindSpeed, 0, 1);
+        double speedFactor = (1.0 - SailboatWindSpeedInfluence) + SailboatWindSpeedInfluence * spd;
 
-        double best = 1.0 + cfg.SailboatTailwindMaxBoost;
-        return cfg.SailboatMinThrust + (best - cfg.SailboatMinThrust) * trim * speedFactor;
+        double best = 1.0 + SailboatTailwindMaxBoost;
+        return SailboatMinThrust + (best - SailboatMinThrust) * trim * speedFactor;
     }
 
     /// <summary>Pre-trim behaviour: thrust from hull heading vs wind alone. Kept for
     /// <c>SailboatSailAngleEnabled = false</c> so existing worlds can opt out of the new mechanic.</summary>
-    private static double LegacyFactor(DynamicWindConfig cfg, double tx, double tz, double wx, double wz)
+    private static double LegacyFactor(double tx, double tz, double wx, double wz)
     {
         double align = tx * wx + tz * wz; // [-1, 1]
         return 1.0 + (align >= 0
-            ? cfg.SailboatTailwindMaxBoost * align
-            : cfg.SailboatHeadwindMaxPenalty * align);
+            ? SailboatTailwindMaxBoost * align
+            : SailboatHeadwindMaxPenalty * align);
     }
 }

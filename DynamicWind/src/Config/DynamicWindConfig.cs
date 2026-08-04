@@ -16,74 +16,23 @@ namespace DynamicWind.Config;
 /// <c>"logarithmic"</c> (log-scale slider) and <c>"clientside"</c> (bypasses the controlserver privilege
 /// check), so it's applied only to properties that need one of those.
 ///
-/// All settings are FLAT top-level scalar properties: ConfigLib's managed-config reflection only sees
-/// top-level scalars (it does not recurse into nested objects), so flattening makes every knob appear
-/// in the GUI.
+/// Deliberately limited to feature on/off toggles and settings that affect performance
+/// (<see cref="MaxActiveCells"/> bounds the O(n^2) pressure-cell simulation cost). Every other tunable
+/// (strengths/rates/angles/thresholds that shape the wind/weather model) is a hardcoded constant at its
+/// point of use instead — letting players freely combine dozens of independent numeric knobs made it easy
+/// to tune the mod into a broken or degenerate state (e.g. dead-calm air, runaway storms) with no way to
+/// validate the combination. All settings are FLAT top-level scalar properties: ConfigLib's managed-config
+/// reflection only sees top-level scalars (it does not recurse into nested objects), so flattening makes
+/// every knob appear in the GUI.
 /// </summary>
 [ProtoContract(ImplicitFields = ImplicitFields.AllPublic)]
 public class DynamicWindConfig
 {
     // ── Jetstream (base flow) ───────────────────────────────────────────────
-    [Range(0.0, 3.0)]
-    [Description("description-BaseJetstreamStrength")]
-    public float BaseJetstreamStrength { get; set; } = 0.7f;
-
-    [Range(0.0, 1.5)]
-    [Description("description-JetstreamMeanderAmplitude")]
-    public float JetstreamMeanderAmplitude { get; set; } = 0.9f;
-
-    [Category("logarithmic")]
-    [Range(0.1, 4.0)]
-    [Description("description-JetstreamMeanderFrequency")]
-    public float JetstreamMeanderFrequency { get; set; } = 2.0f;
-
-    [Range(0.0, 1.0)]
-    [Description("description-JetstreamNoiseAmplitude")]
-    public float JetstreamNoiseAmplitude { get; set; } = 0.3f;
-
-    [Category("logarithmic")]
-    [Range(0.0, 500.0)]
-    [Description("description-PressureWindStrength")]
-    public float PressureWindStrength { get; set; } = 150f;
-
-    [Range(0.0, 1.0)]
-    [Description("description-FrontWindStrength")]
-    public float FrontWindStrength { get; set; } = 0.4f;
-
     [Description("description-SeasonalBias")]
     public bool SeasonalBias { get; set; } = true;
 
-    [Range(0.0, 80.0)]
-    [Description("description-SeasonalBiasMaxAngleDeg")]
-    public float SeasonalBiasMaxAngleDeg { get; set; } = 60f;
-
     // ── Pressure systems ────────────────────────────────────────────────────
-    [Range(0.0, 24.0)]
-    [Description("description-LowSpawnRatePerDay")]
-    public float LowSpawnRatePerDay { get; set; } = 1.5f;
-
-    [Range(0.0, 24.0)]
-    [Description("description-HighSpawnRatePerDay")]
-    public float HighSpawnRatePerDay { get; set; } = 1.0f;
-
-    [Category("logarithmic")]
-    [Range(50.0, 30000.0)]
-    [Description("description-CellRadiusMin")]
-    public float CellRadiusMin { get; set; } = 15000f;
-
-    [Category("logarithmic")]
-    [Range(50.0, 60000.0)]
-    [Description("description-CellRadiusMax")]
-    public float CellRadiusMax { get; set; } = 30000f;
-
-    [Range(0.0, 60.0)]
-    [Description("description-CyclonicInflowAngleDeg")]
-    public float CyclonicInflowAngleDeg { get; set; } = 20f;
-
-    [Range(0.0, 6.0)]
-    [Description("description-CirculationStrength")]
-    public float CirculationStrength { get; set; } = 2.5f;
-
     // Range covers the pre-retune default (9) even though the synoptic retune lowered the DEFAULT to 2:
     // Validate() clamps every int to its [Range], so narrowing below the old default would silently
     // rewrite (and re-persist) an existing user's saved value with no migration or log line.
@@ -91,54 +40,12 @@ public class DynamicWindConfig
     [Description("description-MaxActiveCells")]
     public int MaxActiveCells { get; set; } = 2;
 
-    // ── Weather coupling ────────────────────────────────────────────────────
-    [Range(0.0, 2.0)]
-    [Description("description-StormCouplingStrength")]
-    public float StormCouplingStrength { get; set; } = 1.0f;
-
-    [Range(0.0, 2.0)]
-    [Description("description-WeatherPressureCoupling")]
-    public float WeatherPressureCoupling { get; set; } = 0.3f;
-
-    // ── Temperature ─────────────────────────────────────────────────────────
-    [Range(0.0, 15.0)]
-    [Description("description-FrontTemperatureMax")]
-    public float FrontTemperatureMax { get; set; } = 3.0f;
-
-    [Range(0.0, 5.0)]
-    [Description("description-ThermalTemperatureMax")]
-    public float ThermalTemperatureMax { get; set; } = 1.0f;
-
     // ── Humidity ────────────────────────────────────────────────────────────
     [Description("description-HumidityEnabled")]
     public bool HumidityEnabled { get; set; } = true;
 
-    [Range(0.0, 1.0)]
-    [Description("description-HumidityRainfallBlendWeight")]
-    public float HumidityRainfallBlendWeight { get; set; } = 0.7f;
-
-    [Range(0.0, 1.0)]
-    [Description("description-HumidityWaterProximityStrength")]
-    public float HumidityWaterProximityStrength { get; set; } = 0.25f;
-
-    [Range(0.0, 1.0)]
-    [Description("description-HumidityPressureStrength")]
-    public float HumidityPressureStrength { get; set; } = 0.15f;
-
-    [Range(0.0, 1.0)]
-    [Description("description-HumidityNoiseAmplitude")]
-    public float HumidityNoiseAmplitude { get; set; } = 0.1f;
-
     [Description("description-HumidityBodyTempCompatEnabled")]
     public bool HumidityBodyTempCompatEnabled { get; set; } = true;
-
-    [Range(0.0, 3.0)]
-    [Description("description-HumidityDiscomfortMax")]
-    public float HumidityDiscomfortMax { get; set; } = 1.5f;
-
-    [Range(0.0, 1.0)]
-    [Description("description-HumidityWetnessDryingSuppression")]
-    public float HumidityWetnessDryingSuppression { get; set; } = 0.5f;
 
     [ProtoIgnore]
     [Category("clientside")]
@@ -152,51 +59,12 @@ public class DynamicWindConfig
     public bool CloudsFollowWind { get; set; } = true;
 
     // ── Pressure dynamics ───────────────────────────────────────────────────
-    [Range(0.0, 1.0)]
-    [Description("description-AltitudePressureDrop")]
-    public float AltitudePressureDrop { get; set; } = 0.5f;
-
     [Description("description-AdvectWithWind")]
     public bool AdvectWithWind { get; set; } = true;
-
-    [Category("logarithmic")]
-    [Range(0.0, 2000.0)]
-    [Description("description-AdvectionSpeed")]
-    public float AdvectionSpeed { get; set; } = 400f;
-
-    [Range(0.0, 1.0)]
-    [Description("description-DispersalRate")]
-    public float DispersalRate { get; set; } = 0.3f;
-
-    [Range(0.0, 1.0)]
-    [Description("description-BernoulliStrength")]
-    public float BernoulliStrength { get; set; } = 0.3f;
-
-    // Terrain no longer contributes PRESSURE at all — it is a temperature field, and the coastal wind it
-    // drives is now a thermally direct circulation off that field's own gradient (WindField.WindAt).
-    [Range(0.0, 3.0)]
-    [Description("description-SeaBreezeStrength")]
-    public float SeaBreezeStrength { get; set; } = 1.0f;
 
     // ── Orographic (terrain) ────────────────────────────────────────────────
     [Description("description-OrographicEnabled")]
     public bool OrographicEnabled { get; set; } = true;
-
-    [Range(0.0, 255.0)]
-    [Description("description-OrographicHeightThreshold")]
-    public float OrographicHeightThreshold { get; set; } = 130f;
-
-    [Range(0.0, 1.0)]
-    [Description("description-OrographicSlowdownFactor")]
-    public float OrographicSlowdownFactor { get; set; } = 0.5f;
-
-    [Range(0.0, 3.0)]
-    [Description("description-OrographicDeflectionStrength")]
-    public float OrographicDeflectionStrength { get; set; } = 1.0f;
-
-    [Range(0.0, 1.0)]
-    [Description("description-OrographicWakeFactor")]
-    public float OrographicWakeFactor { get; set; } = 0.5f;
 
     // ── Occlusion (indoor/underground shielding) ───────────────────────────
     [Description("description-OcclusionEnabled")]
@@ -205,77 +73,18 @@ public class DynamicWindConfig
     [Description("description-OcclusionRoomsZeroWind")]
     public bool OcclusionRoomsZeroWind { get; set; } = true;
 
-    [Range(1.0, 24.0)]
-    [Description("description-OcclusionLightThreshold")]
-    public float OcclusionLightThreshold { get; set; } = 10f;
-
-    [Range(1.0, 6.0)]
-    [Description("description-OcclusionSharpness")]
-    public float OcclusionSharpness { get; set; } = 3f;
-
-    [Range(0.0, 1.0)]
-    [Description("description-OcclusionMinFactor")]
-    public float OcclusionMinFactor { get; set; } = 0f;
-
     // ── Windmill ────────────────────────────────────────────────────────────
     [Description("description-WindmillDirectionality")]
     public bool WindmillDirectionality { get; set; } = true;
-
-    // Efficiency of a rotor sitting exactly PERPENDICULAR to the wind — the bottom of the alignment curve,
-    // which scales linearly up to full power head-on (see WindmillDirectionality). NOT a flat floor on the
-    // resulting speed.
-    [Range(0.0, 1.0)]
-    [Description("description-WindmillMinEfficiency")]
-    public float WindmillMinEfficiency { get; set; } = 0.5f;
 
     // ── Sailboat ────────────────────────────────────────────────────────────
     [Description("description-SailboatEnabled")]
     public bool SailboatEnabled { get; set; } = true;
 
-    [Range(0.0, 2.0)]
-    [Description("description-SailboatTailwindMaxBoost")]
-    public float SailboatTailwindMaxBoost { get; set; } = 0.5f;
-
-    [Range(0.0, 1.0)]
-    [Description("description-SailboatHeadwindMaxPenalty")]
-    public float SailboatHeadwindMaxPenalty { get; set; } = 0.1f;
-
-    // Trimmable sail. Off → thrust falls back to the older heading-vs-wind alignment curve above
-    // (SailboatTailwindMaxBoost/SailboatHeadwindMaxPenalty) and the sail never leaves square.
+    // Trimmable sail. Off → thrust falls back to the older heading-vs-wind alignment curve
+    // and the sail never leaves square.
     [Description("description-SailboatSailAngleEnabled")]
     public bool SailboatSailAngleEnabled { get; set; } = true;
-
-    // How far the yard can swing either side of square-astern. 90° = fully feathered (fore-and-aft).
-    [Range(0.0, 90.0)]
-    [Description("description-SailboatMaxTrimAngleDeg")]
-    public float SailboatMaxTrimAngleDeg { get; set; } = 90f;
-
-    // Swing rate while a trim key is held.
-    [Range(5.0, 180.0)]
-    [Description("description-SailboatSwingRateDegPerSec")]
-    public float SailboatSwingRateDegPerSec { get; set; } = 11.25f;
-
-    // Per-click step when right-clicking a sheet's clew knot.
-    [Range(1.0, 45.0)]
-    [Description("description-SailboatTrimStepDeg")]
-    public float SailboatTrimStepDeg { get; set; } = 15f;
-
-    // Thrust floor for a badly trimmed or backwinded sail, as a fraction of vanilla's constant sail
-    // force — deliberately non-zero so a boat is never completely dead in the water.
-    [Range(0.0, 1.0)]
-    [Description("description-SailboatMinThrust")]
-    public float SailboatMinThrust { get; set; } = 0.5f;
-
-    // How much wind MAGNITUDE (rather than just trim) governs thrust. 0 = vanilla's wind-independent
-    // constant, 1 = fully proportional to wind speed.
-    [Range(0.0, 1.0)]
-    [Description("description-SailboatWindSpeedInfluence")]
-    public float SailboatWindSpeedInfluence { get; set; } = 0.6f;
-
-    // Wind magnitude that counts as "full sail wind" for the scaling above.
-    [Range(0.1, 5.0)]
-    [Description("description-SailboatReferenceWindSpeed")]
-    public float SailboatReferenceWindSpeed { get; set; } = 1.0f;
 
     #region Client-side only properties
 
@@ -293,12 +102,6 @@ public class DynamicWindConfig
     [Category("clientside")]
     [Description("description-WindDirectionMapLayerVisibleByDefault")]
     public bool WindDirectionMapLayerVisibleByDefault { get; set; } = false;
-
-    [ProtoIgnore]
-    [Category("clientside,logarithmic")]
-    [Range(8.0, 64.0)]
-    [Description("description-RotorvaneSpeedMult")]
-    public float RotorvaneSpeedMult { get; set; } = 24f;
 
     #endregion
 
@@ -328,8 +131,6 @@ public class DynamicWindConfig
                 prop.SetValue(this, v < min ? min : (v > max ? max : v));
             }
         }
-
-        if (CellRadiusMax < CellRadiusMin) CellRadiusMax = CellRadiusMin;
     }
 
     internal static float Clamp(float v, float min, float max) => v < min ? min : (v > max ? max : v);
@@ -341,60 +142,16 @@ public class DynamicWindConfig
     public void CopyFrom(DynamicWindConfig o)
     {
         if (o == null) return;
-        BaseJetstreamStrength = o.BaseJetstreamStrength;
-        JetstreamMeanderAmplitude = o.JetstreamMeanderAmplitude;
-        JetstreamMeanderFrequency = o.JetstreamMeanderFrequency;
-        JetstreamNoiseAmplitude = o.JetstreamNoiseAmplitude;
-        PressureWindStrength = o.PressureWindStrength;
-        FrontWindStrength = o.FrontWindStrength;
         SeasonalBias = o.SeasonalBias;
-        SeasonalBiasMaxAngleDeg = o.SeasonalBiasMaxAngleDeg;
-        LowSpawnRatePerDay = o.LowSpawnRatePerDay;
-        HighSpawnRatePerDay = o.HighSpawnRatePerDay;
-        CellRadiusMin = o.CellRadiusMin;
-        CellRadiusMax = o.CellRadiusMax;
-        CyclonicInflowAngleDeg = o.CyclonicInflowAngleDeg;
-        CirculationStrength = o.CirculationStrength;
         MaxActiveCells = o.MaxActiveCells;
-        StormCouplingStrength = o.StormCouplingStrength;
-        WeatherPressureCoupling = o.WeatherPressureCoupling;
-        FrontTemperatureMax = o.FrontTemperatureMax;
-        ThermalTemperatureMax = o.ThermalTemperatureMax;
         HumidityEnabled = o.HumidityEnabled;
-        HumidityRainfallBlendWeight = o.HumidityRainfallBlendWeight;
-        HumidityWaterProximityStrength = o.HumidityWaterProximityStrength;
-        HumidityPressureStrength = o.HumidityPressureStrength;
-        HumidityNoiseAmplitude = o.HumidityNoiseAmplitude;
         HumidityBodyTempCompatEnabled = o.HumidityBodyTempCompatEnabled;
-        HumidityDiscomfortMax = o.HumidityDiscomfortMax;
-        HumidityWetnessDryingSuppression = o.HumidityWetnessDryingSuppression;
-        AltitudePressureDrop = o.AltitudePressureDrop;
         AdvectWithWind = o.AdvectWithWind;
-        AdvectionSpeed = o.AdvectionSpeed;
-        DispersalRate = o.DispersalRate;
-        BernoulliStrength = o.BernoulliStrength;
-        SeaBreezeStrength = o.SeaBreezeStrength;
         OrographicEnabled = o.OrographicEnabled;
-        OrographicHeightThreshold = o.OrographicHeightThreshold;
-        OrographicSlowdownFactor = o.OrographicSlowdownFactor;
-        OrographicDeflectionStrength = o.OrographicDeflectionStrength;
-        OrographicWakeFactor = o.OrographicWakeFactor;
         OcclusionEnabled = o.OcclusionEnabled;
         OcclusionRoomsZeroWind = o.OcclusionRoomsZeroWind;
-        OcclusionLightThreshold = o.OcclusionLightThreshold;
-        OcclusionSharpness = o.OcclusionSharpness;
-        OcclusionMinFactor = o.OcclusionMinFactor;
         WindmillDirectionality = o.WindmillDirectionality;
-        WindmillMinEfficiency = o.WindmillMinEfficiency;
         SailboatEnabled = o.SailboatEnabled;
-        SailboatTailwindMaxBoost = o.SailboatTailwindMaxBoost;
-        SailboatHeadwindMaxPenalty = o.SailboatHeadwindMaxPenalty;
         SailboatSailAngleEnabled = o.SailboatSailAngleEnabled;
-        SailboatMaxTrimAngleDeg = o.SailboatMaxTrimAngleDeg;
-        SailboatSwingRateDegPerSec = o.SailboatSwingRateDegPerSec;
-        SailboatTrimStepDeg = o.SailboatTrimStepDeg;
-        SailboatMinThrust = o.SailboatMinThrust;
-        SailboatWindSpeedInfluence = o.SailboatWindSpeedInfluence;
-        SailboatReferenceWindSpeed = o.SailboatReferenceWindSpeed;
     }
 }

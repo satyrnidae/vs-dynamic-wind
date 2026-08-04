@@ -44,6 +44,12 @@ public class EntityBehaviorSailTrim : EntityBehavior
     /// per-element keyframe lookup).</summary>
     public const string SwingAnimCode = "sailtrim";
 
+    // Former DynamicWindConfig tunables, now fixed constants (see DynamicWindConfig's class remarks).
+    // Internal so DynamicWindCommands' /dynamicwind sail debug print can read them too.
+    internal const float SailboatMaxTrimAngleDeg = 90f;
+    internal const float SailboatSwingRateDegPerSec = 5f;
+    internal const float SailboatTrimStepDeg = 15f;
+
     private bool warnedMissing;
 
     /// <summary>Server-side trim intent: −1 to port, 0 idle, +1 to starboard. Set by the input packet.</summary>
@@ -85,19 +91,19 @@ public class EntityBehaviorSailTrim : EntityBehavior
 
         if (entity.World.Side == EnumAppSide.Server && trimIntent != 0)
         {
-            float limit = cfg.SailboatMaxTrimAngleDeg;
             SetTarget(GameMath.Clamp(
-                TargetAngleDeg + trimIntent * cfg.SailboatSwingRateDegPerSec * dt, -limit, limit));
+                TargetAngleDeg + trimIntent * SailboatSwingRateDegPerSec * dt,
+                -SailboatMaxTrimAngleDeg, SailboatMaxTrimAngleDeg));
         }
 
-        Ease(dt, cfg);
+        Ease(dt);
         Pose();
     }
 
-    private void Ease(float dt, DynamicWindConfig cfg)
+    private void Ease(float dt)
     {
-        float target = GameMath.Clamp(TargetAngleDeg, -cfg.SailboatMaxTrimAngleDeg, cfg.SailboatMaxTrimAngleDeg);
-        float step = cfg.SailboatSwingRateDegPerSec * dt;
+        float target = GameMath.Clamp(TargetAngleDeg, -SailboatMaxTrimAngleDeg, SailboatMaxTrimAngleDeg);
+        float step = SailboatSwingRateDegPerSec * dt;
         float delta = target - CurrentAngleDeg;
         CurrentAngleDeg += Math.Abs(delta) <= step ? delta : Math.Sign(delta) * step;
     }
@@ -170,10 +176,8 @@ public class EntityBehaviorSailTrim : EntityBehavior
     /// <summary>Server-side: nudge the sail by one configured step, as the clew-knot boxes do.</summary>
     public void StepTrim(int dir)
     {
-        DynamicWindConfig? cfg = Config;
-        if (cfg == null) return;
-        float limit = cfg.SailboatMaxTrimAngleDeg;
-        SetTarget(GameMath.Clamp(TargetAngleDeg + Math.Sign(dir) * cfg.SailboatTrimStepDeg, -limit, limit));
+        SetTarget(GameMath.Clamp(TargetAngleDeg + Math.Sign(dir) * SailboatTrimStepDeg,
+            -SailboatMaxTrimAngleDeg, SailboatMaxTrimAngleDeg));
     }
 
     public override void OnInteract(EntityAgent byEntity, ItemSlot itemslot, Vec3d hitPosition,

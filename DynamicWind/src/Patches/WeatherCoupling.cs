@@ -1,6 +1,5 @@
 using System;
 using System.Reflection;
-using DynamicWind.Config;
 using DynamicWind.WindSystem;
 using HarmonyLib;
 using Vintagestory.API.Common;
@@ -56,6 +55,9 @@ internal static class WeatherCoupling
     private const double ColdPrecipMult = 1.2;
     private const double WarmPrecipMult = 0.7;
     private const double StationaryPrecipMult = 0.8;
+
+    // Former DynamicWindConfig tunable, now a fixed constant (see DynamicWindConfig's class remarks).
+    private const double StormCouplingStrength = 1.0;
 
     private static bool patched;
 
@@ -121,8 +123,7 @@ internal static class WeatherCoupling
 
         EnumAppSide side = __instance?.api?.Side ?? EnumAppSide.Server;
         WindField? field = DynamicWindRuntime.FieldFor(side);
-        DynamicWindConfig? config = DynamicWindRuntime.ConfigFor(side);
-        if (field == null || config == null || config.StormCouplingStrength <= 0f) return;
+        if (field == null) return;
 
         double totalHours = totalDays * (__instance!.api.World.Calendar.HoursPerDay);
         double p = field.CellPressureAt(posX, posZ, totalHours);
@@ -147,7 +148,7 @@ internal static class WeatherCoupling
         // scales it down. Note this is deliberately proportional — a region vanilla left completely dry
         // stays dry, since a pressure system modulates an existing moisture pattern rather than inventing
         // one out of nothing.
-        __result *= (float)Math.Exp(config.StormCouplingStrength * p * typeMult * PrecipLogGain);
+        __result *= (float)Math.Exp(StormCouplingStrength * p * typeMult * PrecipLogGain);
 
         if (__result < 0f) __result = 0f;
     }

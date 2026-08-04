@@ -1,6 +1,5 @@
 using System;
 using System.Reflection;
-using DynamicWind.Config;
 using DynamicWind.WindSystem;
 using HarmonyLib;
 using Vintagestory.API.Common;
@@ -83,11 +82,14 @@ internal static class ImmersiveBodyTemperatureCompat
     private const double WarmThresholdC = 20.0;
     private const double WarmFadeRangeC = 8.0; // fades in over this many °C above the threshold
 
+    // Former DynamicWindConfig tunables, now fixed constants (see DynamicWindConfig's class remarks).
+    private const float HumidityDiscomfortMax = 1.5f;
+    private const float HumidityWetnessDryingSuppression = 0.5f;
+
     private static void HumidityPostfix(object __instance)
     {
         WindField? field = DynamicWindRuntime.ServerField;
-        DynamicWindConfig? config = DynamicWindRuntime.ServerConfig;
-        if (field == null || config == null || config.HumidityDiscomfortMax <= 0f) return;
+        if (field == null) return;
 
         var entity = entityGetter!.GetValue(__instance) as Entity;
         if (entity?.World == null) return;
@@ -101,7 +103,7 @@ internal static class ImmersiveBodyTemperatureCompat
         if (warmFactor < 0) warmFactor = 0; else if (warmFactor > 1) warmFactor = 1;
         if (warmFactor <= 0) return;
 
-        float discomfort = (float)(config.HumidityDiscomfortMax * humidity * warmFactor);
+        float discomfort = (float)(HumidityDiscomfortMax * humidity * warmFactor);
         temperatureSetter!.Invoke(__instance, new object[] { discomfort });
     }
 
@@ -116,8 +118,7 @@ internal static class ImmersiveBodyTemperatureCompat
     private static void WetnessPostfix(object __instance, (Entity? entity, double lastUpdateHours, float wetnessBefore) __state)
     {
         WindField? field = DynamicWindRuntime.ServerField;
-        DynamicWindConfig? config = DynamicWindRuntime.ServerConfig;
-        if (field == null || config == null || config.HumidityWetnessDryingSuppression <= 0f) return;
+        if (field == null) return;
 
         Entity? entity = __state.entity;
         if (entity?.World == null) return;
@@ -132,7 +133,7 @@ internal static class ImmersiveBodyTemperatureCompat
         object modConfigServer = modConfigServerInstanceProp!.GetValue(null)!;
         double drySpeed = (float)wetnessDrySpeedProp!.GetValue(modConfigServer)!;
 
-        double restore = config.HumidityWetnessDryingSuppression * humidity * hoursElapsed * drySpeed;
+        double restore = HumidityWetnessDryingSuppression * humidity * hoursElapsed * drySpeed;
         if (restore <= 0) return;
 
         float wetnessAfter = (float)wetnessProp!.GetValue(__instance)!;

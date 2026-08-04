@@ -18,17 +18,17 @@ namespace DynamicWind.WindSystem;
 /// </summary>
 public class WindField
 {
-    public double BaseStrength = 1.0;
+    public double BaseStrength = 0.7;
     /// <summary>Maximum meander of the base jetstream angle, in radians.</summary>
-    public double MeanderAmplitude = 0.5;
+    public double MeanderAmplitude = 0.9;
     /// <summary>Spatial/temporal frequency multiplier for the jetstream meander (higher = the bearing
     /// wiggles over shorter N/S distances and faster in time).</summary>
-    public double MeanderFrequency = 1.0;
+    public double MeanderFrequency = 2.0;
     /// <summary>Inflow/outflow tilt of cyclonic circulation, in radians (~20°).</summary>
     public double CyclonicInflowAngle = 0.35;
     /// <summary>Multiplier on each pressure cell's induced circulation (tangential + radial flow).
     /// &gt;1 makes the wind swirl around lows/highs more strongly.</summary>
-    public double CirculationStrength = 1.0;
+    public double CirculationStrength = 2.5;
 
     /// <summary>
     /// Seasonal meridional (north/south) bias factor in [−1, 1] applied to the base jetstream:
@@ -85,7 +85,7 @@ public class WindField
     public Func<double, double, double, double>? TerrainHumidityFunc;
 
     /// <summary>Strength of down-gradient (high→low) pressure flow added to the wind. 0 = off.</summary>
-    public double GradientWindScale;
+    public double GradientWindScale = 150.0;
 
     // Humidity overlay strengths (config-driven, see HumidityAt).
     public double HumidityWaterProximityStrength = 0.25;

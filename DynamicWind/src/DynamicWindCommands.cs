@@ -74,7 +74,8 @@ internal static class DynamicWindCommands
 
         var sb = new StringBuilder();
         sb.AppendLine($"config: SailboatEnabled={config.SailboatEnabled}, SailAngleEnabled={config.SailboatSailAngleEnabled}, "
-                      + $"maxTrim={config.SailboatMaxTrimAngleDeg:0}°, swingRate={config.SailboatSwingRateDegPerSec:0}°/s, step={config.SailboatTrimStepDeg:0}°");
+                      + $"maxTrim={EntityBehaviorSailTrim.SailboatMaxTrimAngleDeg:0}°, swingRate={EntityBehaviorSailTrim.SailboatSwingRateDegPerSec:0}°/s, "
+                      + $"step={EntityBehaviorSailTrim.SailboatTrimStepDeg:0}°");
 
         IMountableSeat? seat = player.MountedOn;
         if (seat == null)
