@@ -16,15 +16,20 @@
 		"op": "add",
 		"path": "/attributes/requireJointsForElements",
 		"value": [
-			"MastORIGIN", "Mast7",
-
 			"SailFurled", "SailHalf", "SailUnfurled", "SparORIGIN",
 
-			"ClewFurledORIGIN", "ClewRopeR1Furled", "ClewRopeL1Furled", "BlockR3", "BlockL3",
+			"ClewORIGINFurled", "ClewRopeR5", "ClewRopeL5", "Block11", "BlockL4",
 
 			"ClewRopeOrigin", "RClew1", "LClew1", "Block4", "BlockL2",
 
-			"ClewORIGIN", "ClewRopeR1", "ClewRopeL1", "Block1", "BlockL"
+			"ClewORIGIN", "ClewRopeR1", "ClewRopeL1", "Block1", "BlockL",
+
+			"SailUnfurledN", "SailUnfurledS",
+			"Sail2", "Sail3", "Sail4", "Sail5", "Sail6", "Sail7", "Sail8", "Sail9",
+			"Sail11", "Sail12", "Sail13", "Sail14", "Sail15", "Sail16", "Sail17", "Sail18",
+
+			"LSailCenTop", "LSailCen1", "LSailCen2", "LSailMidTop", "LSailMid1", "LSailMid2", "LSailOutTop", "LSailOut1", "LSailOut2",
+			"RSailCenTop", "RSailCen1", "RSailCen2", "RSailMidTop", "RSailMid1", "RSailMid2", "RSailOutTop", "RSailOut1", "RSailOut2"
 		]
 	},
 	{
@@ -33,8 +38,14 @@
 		"path": "/client/animations",
 		"value": [
 			{
-				"code": "sailtrim",
-				"animation": "sailtrim",
+				"code": "rotatesail",
+				"animation": "rotatesail",
+				"animationSpeed": 0,
+				"weight": 1
+			},
+			{
+				"code": "billowsail",
+				"animation": "billowsail",
 				"animationSpeed": 0,
 				"weight": 1
 			}

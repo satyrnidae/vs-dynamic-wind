@@ -1,5 +1,7 @@
 using System;
 using DynamicWind.Config;
+using DynamicWind.Patches;
+using DynamicWind.WindSystem;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
@@ -20,35 +22,41 @@ namespace DynamicWind.Entities;
 ///
 /// The swing itself is driven through a real shape <c>Animation</c> (<see cref="SwingAnimCode"/>, added by
 /// <c>patches/boat-sailed-shape.json</c>), scrubbed via <c>RunningAnimation.CurrentFrame</c> — exactly the
-/// technique vanilla itself uses for the weathervane flag. Writing <c>ElementPose.degOff*</c> directly
-/// (the first approach tried here) silently does nothing for any element that only inherits its mesh's
-/// joint id from an ancestor rather than owning one itself, which the mast, the yard AND the clew ropes all
-/// do by default — the animation-keyframe path is what actually earns an element its own joint. The
-/// keyframes bake in the mast/yard swing AND the clew-rope sheets' exact aim-and-stretch solve (every 1° of
-/// trim, both sides, all three sail positions) — see <c>tools/keyframegen</c> for the offline generator
-/// that produced them from the same geometry <c>ClewRopeRig</c> used to compute at runtime.
+/// technique vanilla itself uses for the weathervane flag. The mast/yard/sail-root swing itself, and the
+/// billow effect, are hand-authored in the modelling tool (<c>tools/keyframegen/starting-point.json</c> is
+/// the checked-in export); <c>tools/keyframegen</c> only bakes the clew ropes' aim-and-stretch solve on top
+/// of that, since the authoring tool has no way to track a fixed hull anchor point through the swing.
 ///
-/// Trim works in ALL THREE sail positions — the mod's shape patch adds the clew ropes vanilla's furled
-/// sail lacks. Trimming a furled sail produces no thrust, but that falls out for free: vanilla contributes
-/// no sail force at all at <c>sailPosition == 0</c>.
+/// Trim works in ALL THREE sail positions — the source model includes clew ropes for the furled sail too.
+/// Trimming a furled sail produces no thrust, but that falls out for free: vanilla contributes no sail
+/// force at all at <c>sailPosition == 0</c>.
 /// </summary>
 public class EntityBehaviorSailTrim : EntityBehavior
 {
     public const string Code = "dynamicwindsailtrim";
     public const string SailAngleAttr = "dynamicwind:sailAngle";
 
-    /// <summary>Shape animation code (see <c>boat-sailed-shape.json</c>) keyframed at ±90° across 181
-    /// frames (one per degree); frame = angle + 90. Covers MastORIGIN/Mast7's swing/counter-swing and both
-    /// clew sheets' baked rotate+stretch, for all three sail positions at once (elements absent from
-    /// whichever branch is currently tessellated are simply not resolved against, per the engine's own
-    /// per-element keyframe lookup).</summary>
-    public const string SwingAnimCode = "sailtrim";
+    /// <summary>Shape animation code (see <c>boat-sailed-shape.json</c>) for the mast/yard/sail-root swing
+    /// plus the generated clew-rope keyframes. 180 frames (0..179), piecewise-linear in swing angle: frame
+    /// 0 = 90° (full port), frame 89 = 0° (dead ahead), frame 179 = −90° (full starboard) — see
+    /// <see cref="FrameForAngle"/>.</summary>
+    public const string SwingAnimCode = "rotatesail";
 
-    // Former DynamicWindConfig tunables, now fixed constants (see DynamicWindConfig's class remarks).
-    // Internal so DynamicWindCommands' /dynamicwind sail debug print can read them too.
-    internal const float SailboatMaxTrimAngleDeg = 90f;
-    internal const float SailboatSwingRateDegPerSec = 5f;
-    internal const float SailboatTrimStepDeg = 15f;
+    /// <summary>Shape animation code (see <c>boat-sailed-shape.json</c>) for the sail-billow effect — two
+    /// endpoint keyframes (0 = flat/rest, 99 = full billow) since the billow rotations are a plain linear
+    /// function of intensity. Disjoint element set from <see cref="SwingAnimCode"/> (sail panels vs.
+    /// mast/yard/ropes), so the two animations run concurrently without conflict — same pattern vanilla
+    /// itself uses to run several animations on one entity at once.</summary>
+    public const string BillowAnimCode = "billowsail";
+    private const float BillowMaxFrame = 99f;
+
+    private const float BillowEaseRatePerSec = 1.5f;
+
+    private const float SailboatTrimStepDeg = 1.0f;
+    private const float SailboatSelectionBoxTrimStepDeg = SailboatTrimStepDeg * 6; // selection boxes only trigger about once every six frames
+
+    // SelectionBox and keyboard movement should both use the same interpolation rate, so that the player sees the same trim speed regardless of which input method they use.
+    private const float SailboatTrimRateDegPerSec = SailboatTrimStepDeg * 30f; // 15°/sec at 30 ticks/sec, same as the old ClewRopeRig
 
     private bool warnedMissing;
 
@@ -61,6 +69,11 @@ public class EntityBehaviorSailTrim : EntityBehavior
 
     /// <summary>Eased sail angle in degrees, + = trimmed to starboard. What the thrust model reads.</summary>
     public float CurrentAngleDeg { get; private set; }
+
+    /// <summary>Eased 0..1 billow intensity — how full the sail looks. Computed independently on both
+    /// sides from the same deterministic wind field + <see cref="CurrentAngleDeg"/>, same as the rest of
+    /// this mod's client/server split, so no extra network traffic is needed for it.</summary>
+    public float BillowIntensity { get; private set; }
 
     public float TargetAngleDeg
     {
@@ -80,6 +93,23 @@ public class EntityBehaviorSailTrim : EntityBehavior
         base.Initialize(properties, attributes);
         // Start already trimmed rather than swinging up from square on every load/chunk-reload.
         CurrentAngleDeg = TargetAngleDeg;
+
+        // EntityBoat.OnTesselation clones the shape and prunes the two inactive sail branches
+        // (RemoveElementByName) itself, entirely outside the engine's `shapeIsCloned` out-param that
+        // Entity.OnTesselation uses to decide whether to rebuild the animator fresh (AnimationManager.
+        // LoadAnimator) or reuse a cached one (AnimationCache.LoadAnimatorCached, keyed only by
+        // `entity.Code + shape base path` — NOT by sailPosition). Since EntityBoat's own clone never flips
+        // that flag, every re-tessellation after the FIRST ever hits the cache and reuses whichever sail
+        // branch's RootPoses/RootElems got cached first — elements unique to any other branch (our
+        // per-branch clew ropes, billow's panel elements) then never receive a pose at all and render at
+        // raw rest geometry. Force-clearing the cache on every sailPosition change makes the next
+        // tessellation take the LoadAnimator (non-cached, correct) path instead.
+        entity.WatchedAttributes.RegisterModifiedListener("sailPosition", OnSailPositionChanged);
+    }
+
+    private void OnSailPositionChanged()
+    {
+        if (entity.Api != null) AnimationCache.ClearCache(entity.Api, entity);
     }
 
     public override void OnGameTick(float dt)
@@ -92,26 +122,83 @@ public class EntityBehaviorSailTrim : EntityBehavior
         if (entity.World.Side == EnumAppSide.Server && trimIntent != 0)
         {
             SetTarget(GameMath.Clamp(
-                TargetAngleDeg + trimIntent * SailboatSwingRateDegPerSec * dt,
-                -SailboatMaxTrimAngleDeg, SailboatMaxTrimAngleDeg));
+                TargetAngleDeg + trimIntent * SailboatTrimRateDegPerSec * dt,
+                -90, 90));
         }
 
         Ease(dt);
+        UpdateBillow(dt, cfg);
         Pose();
     }
 
     private void Ease(float dt)
     {
-        float target = GameMath.Clamp(TargetAngleDeg, -SailboatMaxTrimAngleDeg, SailboatMaxTrimAngleDeg);
-        float step = SailboatSwingRateDegPerSec * dt;
+        float target = GameMath.Clamp(TargetAngleDeg, -90, 90);
+        float step = SailboatTrimRateDegPerSec * dt;
         float delta = target - CurrentAngleDeg;
         CurrentAngleDeg += Math.Abs(delta) <= step ? delta : Math.Sign(delta) * step;
     }
 
     /// <summary>
+    /// Eases <see cref="BillowIntensity"/> toward how squarely the wind currently fills the sail
+    /// (<c>lift</c> from <see cref="SailAlignment"/>, the same term the thrust model reads), scaled by
+    /// wind magnitude via the same <see cref="SailboatWind.SpeedFactor"/> the thrust model uses.
+    /// Deliberately <c>lift</c> alone, not <c>lift * drive</c>: billow is about how full the sail looks
+    /// from the wind hitting it, independent of whether that push happens to point where the boat is
+    /// going — a boat reaching across the wind should still show a full sail. Zero whenever furled
+    /// (<c>sailPosition == 0</c>, vanilla contributes no sail force there either) or wind is negligible.
+    /// </summary>
+    private void UpdateBillow(float dt, DynamicWindConfig cfg)
+    {
+        float target = 0f;
+        WindField? field = DynamicWindRuntime.FieldFor(entity.World.Side);
+        if (field != null && entity is EntityBoat boat && boat.WatchedAttributes.GetInt("sailPosition", 0) > 0)
+        {
+            Vec3d pos = boat.Pos.XYZ;
+            Vec2d w = field.WindAt(pos.X, pos.Z, boat.World.Calendar.TotalHours);
+            double len = w.Length();
+            Vec3f vv = boat.Pos.GetViewVector();
+            double tx = -vv.X, tz = -vv.Z;
+            double tl = Math.Sqrt(tx * tx + tz * tz);
+            if (len >= 1e-6 && tl >= 1e-6)
+            {
+                tx /= tl; tz /= tl;
+                double wx = w.X / len, wz = w.Y / len;
+                (double lift, _) = SailboatWind.SailAlignment(boat, tx, tz, wx, wz);
+                target = (float)GameMath.Clamp(lift * SailboatWind.SpeedFactor(len), 0, 1);
+            }
+        }
+
+        float step = BillowEaseRatePerSec * dt;
+        float delta = target - BillowIntensity;
+        BillowIntensity += Math.Abs(delta) <= step ? delta : Math.Sign(delta) * step;
+    }
+
+    /// <summary>Flips which physical side <see cref="CurrentAngleDeg"/>'s sign swings the sail toward.
+    /// <c>CurrentAngleDeg</c> is defined as "+ = trimmed to starboard" by <see cref="SailboatWind"/>'s own
+    /// convention; the source model's swing animation defines frame 0 as full port (+90°) and frame 179 as
+    /// full starboard (−90°) — i.e. the model's own angle parameter runs the OPPOSITE sign from
+    /// <c>CurrentAngleDeg</c>. Flip this if the sail is ever found visually swinging to the wrong side
+    /// in-game.</summary>
+    private const bool MirrorTrimDirection = true;
+
+    /// <summary>Maps <see cref="CurrentAngleDeg"/> (−90 port .. +90 starboard) to a frame on
+    /// <see cref="SwingAnimCode"/>, the exact inverse of that animation's own three authored keyframes
+    /// (frame 0 = +90, frame 89 = 0, frame 179 = −90) — see <c>tools/keyframegen/Program.cs</c>'s
+    /// <c>AngleForFrame</c>, which this must stay the algebraic inverse of.</summary>
+    private static float FrameForAngle(float angleDeg)
+    {
+        float modelAngle = MirrorTrimDirection ? -angleDeg : angleDeg;
+        return modelAngle >= 0f
+            ? (90f - modelAngle) * (89f / 90f)
+            : 89f - modelAngle;
+    }
+
+    /// <summary>
     /// Scrubs the baked swing animation to the current angle. Safe to call every tick on both sides —
-    /// unlike the old <c>ClewRopeRig</c> pose write, this has no ordering dependency on the animator's own
-    /// per-frame blend, so it no longer needs a head-controller hook to win a race against it.
+    /// scrubbing <c>CurrentFrame</c> has no ordering dependency on the animator's own per-frame blend,
+    /// unlike a live pose write, so it doesn't matter whether this runs before or after that frame's blend,
+    /// only before the next one.
     /// </summary>
     private void Pose()
     {
@@ -146,16 +233,23 @@ public class EntityBehaviorSailTrim : EntityBehavior
         }
         warnedMissing = false;
 
-        // Mirrored: the keyframes were baked with MastORIGIN's rotationY equal to (frame - 90) directly,
-        // which turned out to swing the visual sail normal opposite to what SailboatWind's cos/sin
-        // convention assumes for the same signed CurrentAngleDeg (facing the wind read as feathered and
-        // vice versa). Requesting the mirror frame (90 - angle instead of 90 + angle) flips mast, yard AND
-        // both clew sheets together and consistently — the sheets were baked per-frame against whatever
-        // the mast's rotation was AT that frame, not against an assumed port/starboard meaning, so the
-        // mirrored frame is still fully self-consistent geometry, just for the correct-facing angle.
-        state.CurrentFrame = 90f - CurrentAngleDeg;
+        state.CurrentFrame = FrameForAngle(CurrentAngleDeg);
         state.BlendedWeight = 1f;
         state.EasingFactor = 1f;
+
+        // Billow runs as a second, independent animation on a disjoint element set (sail panels, not
+        // mast/yard/ropes) — no mirroring needed, it's a plain 0..1 intensity, not a signed swing angle.
+        if (!animManager.IsAnimationActive(BillowAnimCode))
+        {
+            animManager.StartAnimation(BillowAnimCode);
+        }
+        RunningAnimation? billowState = animManager.GetAnimationState(BillowAnimCode);
+        if (billowState != null)
+        {
+            billowState.CurrentFrame = BillowIntensity * BillowMaxFrame;
+            billowState.BlendedWeight = 1f;
+            billowState.EasingFactor = 1f;
+        }
     }
 
     /// <summary>
@@ -173,11 +267,15 @@ public class EntityBehaviorSailTrim : EntityBehavior
     /// <summary>Server-side: set the held trim direction for this boat.</summary>
     public void SetTrimIntent(sbyte dir) => trimIntent = (sbyte)Math.Sign(dir);
 
-    /// <summary>Server-side: nudge the sail by one configured step, as the clew-knot boxes do.</summary>
+    /// <summary>Server-side: nudge the sail by one configured step, as the clew-knot boxes do. Uses the
+    /// selection-box step (not the keyboard's per-tick <see cref="SailboatTrimStepDeg"/>) since
+    /// <see cref="OnInteract"/> only fires once every few ticks, not every tick — sized so, combined
+    /// with <see cref="Ease"/>'s constant-rate catch-up, both input methods converge on the same
+    /// effective trim speed.</summary>
     public void StepTrim(int dir)
     {
-        SetTarget(GameMath.Clamp(TargetAngleDeg + Math.Sign(dir) * SailboatTrimStepDeg,
-            -SailboatMaxTrimAngleDeg, SailboatMaxTrimAngleDeg));
+        SetTarget(GameMath.Clamp(TargetAngleDeg + Math.Sign(dir) * SailboatSelectionBoxTrimStepDeg,
+            -90, 90));
     }
 
     public override void OnInteract(EntityAgent byEntity, ItemSlot itemslot, Vec3d hitPosition,

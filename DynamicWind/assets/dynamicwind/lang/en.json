@@ -38,6 +38,8 @@
     "hotkey-trimstarboard": "Trim sail to starboard",
     "sailboat-trimport": "Trim sail to port",
     "sailboat-trimstarboard": "Trim sail to starboard",
+    "creature-boat-sailed-*-selectionbox-SheetLAP": "Trim sails left",
+    "creature-boat-sailed-*-selectionbox-SheetRAP": "Trim sails right",
 
     "description-DopplerRadarMapLayerVisibleByDefault": "Show or hide the precipitation radar map layer by default",
     "setting-DopplerRadarMapLayerVisibleByDefault": "Show precipitation radar",

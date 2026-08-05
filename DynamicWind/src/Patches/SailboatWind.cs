@@ -100,6 +100,24 @@ internal static class SailboatWind
     /// </summary>
     private static double TrimmedFactor(EntityBoat boat, double tx, double tz, double wx, double wz, double windSpeed)
     {
+        (double lift, double drive) = SailAlignment(boat, tx, tz, wx, wz);
+        double trim = lift * drive;
+
+        double speedFactor = SpeedFactor(windSpeed);
+
+        double best = 1.0 + SailboatTailwindMaxBoost;
+        return SailboatMinThrust + (best - SailboatMinThrust) * trim * speedFactor;
+    }
+
+    /// <summary>
+    /// How squarely the wind hits the sail's front face (<c>lift</c>, 0..1) and how much of that push
+    /// points where the boat is going (<c>drive</c>, 0..1) — the two dot products <see cref="TrimmedFactor"/>
+    /// builds thrust from. Also the "how full does the sail look" signal <c>EntityBehaviorSailTrim</c>
+    /// drives its billow animation from (via <c>lift</c> alone — billow is about how the wind fills the
+    /// sail, not whether that happens to push the boat where it's going).
+    /// </summary>
+    internal static (double lift, double drive) SailAlignment(EntityBoat boat, double tx, double tz, double wx, double wz)
+    {
         // No behaviour → an unpatched or third-party boat whose sail cannot swing; treat it as square.
         double angle = (boat.GetBehavior<EntityBehaviorSailTrim>()?.CurrentAngleDeg ?? 0f) * GameMath.DEG2RAD;
         double cos = Math.Cos(angle);
@@ -111,13 +129,15 @@ internal static class SailboatWind
 
         double lift = GameMath.Clamp(wx * nx + wz * nz, 0, 1);   // wind on the sail's front face
         double drive = GameMath.Clamp(nx * tx + nz * tz, 0, 1);  // ...pushing us forward rather than sideways
-        double trim = lift * drive;
+        return (lift, drive);
+    }
 
+    /// <summary>How much wind MAGNITUDE (rather than just alignment) scales into the result, referenced
+    /// against <see cref="SailboatReferenceWindSpeed"/>.</summary>
+    internal static double SpeedFactor(double windSpeed)
+    {
         double spd = GameMath.Clamp(windSpeed / SailboatReferenceWindSpeed, 0, 1);
-        double speedFactor = (1.0 - SailboatWindSpeedInfluence) + SailboatWindSpeedInfluence * spd;
-
-        double best = 1.0 + SailboatTailwindMaxBoost;
-        return SailboatMinThrust + (best - SailboatMinThrust) * trim * speedFactor;
+        return (1.0 - SailboatWindSpeedInfluence) + SailboatWindSpeedInfluence * spd;
     }
 
     /// <summary>Pre-trim behaviour: thrust from hull heading vs wind alone. Kept for

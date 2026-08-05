@@ -63,7 +63,7 @@ internal static class DynamicWindCommands
     /// <summary>
     /// Reports the whole sail-trim chain for the boat the caller is sitting on, so an inert control can
     /// be traced to a specific link rather than guessed at: is the behaviour even attached (i.e. did the
-    /// entity patch apply), is the baked <c>sailtrim</c> swing animation active (i.e. did the shape patch
+    /// entity patch apply), is the baked <c>rotatesail</c> swing animation active (i.e. did the shape patch
     /// apply), and is the angle actually moving when a key is held. Server-side state only — the client
     /// runs its own copy of the animation for rendering.
     /// </summary>
@@ -73,9 +73,7 @@ internal static class DynamicWindCommands
         if (caller is not EntityPlayer player) return TextCommandResult.Error(Lang.Get("dynamicwind:command-error-not-player"));
 
         var sb = new StringBuilder();
-        sb.AppendLine($"config: SailboatEnabled={config.SailboatEnabled}, SailAngleEnabled={config.SailboatSailAngleEnabled}, "
-                      + $"maxTrim={EntityBehaviorSailTrim.SailboatMaxTrimAngleDeg:0}°, swingRate={EntityBehaviorSailTrim.SailboatSwingRateDegPerSec:0}°/s, "
-                      + $"step={EntityBehaviorSailTrim.SailboatTrimStepDeg:0}°");
+        sb.AppendLine($"config: SailboatEnabled={config.SailboatEnabled}, SailAngleEnabled={config.SailboatSailAngleEnabled}");
 
         IMountableSeat? seat = player.MountedOn;
         if (seat == null)
