@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!-- Standalone maintenance tool, not part of the mod build. Bakes clew-rope keyframes for the "rotatesail"
-       shape animation — see Program.cs header and CLAUDE.md's "Sailboats" section. -->
+       shape animation - see Program.cs header and CLAUDE.md's "Sailboats" section. -->
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>

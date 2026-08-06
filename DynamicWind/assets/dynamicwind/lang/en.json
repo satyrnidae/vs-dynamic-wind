@@ -34,12 +34,10 @@
     "description-SailboatSailAngleEnabled": "Let the sail be trimmed from port to starboard, and take thrust from how the wind meets the sail rather than the hull. Off: use the simpler heading-vs-wind speed curve.",
     "setting-SailboatSailAngleEnabled": "Trimmable sails",
     "command-sail-description": "Diagnose sail trim on the boat you are sitting in",
-    "hotkey-trimport": "Trim sail to port",
-    "hotkey-trimstarboard": "Trim sail to starboard",
     "sailboat-trimport": "Trim sail to port",
     "sailboat-trimstarboard": "Trim sail to starboard",
-    "creature-boat-sailed-*-selectionbox-SheetLAP": "Trim sails left",
-    "creature-boat-sailed-*-selectionbox-SheetRAP": "Trim sails right",
+    "*-selectionbox-SheetLAP": "Trim sails left",
+    "*-selectionbox-SheetRAP": "Trim sails right",
 
     "description-DopplerRadarMapLayerVisibleByDefault": "Show or hide the precipitation radar map layer by default",
     "setting-DopplerRadarMapLayerVisibleByDefault": "Show precipitation radar",
@@ -87,6 +85,7 @@
 
     "maplegend-doppler-rain": "Rain",
     "maplegend-doppler-snow": "Snow",
+    "maplegend-doppler-unloaded": "Unloaded",
     "maplegend-light": "Light",
     "maplegend-storm": "Storm",
     "maplegend-heavy": "Heavy",

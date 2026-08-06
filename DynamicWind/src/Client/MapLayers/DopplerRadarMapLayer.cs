@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using Cairo;
 using DynamicWind.Config;
-using DynamicWind.WindSystem;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
@@ -15,22 +14,27 @@ namespace DynamicWind.Client.MapLayers;
 /// "Doppler radar" map overlay. Samples the precipitation noise field
 /// (<see cref="WeatherSystemBase.GetPrecipitation(double,double,double,double)"/>) on a grid anchored to
 /// WORLD coordinates (a fixed block step, not a fixed screen grid like the wind arrows), within a radar
-/// range around the player — so rain cells sit on their true world location and scale with map zoom.
+/// range around the player - so rain cells sit on their true world location and scale with map zoom.
 /// The vanilla precipitation noise provides the organic TEXTURE, but the PRESSURE DIFFERENTIAL drives it:
 /// the noise is gated by the local pressure from the synced wind field, so storms appear inside lows and
-/// the sky clears under highs (the radar is client-side, so it reads the client pressure field directly —
+/// the sky clears under highs (the radar is client-side, so it reads the client pressure field directly -
 /// the server-side rainfall coupling never reaches a client-side GetPrecipitation query).
 /// Colours ramp through several greens (light → heavy rain) before reaching yellow/orange/red, which are
-/// reserved for storm-core intensity — matching real doppler radar convention — via a CONCAVE-UP (power)
+/// reserved for storm-core intensity - matching real doppler radar convention - via a CONCAVE-UP (power)
 /// response: light rain and the outer fringe of a storm stay in the greens, and only the high-precip storm
-/// core ramps through yellow/orange to red — so the overlay reads as "mostly green, red only at the
+/// core ramps through yellow/orange to red - so the overlay reads as "mostly green, red only at the
 /// epicentre" instead of painting the whole rain field hot. (An earlier logarithmic curve did the
-/// opposite — it lifted faint rain up toward red, turning entire cloud areas red — which is why this is a
-/// power curve, not a log.) Cells cold enough to probably be snow instead of rain use a separate
-/// blue → purple ramp instead — decided by <see cref="EstimateIsSnow"/>, a standalone climate estimate
-/// (season + hemisphere + latitude) rather than sampling the real block climate at all: <c>GetClimateAt</c>
-/// needs the chunk loaded to give a meaningful (not garbage/default) answer, which the radar's scan range
-/// routinely exceeds on a zoomed-out world map, so it's not a usable data source for this at any distance.
+/// opposite - it lifted faint rain up toward red, turning entire cloud areas red - which is why this is a
+/// power curve, not a log.) Cells cold enough to be snow instead of rain use a separate blue → purple ramp
+/// instead - decided from the REAL block climate (<c>GetClimateAt</c>), which only gives a meaningful (not
+/// garbage/default) answer where the chunk is actually loaded. Outside the loaded area there is no
+/// reliable rain-vs-snow signal at all - a standalone climate estimate was tried and discarded, because
+/// guessing wrong there would confidently paint the wrong-coloured ramp (green rain over what is actually
+/// snowy terrain, or vice versa) well past the radar's real data horizon. Instead, unloaded cells render
+/// on a third, greyscale ramp (<see cref="GreyStops"/>) - still showing precipitation INTENSITY (via the
+/// same power-curve <c>t</c>), just without claiming to know its type. The grey stops are luminance-matched
+/// to the snow ramp's own three stops (same rec601 luma per step), so the grey bar reads as "the snow
+/// ramp with the colour information removed" rather than an unrelated palette.
 /// WORLD MAP ONLY (skips the minimap HUD, like the legend below).
 /// A static key (<see cref="BuildLegendTexture"/>, baked once as a Cairo texture) is pinned to the
 /// bottom-right corner of the map, drawn above every other overlay this mod adds to the world map so nothing
@@ -46,15 +50,6 @@ public class DopplerRadarMapLayer : DynamicWindWorldMapLayerBase
     private const double RampExponent = 2.0;    // >1 keeps light/edge rain green; only intense precip → red
     private const float SnowThresholdTemp = 4f; // °C; matches vanilla WeatherDataSnapshot.snowThresholdTemp default
 
-    // Standalone rain-vs-snow climate estimate (see EstimateIsSnow): a rough real-world temperature curve
-    // built purely from season + hemisphere + latitude, with no block/chunk data at all, so it works
-    // identically at any distance instead of needing the chunk loaded. Not meant to reproduce vanilla's
-    // actual worldgen climate exactly — just "would this probably be cold enough for snow right now".
-    private const double SnowEquatorTemp = 27.0;    // °C — approx. average equatorial temperature, all year
-    private const double SnowPoleTempSwing = 55.0;  // °C — how much colder the poles average vs. the equator
-    private const double SnowSeasonalSwing = 18.0;  // °C — peak seasonal swing at full poleward-ness; tapers to ~0 at the equator
-    private const double SnowSummerPeakRel = 0.59725; // matches TerrainThermal/WindFieldSimulation's own SummerPeakRel
-
     private static readonly Vec4f LightGreen = Rgb(0x86, 0xF4, 0x68);
     private static readonly Vec4f MedGreen = Rgb(0x3C, 0x93, 0x25);
     private static readonly Vec4f DarkGreen = Rgb(0x1C, 0x5D, 0x0A);
@@ -67,13 +62,22 @@ public class DopplerRadarMapLayer : DynamicWindWorldMapLayerBase
     private static readonly Vec4f Cerulean = Rgb(0x34, 0x48, 0xCF);
     private static readonly Vec4f LightPurple = Rgb(0x42, 0x20, 0xA4);
 
+    // Greyscale ramp for cells outside loaded chunks (no reliable rain-vs-snow signal there - see class
+    // remarks). Each stop is the rec601 luma (0.299R + 0.587G + 0.114B) of the matching SnowStops entry,
+    // so this reads as the snow ramp with colour removed rather than an unrelated grey scale:
+    // SkyBlue -> 168, Cerulean -> 81, LightPurple -> 57.
+    private static readonly Vec4f LightGrey = Rgb(0xA8, 0xA8, 0xA8);
+    private static readonly Vec4f MedGrey = Rgb(0x51, 0x51, 0x51);
+    private static readonly Vec4f DarkGrey = Rgb(0x39, 0x39, 0x39);
+
     private static readonly Vec4f[] RainStops = { LightGreen, MedGreen, DarkGreen, DarkestGreen, Yellow, Orange, Red };
     private static readonly Vec4f[] SnowStops = { SkyBlue, Cerulean, LightPurple };
+    private static readonly Vec4f[] GreyStops = { LightGrey, MedGrey, DarkGrey };
 
     // Legend panel, baked once as a Cairo texture (PlayerMapLayer-style) and re-drawn as a fixed
-    // screen-space quad anchored to the bottom-right corner of the map element — a static reference for
+    // screen-space quad anchored to the bottom-right corner of the map element - a static reference for
     // the RainStops/SnowStops ramps above, so it never needs rebuilding per-frame like the radar cells.
-    // No title row (it overlapped the "Rain" label) — height is derived from the label font's real
+    // No title row (it overlapped the "Rain" label) - height is derived from the label font's real
     // ascent/descent (see BuildLegendTexture) so the gap above the "Rain" label matches the gap below
     // the Light/Heavy snow labels exactly, rather than eyeballed constants.
     private const int LegendWidth = 190;
@@ -167,7 +171,7 @@ public class DopplerRadarMapLayer : DynamicWindWorldMapLayerBase
     }
 
     /// <summary>Bakes the legend panel (rain ramp, snow ramp, row/endpoint labels) once into a Cairo
-    /// texture — PlayerMapLayer-style — since it's static reference art, not per-frame data. Panel height
+    /// texture - PlayerMapLayer-style - since it's static reference art, not per-frame data. Panel height
     /// is derived from the label font's actual ascent/descent so the gap from the top edge to the top of
     /// the "Rain" label equals the gap from the bottom edge to the bottom of the Light/Heavy snow labels
     /// (both exactly <see cref="LegendPad"/>), rather than tuned by eye.</summary>
@@ -179,19 +183,26 @@ public class DopplerRadarMapLayer : DynamicWindWorldMapLayerBase
         FontExtents fe = labelFont.GetFontExtents();
         double ascent = fe.Ascent, descent = fe.Descent;
 
-        double rowLabelBaseline1 = LegendPad + ascent;
-        double bar1Top = rowLabelBaseline1 + LegendLabelToBarGap;
-        double bar1Bottom = bar1Top + LegendBarHeight;
-        double text1Baseline = bar1Bottom + LegendBarToTextGap;
-        double text1Bottom = text1Baseline + descent;
+        (string label, string low, string high, Vec4f[] stops)[] rows =
+        {
+            (Lang.Get("dynamicwind:maplegend-doppler-rain"), Lang.Get("dynamicwind:maplegend-light"), Lang.Get("dynamicwind:maplegend-storm"), RainStops),
+            (Lang.Get("dynamicwind:maplegend-doppler-snow"), Lang.Get("dynamicwind:maplegend-light"), Lang.Get("dynamicwind:maplegend-heavy"), SnowStops),
+            (Lang.Get("dynamicwind:maplegend-doppler-unloaded"), Lang.Get("dynamicwind:maplegend-light"), Lang.Get("dynamicwind:maplegend-heavy"), GreyStops),
+        };
 
-        double rowLabelBaseline2 = text1Bottom + LegendRowGap + ascent;
-        double bar2Top = rowLabelBaseline2 + LegendLabelToBarGap;
-        double bar2Bottom = bar2Top + LegendBarHeight;
-        double text2Baseline = bar2Bottom + LegendBarToTextGap;
-        double text2Bottom = text2Baseline + descent;
-
-        int legendHeight = (int)Math.Ceiling(text2Bottom + LegendPad);
+        // Lay each row out top-to-bottom first (same per-row relations as before, just chained), so the
+        // exact surface height needed is known before Cairo allocates it.
+        var layouts = new (double rowLabelBaseline, double barTop, double textBaseline)[rows.Length];
+        double y = LegendPad;
+        for (int i = 0; i < rows.Length; i++)
+        {
+            double rowLabelBaseline = y + ascent;
+            double barTop = rowLabelBaseline + LegendLabelToBarGap;
+            double textBaseline = barTop + LegendBarHeight + LegendBarToTextGap;
+            layouts[i] = (rowLabelBaseline, barTop, textBaseline);
+            y = textBaseline + descent + LegendRowGap;
+        }
+        int legendHeight = (int)Math.Ceiling(y - LegendRowGap + LegendPad);
 
         ImageSurface surface = new(Format.Argb32, LegendWidth, legendHeight);
         Context ctx = new(surface);
@@ -200,13 +211,12 @@ public class DopplerRadarMapLayer : DynamicWindWorldMapLayerBase
         ctx.Rectangle(0, 0, LegendWidth, legendHeight);
         ctx.Fill();
 
-        DrawLegendBar(ctx, labelFont, rowLabelBaseline1, bar1Top, text1Baseline, RainStops,
-            Lang.Get("dynamicwind:maplegend-doppler-rain"),
-            Lang.Get("dynamicwind:maplegend-light"), Lang.Get("dynamicwind:maplegend-storm"));
-
-        DrawLegendBar(ctx, labelFont, rowLabelBaseline2, bar2Top, text2Baseline, SnowStops,
-            Lang.Get("dynamicwind:maplegend-doppler-snow"),
-            Lang.Get("dynamicwind:maplegend-light"), Lang.Get("dynamicwind:maplegend-heavy"));
+        for (int i = 0; i < rows.Length; i++)
+        {
+            var (label, low, high, stops) = rows[i];
+            var (rowLabelBaseline, barTop, textBaseline) = layouts[i];
+            DrawLegendBar(ctx, labelFont, rowLabelBaseline, barTop, textBaseline, stops, label, low, high);
+        }
 
         legendTexture?.Dispose();
         legendTexture = new LoadedTexture(capi, capi.Gui.LoadCairoTexture(surface, false), LegendWidth, legendHeight);
@@ -267,8 +277,8 @@ public class DopplerRadarMapLayer : DynamicWindWorldMapLayerBase
         double startZ = Math.Floor(minZ / step) * step;
         double th = capi.World.Calendar.TotalDays;
 
-        // Precipitation is gated by the pressure field at its source — the WeatherCoupling patch on
-        // GetRainCloudness — so GetPrecipitation already reflects the moving lows/highs. We sample it
+        // Precipitation is gated by the pressure field at its source - the WeatherCoupling patch on
+        // GetRainCloudness - so GetPrecipitation already reflects the moving lows/highs. We sample it
         // straight, with no extra drift or gate: that guarantees the radar matches the clouds and the
         // actual rain (which read the same gated value), and the pattern still moves because the gating
         // pressure cells advect with the wind.
@@ -288,57 +298,31 @@ public class DopplerRadarMapLayer : DynamicWindWorldMapLayerBase
                 if (norm > 1) norm = 1;
                 double t = Math.Pow(norm, RampExponent);
 
-                bool isSnow = IsSnowAt(cx, cz, th);
-                Vec4f color = RampColor(isSnow ? SnowStops : RainStops, (float)t, (float)(0.3 + 0.5 * t));
+                Vec4f[] stops = SelectStops(cx, cz, th);
+                Vec4f color = RampColor(stops, (float)t, (float)(0.3 + 0.5 * t));
                 cells.Add(new Cell { X = cx, Z = cz, Color = color });
             }
         }
     }
 
     /// <summary>
-    /// Rain-vs-snow for one radar cell. Uses the REAL block climate wherever that cell's chunk is actually
-    /// loaded — near the player it's both available and authoritative, and it's what vanilla's own
-    /// rain/snow split reads, so the overlay must agree with it rather than paint snow while rain falls on
-    /// the player's roof (the standalone curve below has no rainfall/altitude/terrain input at all).
-    /// Outside the loaded area <c>GetClimateAt</c> returns garbage/defaults — see the class remarks — so
-    /// <see cref="EstimateIsSnow"/> takes over there.
+    /// Picks which ramp a radar cell renders on. Uses the REAL block climate wherever that cell's chunk is
+    /// actually loaded - near the player it's both available and authoritative, and it's what vanilla's
+    /// own rain/snow split reads, so the overlay must agree with it rather than paint snow while rain
+    /// falls on the player's roof. Outside the loaded area <c>GetClimateAt</c> returns garbage/defaults
+    /// (see the class remarks), and there's no other reliable way to tell rain from snow that far out -
+    /// so those cells fall back to the type-agnostic <see cref="GreyStops"/> ramp instead of guessing.
     /// </summary>
-    private bool IsSnowAt(double x, double z, double totalDays)
+    private Vec4f[] SelectStops(double x, double z, double totalDays)
     {
         var probe = new BlockPos((int)x, 0, (int)z, 0);
         if (capi!.World.BlockAccessor.GetChunkAtBlockPos(probe) != null)
         {
             var surface = new BlockPos((int)x, capi.World.BlockAccessor.GetRainMapHeightAt(probe), (int)z, 0);
             ClimateCondition? cc = capi.World.BlockAccessor.GetClimateAt(surface, EnumGetClimateMode.NowValues, totalDays);
-            if (cc != null) return cc.Temperature < SnowThresholdTemp;
+            if (cc != null) return cc.Temperature < SnowThresholdTemp ? SnowStops : RainStops;
         }
-        return EstimateIsSnow(x, z);
-    }
-
-    /// <summary>
-    /// Standalone "would this probably be cold enough for snow right now" estimate — season + hemisphere
-    /// + closeness to a pole/equator, no block/chunk data at all (see the class remarks for why
-    /// <c>GetClimateAt</c> isn't usable here). <see cref="WindField.LatitudeFunc"/> gives real climate
-    /// latitude (0 = equator, 1 = pole, already |·|-clamped — see its own callers in
-    /// <c>WindFieldSimulation.ComputeAirMassTemp</c>); <c>Calendar.GetSeasonRel</c> is hemisphere-aware on
-    /// its own (a Southern-hemisphere position already reads its OWN winter as winter), so no separate
-    /// hemisphere flip is needed on top of it. The approximate temperature curve: warm year-round at the
-    /// equator, colder toward the poles, with a seasonal swing that itself grows toward the poles (real
-    /// climate: the equator barely varies by season; high latitudes swing widely) and peaks at
-    /// <see cref="SnowSummerPeakRel"/> (matching <c>TerrainThermal</c>/<c>WindFieldSimulation</c>'s own
-    /// seasonal-warmth convention) — snow if that estimate falls below <see cref="SnowThresholdTemp"/>.
-    /// </summary>
-    private bool EstimateIsSnow(double x, double z)
-    {
-        WindField? field = DynamicWindRuntime.ClientField;
-        double poleward = field?.LatitudeFunc != null ? GameMath.Clamp((float)Math.Abs(field.LatitudeFunc(z)), 0f, 1f) : 0.5f;
-
-        var pos = new BlockPos((int)x, 0, (int)z, 0);
-        float seasonRel = capi!.World.Calendar.GetSeasonRel(pos); // hemisphere-aware
-        double seasonWarmth = Math.Cos(2.0 * Math.PI * (seasonRel - SnowSummerPeakRel)); // +1 midsummer, -1 midwinter
-
-        double approxTemp = SnowEquatorTemp - poleward * SnowPoleTempSwing + seasonWarmth * SnowSeasonalSwing * poleward;
-        return approxTemp < SnowThresholdTemp;
+        return GreyStops;
     }
 
     private static Vec4f RampColor(Vec4f[] stops, float t, float alpha)

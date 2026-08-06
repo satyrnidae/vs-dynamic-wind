@@ -12,18 +12,18 @@ using Vintagestory.API.MathTools;
 // ShapeElement) so this can't silently disagree with how the engine itself poses the model.
 //
 // The mast/spar/sail swing itself, and the sail-billow effect, are now hand-authored in Anego Studios'
-// model tool (see starting-point.json, the checked-in export) — this tool ONLY solves the clew ropes,
+// model tool (see starting-point.json, the checked-in export) - this tool ONLY solves the clew ropes,
 // which the authoring tool can't do (they need to track a fixed hull anchor point through the swing).
 // Each branch's clew rope is now a single rigid chain rooted directly under that branch's ClewOrigin
 // (ClewORIGIN/ClewORIGINFurled/ClewRopeOrigin); only the chain's OWN root gets a keyframe (rotation +
-// stretchY) — every segment below it (including the terminal knot mesh) is a plain [0,16,0] translation
+// stretchY) - every segment below it (including the terminal knot mesh) is a plain [0,16,0] translation
 // with no rotation of its own, so it rigidly follows the root through the composed transform for free.
 // Per-branch knot counter-rotation (the old rig's "keep the knot mesh looking tied to a fixed post" fix)
 // is gone: the new model's terminal knot pieces just ride the rope like any other segment.
 //
 // Usage: dotnet run -- [output keyframes.json]  (defaults to starting-point.json as input, clewkeyframes.json as output)
 //
-// IMPORTANT: GetLocalTransformMatrix does NOT reset its `output` matrix to identity — it post-multiplies
+// IMPORTANT: GetLocalTransformMatrix does NOT reset its `output` matrix to identity - it post-multiplies
 // Translate/Rotate/Scale directly onto whatever is already there. Every call below resets its scratch
 // matrix with Mat4f.Identity() first; skipping that silently composes stale data from the previous loop
 // iteration and produces wrong, non-degenerate-looking garbage.
@@ -55,7 +55,7 @@ const string OriginName = "ORIGIN";
 const string AnchorR = "ClewKnotAnchorR";
 const string AnchorL = "ClewKnotAnchorL";
 
-// Mirrors the shape's own naming exactly (see starting-point.json) — keep in sync if it's regenerated
+// Mirrors the shape's own naming exactly (see starting-point.json) - keep in sync if it's regenerated
 // from a new export. StbdPulley/PortPulley only need a reciprocal-scale keyframe (see Solve): every other
 // element in the chain between root and the pulley/knot is a pure [0,16,0] translation with no pose of
 // its own, so it never needs an explicit keyframe.
@@ -138,7 +138,7 @@ Sheet Capture(ElementPose[] chain, string ropeName, string pulleyName, string an
         (float)rootElem.RotationY * GameMath.DEG2RAD,
         (float)rootElem.RotationZ * GameMath.DEG2RAD);
 
-    // The anchor is a fixed hull point under ORIGIN, not a descendant of rootElem — capture its rest
+    // The anchor is a fixed hull point under ORIGIN, not a descendant of rootElem - capture its rest
     // position directly in ORIGIN's own local space, then bring that anchor back down into rootElem's
     // PARENT's space via the rest-pose chain matrix (the exact inverse of what the per-frame loop does
     // to go the other way).
@@ -152,7 +152,7 @@ Sheet Capture(ElementPose[] chain, string ropeName, string pulleyName, string an
     float[] anchorInRootParent = new float[4];
     Mat4f.MulWithVec4(mARest, anchor, anchorInRootParent);
 
-    // offset must be expressed in rootElem's OWN pre-rotation local frame — the same frame Solve() later
+    // offset must be expressed in rootElem's OWN pre-rotation local frame - the same frame Solve() later
     // re-rotates by restRotation to place things back in the parent frame (anchor = pivot + R*offset).
     // anchorInRootParent is already in the PARENT frame, so un-rotate by R^-1 first.
     float[] diff =
@@ -176,7 +176,7 @@ Sheet Capture(ElementPose[] chain, string ropeName, string pulleyName, string an
     // Solve()'s `mA * sheet.Anchor` expects an ORIGIN-space input (mA maps ORIGIN-space -> the current
     // frame's swung rope-root-local-space). Feeding it an already-local-space reconstruction instead
     // double-transforms it, collapsing the solved target toward the rope root's own frame instead of
-    // tracking the real deck anchor — exactly the bug this comment is here to stop someone reintroducing.
+    // tracking the real deck anchor - exactly the bug this comment is here to stop someone reintroducing.
     return new Sheet
     {
         RootElem = rootElem, Pivot = pivot, Offset = offset, RestRotation = restRotation,
@@ -229,7 +229,7 @@ float AngleForFrame(int frame) => frame <= 89
     ? 90f - frame * (90f / 89f)
     : 89f - frame;
 
-// Inverse of AngleForFrame, rounded to the nearest integer frame — used to bake at fixed ANGLE steps
+// Inverse of AngleForFrame, rounded to the nearest integer frame - used to bake at fixed ANGLE steps
 // (e.g. every 15°) rather than every frame, since frame spacing near 90/-90 vs. near 0 isn't uniform in
 // angle. Must stay the algebraic inverse of AngleForFrame above.
 int FrameForAngle(float angleDeg) => (int)Math.Round(angleDeg >= 0f

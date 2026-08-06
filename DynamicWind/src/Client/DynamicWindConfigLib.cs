@@ -10,7 +10,7 @@ namespace DynamicWind.Client;
 /// ConfigLib types lives in one class. The CLR resolves a method's type references when it is first
 /// JIT-compiled, so as long as <see cref="TryRegister"/> is never called when ConfigLib is absent
 /// (guarded by <c>IsModEnabled</c> in <see cref="DynamicWindModClient"/>), the missing
-/// <c>configlib.dll</c> can't cause a type-load failure — a genuinely optional dependency with no
+/// <c>configlib.dll</c> can't cause a type-load failure - a genuinely optional dependency with no
 /// modinfo entry.
 ///
 /// Config is server-authoritative, so a GUI edit does NOT apply locally; it sends a privileged
@@ -35,7 +35,7 @@ internal static class DynamicWindConfigLib
         // the exact same ModConfig/<file> location our mod's own LoadModConfig/StoreModConfig use. In
         // singleplayer the server round-trip (see DynamicWindModServer.OnConfigUpdateRequest) writes
         // that file on every settings change with whatever it has in memory for the clientside-only
-        // (ProtoIgnore, never transmitted) properties — near-instantly clobbering whatever ConfigLib
+        // (ProtoIgnore, never transmitted) properties - near-instantly clobbering whatever ConfigLib
         // just wrote for those properties and reverting them once something re-reads the file.
         configLib.RegisterCustomManagedConfig(
             domain,

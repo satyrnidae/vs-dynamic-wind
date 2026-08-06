@@ -6,7 +6,7 @@ namespace DynamicWind.TerrainSystem;
 
 /// <summary>
 /// Coarse, time-bucketed cache around the (expensive) terrain-thermal pressure function. Thermal
-/// pressure varies slowly in space and time, but <see cref="WindField.WindAt"/> samples it 4× per
+/// pressure varies slowly in space and time, but <see cref="WindField.WindAt"/> samples it 4x per
 /// call (numeric pressure gradient) on a hot path, and the underlying lookup calls <c>GetClimateAt</c>.
 /// Quantizing to a block tile + a game-hour bucket turns almost every sample into an O(1) dictionary
 /// hit, which also avoids repeatedly re-entering the weather-coupling <c>OnGetClimate</c> handler.

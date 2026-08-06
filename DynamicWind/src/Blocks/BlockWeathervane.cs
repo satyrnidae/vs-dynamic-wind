@@ -5,15 +5,15 @@ namespace DynamicWind.Blocks;
 
 /// <summary>
 /// Weathervane block. A weathervane needs something to stand on, so it may only be placed when the
-/// block directly below presents a solid top surface over at least the central 2×2 voxels of the face.
+/// block directly below presents a solid top surface over at least the central 2x2 voxels of the face.
 /// The check is delegated to the supporting block's <see cref="Block.CanAttachBlockAt"/> with an
-/// attachment area covering those centre voxels (exactly how vanilla floor-standing decorations — oil
-/// lamps, lanterns — gate placement), so chiselled/partial blocks are evaluated voxel-precisely while
+/// attachment area covering those centre voxels (exactly how vanilla floor-standing decorations - oil
+/// lamps, lanterns - gate placement), so chiselled/partial blocks are evaluated voxel-precisely while
 /// ordinary full blocks fall back to their <c>SideSolid[UP]</c> flag.
 /// </summary>
 public class BlockWeathervane : Block
 {
-    // Central 2×2 voxels of the 16×16 top face (voxels 7 and 8 on each axis), at the very top layer.
+    // Central 2x2 voxels of the 16x16 top face (voxels 7 and 8 on each axis), at the very top layer.
     // Coordinates are in voxel dimensions (0..16); see Block.CanAttachBlockAt's attachmentArea param.
     private static readonly Cuboidi CenterTopArea = new(8, 15, 8, 9, 16, 9);
 
@@ -32,7 +32,7 @@ public class BlockWeathervane : Block
 
     /// <summary>
     /// When the supporting block below changes, "pop" the weathervane (break + drop as an item) if it no
-    /// longer presents the required central 2×2 solid top — e.g. the block is removed, or its top voxels
+    /// longer presents the required central 2x2 solid top - e.g. the block is removed, or its top voxels
     /// are chiselled away. Same self-dropping behaviour as torches/lanterns
     /// (<c>BlockGroundAndSideAttachable.OnNeighbourBlockChange</c>).
     /// </summary>
@@ -44,7 +44,7 @@ public class BlockWeathervane : Block
             base.OnNeighbourBlockChange(world, pos, neibpos);
     }
 
-    /// <summary>True if the block directly below supports a weathervane (solid over the central 2×2 of its top face).</summary>
+    /// <summary>True if the block directly below supports a weathervane (solid over the central 2x2 of its top face).</summary>
     private bool HasSupport(IBlockAccessor blockAccessor, BlockPos pos)
     {
         BlockPos below = pos.DownCopy();

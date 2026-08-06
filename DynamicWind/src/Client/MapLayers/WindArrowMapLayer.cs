@@ -11,10 +11,10 @@ using Vintagestory.GameContent;
 namespace DynamicWind.Client.MapLayers;
 
 /// <summary>
-/// World-map overlay (full map only, NOT the minimap HUD) that draws wind direction as a fixed 24×24
+/// World-map overlay (full map only, NOT the minimap HUD) that draws wind direction as a fixed 24x24
 /// grid of arrows across the map element. Each arrow takes exactly one sample per cell, at its world
 /// midpoint (player Y): vanilla's raw wind noise via <c>WeatherSystemBase.WeatherDataSlowAccess.GetWindSpeed</c>,
-/// fed through <see cref="DynamicWindModCommon.ComputeWindSpeed"/> with <c>applyOcclusion: false</c> — the
+/// fed through <see cref="DynamicWindModCommon.ComputeWindSpeed"/> with <c>applyOcclusion: false</c> - the
 /// same true directional speed <c>GetWindSpeedAt</c> would give, minus its indoor/underground occlusion
 /// check (room-registry flood fill + light lookups), which is both meaningless at this scale (a regional
 /// overview arrow isn't "indoors") and the single biggest per-sample cost once many of the 576 cells land
@@ -82,7 +82,7 @@ public class WindArrowMapLayer : DynamicWindWorldMapLayerBase
         ElementBounds b = mapElem.Bounds;
         double cellW = b.InnerWidth / Grid;
         double cellH = b.InnerHeight / Grid;
-        float baseHalf = (float)(0.25 * Math.Min(cellW, cellH)); // 0.5× cell footprint, half-extent
+        float baseHalf = (float)(0.25 * Math.Min(cellW, cellH)); // 0.5x cell footprint, half-extent
         if (baseHalf < 0.5f) return; // too small to see
         float renderX = (float)b.renderX;
         float renderY = (float)b.renderY;
@@ -98,7 +98,7 @@ public class WindArrowMapLayer : DynamicWindWorldMapLayerBase
             {
                 // The screen slot itself never moves; only which cached sample it shows does. Map this
                 // fixed slot's CURRENT world position back into the world grid as of the last resample,
-                // and snap to that grid's nearest cell — this is what makes measurements drift between
+                // and snap to that grid's nearest cell - this is what makes measurements drift between
                 // arrows as the map is panned, without the arrows themselves relocating.
                 int idx = NearestCachedIndex(row, col, vb, cvbSpanX, cvbSpanZ);
                 if (!cVisible[idx]) continue;
@@ -176,9 +176,9 @@ public class WindArrowMapLayer : DynamicWindWorldMapLayerBase
                 cAngle[idx] = (float)Math.Atan2(w.X, -w.Z);
                 cVScale[idx] = (float)vfrac;
 
-                // Pressure tint: low (+) → crimson, high (−) → sky blue, neutral → white. The map is a
+                // Pressure tint: low (+) → crimson, high (-) → sky blue, neutral → white. The map is a
                 // horizontal slice, so we use the 2D field WITHOUT the vertical altitude lapse (which is
-                // a per-Y effect — adding it here just washes every tile by a constant playerY offset).
+                // a per-Y effect - adding it here just washes every tile by a constant playerY offset).
                 double p = field?.PressureAt(wx, wz, th) ?? 0.0;
                 float t = (float)Math.Min(1.0, Math.Abs(p));
                 cColor[idx] = Lerp(White, p >= 0 ? LowColor : HighColor, t);

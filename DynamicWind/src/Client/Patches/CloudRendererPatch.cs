@@ -13,15 +13,15 @@ namespace DynamicWind.Client.Patches;
 
 /// <summary>
 /// Client Harmony patch making clouds drift along the true wind direction. Two vanilla classes carry an
-/// (almost identical, independently duplicated) copy of this logic — <see cref="CloudRenderer"/> (active
-/// at cloud-quality setting "simple") and <c>FluffyClouds.CloudRendererMap</c> (active at "volumetric") —
+/// (almost identical, independently duplicated) copy of this logic - <see cref="CloudRenderer"/> (active
+/// at cloud-quality setting "simple") and <c>FluffyClouds.CloudRendererMap</c> (active at "volumetric") -
 /// selected at runtime by the player's <c>cloudRenderMode</c> setting, so both must be patched or clouds
 /// silently keep vanilla drift under one of the two settings. Each eases its cloud-speed vector toward a
-/// CONSTANT eastward target (<c>targetCloudSpeedX</c> = random 0..5, plus <c>3×windSpeed</c>, both always
+/// CONSTANT eastward target (<c>targetCloudSpeedX</c> = random 0..5, plus <c>3xwindSpeed</c>, both always
 /// positive), so clouds only ever drift roughly +X. Our postfix overwrites both the live speed AND the
 /// easing targets with a vector derived straight from the directional wind field, so the easing converges
 /// to the real bearing instead of fighting it. The magnitude scales with wind strength (faster clouds in
-/// strong flow), and — crucially — when the wind reverses inside a pressure system the clouds reverse
+/// strong flow), and - crucially - when the wind reverses inside a pressure system the clouds reverse
 /// with it (the old code projected the eastward-contaminated eased magnitude, which collapsed to ~0 at
 /// reversal, stalling the clouds instead of turning them around).
 /// Fully guarded per-class: if a type/method/fields can't be resolved (e.g. a future game version renames

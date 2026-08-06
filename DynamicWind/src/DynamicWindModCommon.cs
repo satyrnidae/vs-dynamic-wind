@@ -34,7 +34,7 @@ public abstract class DynamicWindModCommon : ModSystem
 
     // Front-type gust intensity: an occluded front (its cold front has caught the warm one) brings the
     // highest winds, a cold front heavy gusts, a warm front only light gusts, and a stationary front
-    // stays comparatively calm — same regime split as WeatherCoupling's precipitation weighting, applied
+    // stays comparatively calm - same regime split as WeatherCoupling's precipitation weighting, applied
     // here as a multiplier on the front-driven EXCESS wind (see ComputeWindSpeed), never on the vanilla
     // baseline itself.
     private const double OccludedWindMult = 1.6;
@@ -65,14 +65,13 @@ public abstract class DynamicWindModCommon : ModSystem
         ApplyConfigToField();
         roomRegistry = api.ModLoader.GetModSystem<RoomRegistry>();
 
+        // NOTE: message types must be registered in the SAME ORDER on both sides - the channel's version
+        // check compares the ordered type list, so appending here (never inserting) is what keeps client
+        // and server compatible.
         Channel = (api.Network.GetChannel(ChannelName) ?? api.Network.RegisterChannel(ChannelName))
             .RegisterMessageType(typeof(DynamicWindConfig))
             .RegisterMessageType(typeof(WindFieldState))
-            .RegisterMessageType(typeof(ConfigUpdateRequestPacket))
-            // NOTE: message types must be registered in the SAME ORDER on both sides — the channel's
-            // version check compares the ordered type list, so appending here (never inserting) is
-            // what keeps client and server compatible.
-            .RegisterMessageType(typeof(SailTrimRequestPacket));
+            .RegisterMessageType(typeof(ConfigUpdateRequestPacket));
     }
 
     protected void LoadConfig(ICoreAPI api)
@@ -101,7 +100,7 @@ public abstract class DynamicWindModCommon : ModSystem
     }
 
     /// <summary>Wires <see cref="WindField.TerrainHumidityFunc"/> to a cached lookup of <see cref="TerrainHumidity.WorldgenBaselineAt"/>.
-    /// Shared by both sides — the worldgen rainfall map is stable, so a coarse tile + effectively-static
+    /// Shared by both sides - the worldgen rainfall map is stable, so a coarse tile + effectively-static
     /// time bucket (mirrors the terrain-height caches) keeps this cheap on the wind hot path.</summary>
     protected void SetupTerrainHumidityFunc(ICoreAPI api)
     {
@@ -110,7 +109,7 @@ public abstract class DynamicWindModCommon : ModSystem
     }
 
     /// <summary>Sets <see cref="WindField.SeaLevel"/>/<see cref="WindField.WorldHeight"/>/<see cref="WindField.MapCenterZ"/>
-    /// and wires <see cref="WindField.LatitudeFunc"/> to the real climate latitude (repeating triangle wave —
+    /// and wires <see cref="WindField.LatitudeFunc"/> to the real climate latitude (repeating triangle wave -
     /// see "Real latitude" in CLAUDE.md). Re-checked per call rather than captured once, since
     /// <c>Calendar.OnGetLatitude</c> is wired up by world-gen and may not be assigned yet at this exact moment.
     /// Falls back to the old map-midline heuristic until it is. Shared by both sides; call once world geometry
@@ -136,10 +135,10 @@ public abstract class DynamicWindModCommon : ModSystem
     /// Directional wind hook. Vanilla's weather system runs first and stores its own scalar wind speed
     /// (SimplexNoise over time, not diurnal) in <c>windSpeed.X</c>. We keep that as the baseline
     /// jetstream speed and just point it along the true wind direction from <see cref="WindField.WindAt"/>;
-    /// then pressure CELLS (fronts/highs/lows — NOT the ever-present terrain-thermal sea-breeze gradient,
-    /// which still steers direction but is deliberately excluded from this excess — see
+    /// then pressure CELLS (fronts/highs/lows - NOT the ever-present terrain-thermal sea-breeze gradient,
+    /// which still steers direction but is deliberately excluded from this excess - see
     /// <see cref="ComputeWindSpeed"/>) push the field magnitude above the calm baseline, and that excess
-    /// gets ADDED on top. This is additive, NOT multiplicative — so a calm vanilla pattern can't zero the
+    /// gets ADDED on top. This is additive, NOT multiplicative - so a calm vanilla pattern can't zero the
     /// wind globally, fronts still blow when vanilla is calm, and an area with no active pressure cell
     /// simply falls back to vanilla's own (possibly near-zero) speed. Every consumer that calls
     /// <c>GetWindSpeedAt</c> (particles, foliage, blowing snow, dropped items, ground-movement) follows it.
@@ -154,9 +153,9 @@ public abstract class DynamicWindModCommon : ModSystem
 
     /// <summary>
     /// Core directional wind formula behind <see cref="OnGetWindSpeed"/>, factored out so callers that
-    /// need the true wind speed but can't (or shouldn't) pay for the per-position occlusion check — e.g.
-    /// <see cref="Client.MapLayers.WindArrowMapLayer"/>, which samples a 24×24 world-map grid where
-    /// "indoors" is meaningless and the room/light lookups would be the dominant cost — can pass
+    /// need the true wind speed but can't (or shouldn't) pay for the per-position occlusion check - e.g.
+    /// <see cref="Client.MapLayers.WindArrowMapLayer"/>, which samples a 24x24 world-map grid where
+    /// "indoors" is meaningless and the room/light lookups would be the dominant cost - can pass
     /// <paramref name="applyOcclusion"/> = false and get the same speed/direction sans that factor.
     /// <paramref name="vsSpeed"/> is vanilla's own raw wind-speed noise at <paramref name="pos"/> (e.g.
     /// <c>WeatherSystemBase.WeatherDataSlowAccess.GetWindSpeed(pos)</c>), taken as a parameter so callers
@@ -165,7 +164,7 @@ public abstract class DynamicWindModCommon : ModSystem
     public Vec3d ComputeWindSpeed(Vec3d pos, double vsSpeed, double totalHours, bool applyOcclusion)
     {
         // One pass yields both the full wind vector (direction) and the cells-only magnitude used for the
-        // front excess below — they differ only in the down-gradient term's pressure source, so evaluating
+        // front excess below - they differ only in the down-gradient term's pressure source, so evaluating
         // WindAt twice re-walked the cell list and re-ran the orographic step for nothing on this very hot
         // path (every GetWindSpeedAt: per dropped item, particle, foliage sample and windmill tick).
         Vec2d w = Field.WindAt(pos.X, pos.Z, totalHours, out double oroFactor, out double preOroCellMag);
@@ -173,14 +172,14 @@ public abstract class DynamicWindModCommon : ModSystem
         double mag = w.Length();
         if (mag < 1e-6) return new Vec3d(vsSpeed, 0, 0); // degenerate field → leave vanilla value
 
-        // Front-driven excess is measured from pressure CELLS only (excludeTerrainGradient) — the
+        // Front-driven excess is measured from pressure CELLS only (excludeTerrainGradient) - the
         // full field above (used for direction/bearing) also includes the ever-present sea-breeze term
         // (WindField's gradient of TerrainThermal's temperature anomaly), which is real and
         // legitimately steers wind everywhere there's land/water/terrain contrast, but isn't a "front":
         // folding it into frontExcess would add FrontWindStrength-scaled speed near every coastline or
         // terrain edge even with zero active pressure cells nearby, inflating average speed well outside
         // any actual weather system.
-        // (preOroCellMag comes from the single WindAt call above — see its remarks.)
+        // (preOroCellMag comes from the single WindAt call above - see its remarks.)
 
         // Baseline jetstream speed = vanilla's, modulated by a slow jet-streak noise (faster/slower
         // segments, never zero). Pressure fronts then ADD wind on top of that. Orographic interaction
@@ -189,7 +188,7 @@ public abstract class DynamicWindModCommon : ModSystem
         double frontExcess = preOroCellMag - Field.BaseStrength;
         if (frontExcess < 0) frontExcess = 0;
 
-        // Weight that excess by which front regime(s) influence this position — see the *WindMult
+        // Weight that excess by which front regime(s) influence this position - see the *WindMult
         // consts above. Falls back to a neutral 1x where no low's influence reaches (plain jetstream/
         // high-pressure gradient wind, which isn't a "front" and shouldn't be gust-differentiated).
         WindField.FrontRegimeBias regime = Field.FrontRegimeBiasAt(pos.X, pos.Z, totalHours);
@@ -210,7 +209,7 @@ public abstract class DynamicWindModCommon : ModSystem
     /// True if <paramref name="pos"/> is (X/Z-wise) the client player's own position. Vanilla's
     /// <c>WeatherSystemClient.OnRenderFrame</c> calls <c>GetWindSpeedAt</c> at the player's exact X/Z
     /// every frame (once at the player's own Y, once at the player-column's rain-map-height Y) purely to
-    /// smooth <c>GlobalConstants.CurrentWindSpeedClient</c>/<c>CurrentSurfaceWindSpeedClient</c> — a single
+    /// smooth <c>GlobalConstants.CurrentWindSpeedClient</c>/<c>CurrentSurfaceWindSpeedClient</c> - a single
     /// value vanilla then broadcasts world-wide for things like the foliage-sway shader uniform, which is
     /// NOT re-queried per leaf/block. If we occluded that call, a player standing in one shed would freeze
     /// foliage sway for the ENTIRE visible world, not just their shed. Real per-position callers (dropped
@@ -229,7 +228,7 @@ public abstract class DynamicWindModCommon : ModSystem
 
     /// <summary>
     /// Shielding from roofs/walls/underground. A position inside a fully enclosed vanilla "room"
-    /// (<see cref="RoomRegistry"/> — the same room detection cellars/greenhouses use for cooling/humidity,
+    /// (<see cref="RoomRegistry"/> - the same room detection cellars/greenhouses use for cooling/humidity,
     /// <c>ExitCount == 0</c> meaning no gaps to open air) gets flat-zero wind: a glass-roofed greenhouse
     /// still reads bright on <c>OnlySunLight</c>, so the light-based falloff below would miss it, but it
     /// has no opening for outside air to actually move through. Everywhere else falls back to a power-curve
@@ -238,7 +237,7 @@ public abstract class DynamicWindModCommon : ModSystem
     /// near full speed and only cuts hard once mostly enclosed.
     ///
     /// Both the room BFS and the light lookup touch chunk data, so skip both entirely outside loaded
-    /// terrain (fully open) — otherwise the world-map wind overlay pays this cost every sampled cell at
+    /// terrain (fully open) - otherwise the world-map wind overlay pays this cost every sampled cell at
     /// high zoom-out, most of which land in unloaded chunks it can't usefully occlude anyway
     /// (<see cref="DynamicWind.Client.MapLayers.WindArrowMapLayer"/> intentionally samples everywhere via <c>RequireChunkLoaded = false</c>).
     /// </summary>
@@ -270,13 +269,13 @@ public abstract class DynamicWindModCommon : ModSystem
     /// <summary>
     /// Pressure-cell air mass → air temperature. Each system carries its own intrinsic warm/cold
     /// character (<see cref="PressureCell.AirMassTemp"/>, set at spawn from birth latitude + season +
-    /// jitter) independent of whether it's a low or a high — a cold low and a warm high can both exist,
+    /// jitter) independent of whether it's a low or a high - a cold low and a warm high can both exist,
     /// same as a polar low or a subtropical high in reality. Shifts local temperature up to
     /// <see cref="FrontTemperatureMax"/> °C toward that air mass's character; the
     /// terrain-thermal field (warm dry land / cool deep water) adds a gentler shift up to
     /// <see cref="ThermalTemperatureMax"/> °C. Both terms are read from the same
     /// synced <see cref="WindField"/> used everywhere else, so server and client agree. Worldgen base
-    /// climate is left untouched — only live ("now"/dated) lookups shift.
+    /// climate is left untouched - only live ("now"/dated) lookups shift.
     /// </summary>
     protected void OnGetClimate(ref ClimateCondition climate, BlockPos pos, EnumGetClimateMode mode, double totalDays)
     {
@@ -293,7 +292,7 @@ public abstract class DynamicWindModCommon : ModSystem
             double t = Field.CellTemperatureAt(pos.X, pos.Z, totalHours);
             double frontDelta = FrontTemperatureMax * Clamp1(t);
 
-            // Terrain thermal term: + warm land / − cool water. TerrainThermal is already denominated in
+            // Terrain thermal term: + warm land / - cool water. TerrainThermal is already denominated in
             // °C, so this only normalises its nominal amplitude to the configured maximum shift.
             double thermalDelta = 0;
             if (Field.TerrainTempFunc != null)
@@ -306,7 +305,7 @@ public abstract class DynamicWindModCommon : ModSystem
 
             // Humidity: blend vanilla's own Rainfall toward our terrain/pressure/noise-derived value, so
             // everything that already reads live Rainfall (crop growth, farmland moisture, third-party
-            // mods' climate lookups, HUD Clock's Rainfall line) picks up dynamic humidity for free — see
+            // mods' climate lookups, HUD Clock's Rainfall line) picks up dynamic humidity for free - see
             // WindField.HumidityAt and "Real latitude"/humidity design notes in CLAUDE.md.
             if (humidityActive)
             {

@@ -17,12 +17,12 @@ public class WindFieldState
     public double BaseStrength;
     public double MeanderAmplitude;
     public double CyclonicInflowAngle;
-    /// <summary>Seasonal N/S jetstream bias factor in [−1, 1] (see <see cref="WindField.SeasonalBiasZ"/>).</summary>
+    /// <summary>Seasonal N/S jetstream bias factor in [-1, 1] (see <see cref="WindField.SeasonalBiasZ"/>).</summary>
     public double SeasonalBiasZ;
     /// <summary>
     /// Accumulated cloud-texture drift (blocks) at <see cref="TotalHoursAnchor"/>, and the rate it is
     /// currently accumulating at (blocks/game-hour) so the client can extrapolate between snapshots the
-    /// same way it extrapolates cell positions — see <see cref="WindField.CloudDriftAt"/>. This has to be
+    /// same way it extrapolates cell positions - see <see cref="WindField.CloudDriftAt"/>. This has to be
     /// SERVER-ACCUMULATED and synced rather than derived client-side: it is a time integral of the base
     /// flow, and the flow's own seasonal tilt varies over the year, so multiplying an instantaneous
     /// bearing by total elapsed time would shear the whole pattern every time that tilt moved.
@@ -45,18 +45,4 @@ public class WindFieldState
 public class ConfigUpdateRequestPacket
 {
     public DynamicWindConfig Config = new();
-}
-
-/// <summary>
-/// Client→server sail trim INTENT — not an increment. <see cref="Dir"/> is −1 (to port), 0 (stop) or
-/// +1 (to starboard); the server holds the latest value per boat and integrates it into the sail
-/// angle each tick. Sending intent rather than deltas means a dropped or duplicated packet can't
-/// accumulate drift, the wire traffic is one packet per key press/release rather than per tick, and
-/// the intent clears itself when the player dismounts or disconnects.
-/// </summary>
-[ProtoContract(ImplicitFields = ImplicitFields.AllPublic)]
-public class SailTrimRequestPacket
-{
-    public long BoatEntityId;
-    public sbyte Dir;
 }

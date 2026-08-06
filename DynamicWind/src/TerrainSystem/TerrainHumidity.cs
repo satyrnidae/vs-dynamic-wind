@@ -16,7 +16,7 @@ namespace DynamicWind.TerrainSystem;
 /// </summary>
 internal static class TerrainHumidity
 {
-    private const double ForestWeight = 0.15; // small nudge — the worldgen rainfall noise already dominates
+    private const double ForestWeight = 0.15; // small nudge - the worldgen rainfall noise already dominates
 
     public static double WorldgenBaselineAt(IWorldAccessor world, double x, double z)
     {

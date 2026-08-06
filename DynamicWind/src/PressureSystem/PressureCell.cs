@@ -23,7 +23,7 @@ public class PressureCell
 
     // Appended fields (see WindFieldSimulation/Load): ImplicitFields.AllPublic tags fields by declaration
     // order and this struct is both network-synced and save-persisted, so new fields MUST be added at the
-    // end — inserting one earlier would shift the tag numbers of everything after it and corrupt old saves.
+    // end - inserting one earlier would shift the tag numbers of everything after it and corrupt old saves.
 
     /// <summary>Influence radius along the cell's direction of travel (the along-stream/minor semi-axis),
     /// always &lt;= <see cref="Radius"/> (the cross-stream/major semi-axis). Real fronts are elongated
@@ -39,7 +39,7 @@ public class PressureCell
     /// <summary>Rolling storm-likelihood scalar in [0,1] for this front. Starts at a random value at
     /// spawn and slowly builds over the cell's lifetime (see WindFieldSimulation.Advect) until its cold
     /// front catches another pressure cell and it occludes (see WindFieldSimulation.ApplyOcclusion),
-    /// after which it drops hard — the storm winds down once occluded. Gates whether this low's own
+    /// after which it drops hard - the storm winds down once occluded. Gates whether this low's own
     /// weather-noise texture contributes at all (see <c>WeatherCoupling</c>'s per-cell noise-map
     /// mechanic). Cells saved before this field existed deserialize it to the
     /// protobuf default 0; WindFieldSimulation.Load migrates those to 1.0 (see the requirement that
@@ -47,33 +47,33 @@ public class PressureCell
     public float StormLikelihood;
 
     /// <summary>Total-hours timestamp until which this (low) cell renders as an occluded front symbol
-    /// instead of separate warm/cold fronts — see FrontComputer.Compute and
+    /// instead of separate warm/cold fronts - see FrontComputer.Compute and
     /// WindFieldSimulation.ApplyOcclusion. 0 (the default) or an elapsed timestamp means "not occluded".
     /// Also doubles as a one-shot latch: once non-zero, the cell has already occluded once and won't
     /// re-trigger.</summary>
     public double OccludedUntilTotalHours;
 
-    /// <summary>Intrinsic air-mass character in [-1, 1] this system carries (−1 = cold/polar, +1 =
-    /// warm/tropical), independent of whether it's a low or a high — a cold low and a warm high can both
+    /// <summary>Intrinsic air-mass character in [-1, 1] this system carries (-1 = cold/polar, +1 =
+    /// warm/tropical), independent of whether it's a low or a high - a cold low and a warm high can both
     /// exist, same as a polar low or a subtropical high in reality. Set once at spawn from the cell's
     /// birth latitude + season + random jitter (see WindFieldSimulation.ComputeAirMassTemp) and carried
     /// for the cell's lifetime. Drives the real temperature shift in DynamicWindModCommon.OnGetClimate
     /// via <see cref="DynamicWind.WindSystem.WindField.CellTemperatureAt"/>; also drives which SINGLE front
-    /// symbol a moving low draws (warm → poleward/Warm, cold → equatorward/Cold — see
+    /// symbol a moving low draws (warm → poleward/Warm, cold → equatorward/Cold - see
     /// DynamicWind.PressureSystem.FrontComputer) and biases the cell's own advection bearing toward the
     /// pole (warm) or equator (cold) side (see WindFieldSimulation.Advect/AirMassBiasedAngle).</summary>
     public float AirMassTemp;
 
     /// <summary>Radial reach multiplier for this (low) cell's COLD/equatorward front contour, on top of the
-    /// base <see cref="Radius"/>/<see cref="RadiusMinor"/> ellipse — see FrontComputer. Starts at 1 and
-    /// grows FASTER than <see cref="WarmFrontReach"/> each hour (WindFieldSimulation.ApplyOcclusion) —
-    /// real cold fronts advect/extend faster than warm fronts — so the two sides visibly move and expand
+    /// base <see cref="Radius"/>/<see cref="RadiusMinor"/> ellipse - see FrontComputer. Starts at 1 and
+    /// grows FASTER than <see cref="WarmFrontReach"/> each hour (WindFieldSimulation.ApplyOcclusion) -
+    /// real cold fronts advect/extend faster than warm fronts - so the two sides visibly move and expand
     /// at different rates over the cell's life; the growth rate on each side is itself modulated by how
     /// close this cell's <see cref="AirMassTemp"/> is to whatever pressure cell sits on that side (similar
-    /// air masses offer little resistance — sharpen/advance fastest — while starkly different ones slow
+    /// air masses offer little resistance - sharpen/advance fastest - while starkly different ones slow
     /// the advance). Once this cell's cold-front reach physically reaches another pressure cell on its
     /// equatorward side, the cold front has "caught" that cell and this low occludes (see
-    /// WindFieldSimulation.ApplyOcclusion) — a real two-cell event rather than a fixed ratio/age timer.</summary>
+    /// WindFieldSimulation.ApplyOcclusion) - a real two-cell event rather than a fixed ratio/age timer.</summary>
     public float ColdFrontReach = 1f;
 
     /// <summary>Radial reach multiplier for this (low) cell's WARM/poleward front contour. See
@@ -82,9 +82,9 @@ public class PressureCell
 
     /// <summary>Classification of this low's occlusion, set once when <see cref="OccludedUntilTotalHours"/>
     /// is first triggered (see WindFieldSimulation.ApplyOcclusion): 0 = unset (not yet occluded, or
-    /// occluded before this field existed — pre-migration saves fall back to the generic occluded
+    /// occluded before this field existed - pre-migration saves fall back to the generic occluded
     /// symbol), 1 = COLD occlusion (the catching cold front's air mass was colder than or equal to the
-    /// cell it caught — behaves like a cold front), 2 = WARM occlusion (the catching air was warmer —
+    /// cell it caught - behaves like a cold front), 2 = WARM occlusion (the catching air was warmer -
     /// behaves like a warm front). Matches the real synoptic distinction between cold-type and warm-type
     /// occlusions. Meaningful only while <see cref="OccludedUntilTotalHours"/> is active.</summary>
     public byte OcclusionKind;

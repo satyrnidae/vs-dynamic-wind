@@ -12,7 +12,7 @@ public enum FrontType { Cold, Warm, Stationary, Occluded, ColdOcclusion, WarmOcc
 /// the cell's own elliptical footprint (<see cref="Radius"/>/<see cref="RadiusMinor"/>/
 /// <see cref="Orientation"/>) so a renderer whose true centre has scrolled off-screen can clamp the
 /// marker to the system's own boundary (see <see cref="Utils.EllipseGeometry.RadiusToward(double,double,double,double,double)"/>)
-/// instead of placing it at an arbitrary on-screen position — the same boundary a front's own
+/// instead of placing it at an arbitrary on-screen position - the same boundary a front's own
 /// leading-edge arc traces (<see cref="FrontComputer.BuildLeadingEdgeArc"/>), so the icon never reads as
 /// further "ahead" than the system's actual influence reaches.</summary>
 public struct FrontMarker
@@ -26,10 +26,10 @@ public struct FrontMarker
 }
 
 /// <summary>
-/// A weather front for one LOW pressure system (highs carry no fronts — see FrontComputer). Every front —
+/// A weather front for one LOW pressure system (highs carry no fronts - see FrontComputer). Every front -
 /// Warm/Cold (a moving low's SINGLE front line, poleward for a warm-natured low or equatorward for a
 /// cold-natured one), Stationary (the connecting line to its nearest significant neighbour), and
-/// Occluded/ColdOcclusion/WarmOcclusion (the line toward whatever pressure cell its cold front caught) —
+/// Occluded/ColdOcclusion/WarmOcclusion (the line toward whatever pressure cell its cold front caught) -
 /// is an open marched polyline (<see cref="Points"/>), never a closed loop:
 /// on a flat, non-global map a front reads as a boundary sweeping across the land, not a ring, regardless
 /// of how little its own system is currently advancing. <see cref="Strength"/> (|cell strength|) scales
@@ -40,13 +40,13 @@ public struct FrontLine
     public FrontType Type;
     public float Strength;
 
-    // The low's own elliptical LEADING EDGE, world-space (not its centre) — see
+    // The low's own elliptical LEADING EDGE, world-space (not its centre) - see
     // FrontComputer.BuildLeadingEdgeArc/EllipseGeometry.RadiusToward.
     public Vec2d[] Points;
     // Cumulative arc-length along Points (CumulativeLength[0] == 0, CumulativeLength[^1] == total length),
     // precomputed once alongside Points so SampleAt doesn't rebuild it on every call.
     public double[] CumulativeLength;
-    // The (unit) direction this front is actually advancing — matches the real convention that a front's
+    // The (unit) direction this front is actually advancing - matches the real convention that a front's
     // pip/triangle symbols point in the direction the front is advancing. For Warm/Cold this is the low's
     // own travel direction; for Stationary it's the connecting-line neighbour's velocity RELATIVE to this
     // low's own (a stationary low's own velocity is near zero by definition); for an occlusion it's the
@@ -55,23 +55,23 @@ public struct FrontLine
     // reference nearly PARALLEL to the curve's own tangent, which made the two tangent-perpendiculars
     // indistinguishable (near-zero dot product either way) and left the facing side effectively arbitrary.
     // At every sample the symbol faces whichever perpendicular of the LOCAL tangent best aligns with this
-    // direction — see <see cref="ChooseFacing"/>.
+    // direction - see <see cref="ChooseFacing"/>.
     public double RefX, RefZ;
 }
 
 /// <summary>
-/// Derives weather fronts from the (already-synced, already-persisted) pressure-cell field ALONE — a
+/// Derives weather fronts from the (already-synced, already-persisted) pressure-cell field ALONE - a
 /// pure, deterministic function of <see cref="WindField.CellPressureAt"/>, so both sides compute the
 /// same fronts and they survive world reloads exactly as the cells do (no live-weather sampling, which
 /// is stateful/side-dependent and was what made fronts jump on every reload).
 ///
-/// Only LOW cells carry fronts — a real high is fair-weather subsidence with no frontal boundary of its
+/// Only LOW cells carry fronts - a real high is fair-weather subsidence with no frontal boundary of its
 /// own. A moving low renders the classic Norwegian-cyclone-model pair: BOTH a warm front (leading, ahead
-/// of the low's own direction of travel, tilted poleward — where warm air overruns) and a cold front
-/// (trailing, behind it, tilted equatorward — where cold air digs in), meeting at the low's own centre —
+/// of the low's own direction of travel, tilted poleward - where warm air overruns) and a cold front
+/// (trailing, behind it, tilted equatorward - where cold air digs in), meeting at the low's own centre -
 /// see the MOVING branch of <see cref="Compute"/> and <see cref="WindField.PolewardZSign"/> for the
 /// geography split. A near-stationary low instead renders one line toward its nearest significant
-/// neighbour — the "connecting line" a stationary front actually sits on — flagged Stationary, and a low
+/// neighbour - the "connecting line" a stationary front actually sits on - flagged Stationary, and a low
 /// mid-occlusion (see WindFieldSimulation.ApplyOcclusion) renders one line toward whatever pressure cell
 /// its cold front caught, flagged Occluded/ColdOcclusion/WarmOcclusion per
 /// <see cref="PressureCell.OcclusionKind"/>. Highs still get an H marker, just no front line. Markers
@@ -83,13 +83,13 @@ public static class FrontComputer
     private const double StationarySpeed = WindField.StationarySpeed;
 
     // Warm/Cold front tracing: the line traces the pressure cell's OWN elliptical boundary across a wide
-    // angular span (centered on the bias direction — travel heading for Warm/Cold, catch direction for
+    // angular span (centered on the bias direction - travel heading for Warm/Cold, catch direction for
     // Occluded, bearing-to-neighbour for Stationary), scaled outward by that side's ColdFrontReach/
-    // WarmFrontReach — a front literally IS the system's edge, growing as the reach grows, never anything
+    // WarmFrontReach - a front literally IS the system's edge, growing as the reach grows, never anything
     // free-marched or wobbled beyond it. (Two earlier approaches were tried and discarded: an explicit
     // Bezier JOIN out to a neighbouring low, which could self-intersect/degenerate when systems sat close
     // together; and a free march trailing outward from the arc's ends with pressure-gradient deflection
-    // plus a sine "wobble" for organic texture, which — especially once cells grew to synoptic scale —
+    // plus a sine "wobble" for organic texture, which - especially once cells grew to synoptic scale -
     // read as jagged/noisy rather than a smooth boundary. Both were removed in favour of this simpler,
     // purely elliptical contour.)
     private const double ArcHalfAngle = 50.0 * Math.PI / 180.0; // half-span of the leading-edge arc
@@ -99,26 +99,26 @@ public static class FrontComputer
     // to the pressure field, which is exact when systems are isolated but wrong once two footprints
     // genuinely overlap (the real combined field pinches/merges between them, not two ellipses crossing
     // through each other). When overlap is detected, trace the ACTUAL combined field
-    // (WindField.CellPressureAt, summed over every cell) with marching squares instead — see
+    // (WindField.CellPressureAt, summed over every cell) with marching squares instead - see
     // BuildFrontLine/BuildFrontLineViaOverlap. Isolated systems (by far the common case, given the low
     // MaxActiveCells cap and spawn logic that already keeps new cells apart) are unaffected: this path
     // only engages when it's actually needed.
-    private const double OverlapDistanceFactor = 1.3;   // × (radius_i + radius_j) — overlap trigger threshold
+    private const double OverlapDistanceFactor = 1.3;   // x (radius_i + radius_j) - overlap trigger threshold
     private const int OverlapGridResolution = 64;        // grid divisions along the longer axis of the sampled box
     private const int OverlapGridMaxCells = 6000;        // safety cap on total grid points
-    private const double OverlapBoxMarginFactor = 1.5;   // × own radius — MINIMUM margin around a lone cell's box
-    // The traced contour sits at radius × reach, and reach grows to MaxFrontReach (3), so the box must
-    // widen with it: a fixed 1.5× margin put the target contour outside the sampled box for any front
+    private const double OverlapBoxMarginFactor = 1.5;   // x own radius - MINIMUM margin around a lone cell's box
+    // The traced contour sits at radius x reach, and reach grows to MaxFrontReach (3), so the box must
+    // widen with it: a fixed 1.5x margin put the target contour outside the sampled box for any front
     // past reach 1.5 (~6 game-hours of growth), leaving nothing in the wedge and silently falling back to
-    // the very analytic arc this path exists to replace — after paying for the full grid sample.
-    private const double OverlapBoxReachPad = 0.5;       // + reach, × own radius — box half-extent at high reach
-    private const double OverlapWedgeMaxDistFactor = 3.0; // × own radius — discard traced segments farther than this
+    // the very analytic arc this path exists to replace - after paying for the full grid sample.
+    private const double OverlapBoxReachPad = 0.5;       // + reach, x own radius - box half-extent at high reach
+    private const double OverlapWedgeMaxDistFactor = 3.0; // x own radius - discard traced segments farther than this
     // Endpoint-merge tolerance for chaining. MarchingSquares.Trace emits exactly-coincident endpoints for
     // segments that share a contour, so this only needs to absorb floating-point error. A large fraction of
     // the grid step would instead weld endpoints belonging to two DISTINCT branches passing through one
-    // ambiguous saddle cell — exactly what forms in the pinch between two overlapping systems — producing a
+    // ambiguous saddle cell - exactly what forms in the pinch between two overlapping systems - producing a
     // spurious stroke jumping across the saddle, with pips stamped along it.
-    private const double OverlapChainMergeStepFactor = 1e-3; // × grid step
+    private const double OverlapChainMergeStepFactor = 1e-3; // x grid step
 
     public static void Compute(WindField field, double totalHours, List<FrontMarker> markers, List<FrontLine> lines)
     {
@@ -166,7 +166,7 @@ public static class FrontComputer
                 if (totalHours < c.OccludedUntilTotalHours)
                 {
                     // OCCLUDED: the cold front physically caught another pressure cell on the equatorward
-                    // side (see WindFieldSimulation.ApplyOcclusion) — this renders a single open curve
+                    // side (see WindFieldSimulation.ApplyOcclusion) - this renders a single open curve
                     // FREE-marching in that direction, using the cold/warm symbol per
                     // PressureCell.OcclusionKind (0/unset falls back to the generic occluded symbol, e.g.
                     // for saves migrated from before OcclusionKind existed).
@@ -178,7 +178,7 @@ public static class FrontComputer
                     };
 
                     double occPoleAngle = field.PolewardZSign(ez[i]) > 0 ? Math.PI / 2.0 : -Math.PI / 2.0;
-                    double coldAngle = occPoleAngle + Math.PI; // equatorward — the catching side
+                    double coldAngle = occPoleAngle + Math.PI; // equatorward - the catching side
 
                     Vec2d[] occPts = BuildFrontLine(field, totalHours, elapsed, i, c, ex[i], ez[i], coldAngle, c.ColdFrontReach);
 
@@ -193,9 +193,9 @@ public static class FrontComputer
                 if (speed < StationarySpeed)
                 {
                     // STATIONARY: a real stationary front sits on the (non-advancing) boundary between two
-                    // systems, not a closed loop encircling one — so this renders a single open curve
+                    // systems, not a closed loop encircling one - so this renders a single open curve
                     // FREE-marching toward this low's nearest significant neighbour (a fallback direction if
-                    // truly isolated). Its facing follows how that connecting line is actually moving — the
+                    // truly isolated). Its facing follows how that connecting line is actually moving - the
                     // neighbour's velocity RELATIVE to this low's own, since a stationary low's own velocity
                     // is by definition near zero and useless as a facing reference on its own.
                     int neighbour = FindNearestSignificantCell(significantIndices, i, ex, ez);
@@ -218,15 +218,15 @@ public static class FrontComputer
 
                 // MOVING, open wave: matching the classic Norwegian cyclone model, a mature wave low shows
                 // BOTH a warm front (leading, ahead of the low's own direction of travel) and a cold front
-                // (trailing, behind it) at once, meeting at the low's own centre — not just one or the
+                // (trailing, behind it) at once, meeting at the low's own centre - not just one or the
                 // other. Each is tilted off the pure travel/anti-travel axis toward its real-world side
-                // (warm leads AND tilts poleward — where warm air overruns; cold trails AND tilts
-                // equatorward — where cold air digs in), giving the classic "comma"/wave shape rather than
-                // two lines sitting exactly opposite each other — see WindField.MovingFrontAngles, the
+                // (warm leads AND tilts poleward - where warm air overruns; cold trails AND tilts
+                // equatorward - where cold air digs in), giving the classic "comma"/wave shape rather than
+                // two lines sitting exactly opposite each other - see WindField.MovingFrontAngles, the
                 // single source of truth for this split (also used by FrontRegimeBiasAt so precipitation
                 // intensity-type weighting lines up with these exact same two edges, not some
                 // independently drifting geography split). `WarmFrontReach`/`ColdFrontReach` (which
-                // already grow at different rates — see "Front reach") give the two sides their own,
+                // already grow at different rates - see "Front reach") give the two sides their own,
                 // independently evolving extent.
                 field.MovingFrontAngles(c.VelX, c.VelZ, ez[i], out double waveWarmAngle, out double waveColdAngle);
 
@@ -243,7 +243,7 @@ public static class FrontComputer
 
     /// <summary>Normalizes (vx, vz) of known length <paramref name="len"/> to a unit vector, or falls back
     /// to the unit vector at <paramref name="fallbackAngle"/> when too near zero to normalize safely
-    /// (a front's own reference velocity can be near-stationary — see the Occluded/Stationary branches
+    /// (a front's own reference velocity can be near-stationary - see the Occluded/Stationary branches
     /// above).</summary>
     private static void NormalizeOrFallback(double vx, double vz, double len, double fallbackAngle,
         out double nx, out double nz)
@@ -252,7 +252,7 @@ public static class FrontComputer
         else { nx = Math.Cos(fallbackAngle); nz = Math.Sin(fallbackAngle); }
     }
 
-    /// <summary>Builds a computed <see cref="FrontLine"/> from its traced points — shared by all four
+    /// <summary>Builds a computed <see cref="FrontLine"/> from its traced points - shared by all four
     /// branches in <see cref="Compute"/> (Occluded, Stationary, Warm, Cold).</summary>
     private static FrontLine MakeLine(FrontType type, float strength, Vec2d[] pts, double refX, double refZ) => new()
     {
@@ -278,8 +278,8 @@ public static class FrontComputer
     }
 
     /// <summary>Finds the nearest OTHER significant cell to <paramref name="self"/> in ANY direction (low
-    /// or high — <paramref name="candidateIndices"/> is expected to be <c>significantIndices</c>, every
-    /// marker-eligible cell) — used to find a Stationary low's "connecting line" front target, which
+    /// or high - <paramref name="candidateIndices"/> is expected to be <c>significantIndices</c>, every
+    /// marker-eligible cell) - used to find a Stationary low's "connecting line" front target, which
     /// unlike a Warm/Cold JOIN isn't restricted to a poleward/equatorward side. Returns -1 if
     /// <paramref name="self"/> has no other significant cell in the field at all.</summary>
     private static int FindNearestSignificantCell(List<int> candidateIndices, int self, double[] ex, double[] ez)
@@ -301,8 +301,8 @@ public static class FrontComputer
     /// boundary (<see cref="EllipseGeometry.RadiusToward"/>, so an elongated/oriented cell's true edge is
     /// used, not a circular approximation), spanning <see cref="ArcHalfAngle"/> either side of
     /// <paramref name="biasAngle"/>, with the boundary radius scaled by <paramref name="reach"/>
-    /// (ColdFrontReach/WarmFrontReach — grows over the front's life, so the traced edge visibly grows
-    /// with it). This IS the whole front line: no free march, no added noise — a front is drawn exactly as
+    /// (ColdFrontReach/WarmFrontReach - grows over the front's life, so the traced edge visibly grows
+    /// with it). This IS the whole front line: no free march, no added noise - a front is drawn exactly as
     /// the system's own (reach-scaled) edge, matching how a real synoptic chart traces a front along the
     /// system's boundary rather than an arbitrary curve trailing away from it.</summary>
     private static Vec2d[] BuildLeadingEdgeArc(PressureCell cell, double ex, double ez, double biasAngle, float reach)
@@ -322,7 +322,7 @@ public static class FrontComputer
     /// <summary>Builds one front's line, picking the cheap single-cell analytic arc
     /// (<see cref="BuildLeadingEdgeArc"/>) when <paramref name="cell"/> is isolated, or the marching-squares
     /// trace of the ACTUAL combined field (<see cref="BuildFrontLineViaOverlap"/>) when it meaningfully
-    /// overlaps another significant cell — see <see cref="OverlapDistanceFactor"/>.</summary>
+    /// overlaps another significant cell - see <see cref="OverlapDistanceFactor"/>.</summary>
     private static Vec2d[] BuildFrontLine(WindField field, double totalHours, double elapsed, int selfIndex,
         PressureCell cell, double cx, double cz, double biasAngle, float reach)
     {
@@ -333,7 +333,7 @@ public static class FrontComputer
     }
 
     /// <summary>True if any OTHER significant cell's footprint sits close enough to <paramref name="cell"/>
-    /// that the single-cell analytic arc would no longer match the true (summed) pressure field — a plain
+    /// that the single-cell analytic arc would no longer match the true (summed) pressure field - a plain
     /// distance-between-centres check against the sum of the two cells' own (major-axis) radii, scaled by
     /// <see cref="OverlapDistanceFactor"/>. Deliberately approximate (ellipse orientation isn't accounted
     /// for): this only decides whether to pay for the more expensive marching-squares path, not the traced
@@ -363,7 +363,7 @@ public static class FrontComputer
     /// The target LEVEL is derived the same way the analytic arc's radius-scaling works: scaling a single
     /// cell's own boundary radius by <paramref name="reach"/> is equivalent to contouring at
     /// <c>|Strength| * WindField.PressureFalloff(reach²)</c> (the elliptical falloff's <c>norm2</c> at
-    /// radius×reach is exactly reach²) — so reach still controls how far out the front sits, just expressed
+    /// radiusxreach is exactly reach²) - so reach still controls how far out the front sits, just expressed
     /// as a pressure level instead of a radius multiplier, and both formulas agree exactly at reach = 1.
     /// This MUST go through <see cref="WindField.PressureFalloff"/> rather than hardcoding its formula:
     /// the two definitions of "where the boundary is" have to stay in step or the traced contour lands at a
@@ -372,10 +372,10 @@ public static class FrontComputer
     /// A LOCAL grid (this cell's own footprint plus any cell it overlaps, not the whole map) is sampled
     /// once and marched at that level; raw segments are then restricted to a wedge around
     /// <paramref name="biasAngle"/> (matching <see cref="ArcHalfAngle"/>) and within
-    /// <see cref="OverlapWedgeMaxDistFactor"/>×radius of <paramref name="cell"/>'s own centre, so an
+    /// <see cref="OverlapWedgeMaxDistFactor"/>xradius of <paramref name="cell"/>'s own centre, so an
     /// unrelated contour elsewhere in the sampled box (e.g. the far side of the overlapping neighbour) is
     /// never picked up. The filtered segments are chained into one polyline
-    /// (<see cref="MarchingSquares.ChainSegments"/>) and the longest chain is returned — falling back to
+    /// (<see cref="MarchingSquares.ChainSegments"/>) and the longest chain is returned - falling back to
     /// the analytic arc if the grid was too coarse to catch anything at all in the wedge.
     /// </summary>
     private static Vec2d[] BuildFrontLineViaOverlap(WindField field, double totalHours, double elapsed, int selfIndex,
@@ -453,10 +453,10 @@ public static class FrontComputer
     }
 
     /// <summary>Picks whichever ±90° perpendicular of a (normalized) tangent best aligns with
-    /// <paramref name="refX"/>/<paramref name="refZ"/> (the low's own direction of travel — real front
+    /// <paramref name="refX"/>/<paramref name="refZ"/> (the low's own direction of travel - real front
     /// symbols point in the direction the front is advancing). Used when rendering (<see cref="SampleAt"/>)
     /// so a front symbol stays correctly oriented along the curve's whole length. Can become near-degenerate
-    /// — both candidates close to equally aligned — once the curve's tangent nears parallel to ref (e.g. a
+    /// - both candidates close to equally aligned - once the curve's tangent nears parallel to ref (e.g. a
     /// front whose FREE march has bent nearly back onto its own asymptotic trail direction).</summary>
     private static void ChooseFacing(double tanX, double tanZ, double refX, double refZ, out double faceX, out double faceZ)
     {
@@ -481,9 +481,9 @@ public static class FrontComputer
 
     /// <summary>
     /// Uniform curve-parameter sample: <paramref name="t"/> in [0,1] spans the whole open curve. Returns
-    /// the exact world position on the traced polyline (no added noise/wobble — a front IS the system's
+    /// the exact world position on the traced polyline (no added noise/wobble - a front IS the system's
     /// own edge, see <see cref="BuildLeadingEdgeArc"/>) and the local facing angle (whichever
-    /// tangent-perpendicular best matches <see cref="FrontLine.RefX"/>/<see cref="FrontLine.RefZ"/> — see
+    /// tangent-perpendicular best matches <see cref="FrontLine.RefX"/>/<see cref="FrontLine.RefZ"/> - see
     /// <see cref="ChooseFacing"/>).
     /// </summary>
     public static void SampleAt(in FrontLine f, double t, out double wx, out double wz, out double facingAngle)

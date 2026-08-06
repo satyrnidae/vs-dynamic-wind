@@ -9,15 +9,15 @@ namespace DynamicWind.Compat;
 
 /// <summary>
 /// Optional compat with the "Immersive Body Temperature" mod (modid <see cref="ModId"/>, not a compile-time
-/// or modinfo dependency — resolved entirely via <see cref="AccessTools"/>, isolated here so a missing DLL
+/// or modinfo dependency - resolved entirely via <see cref="AccessTools"/>, isolated here so a missing DLL
 /// can never cause a type-load failure, same convention as <see cref="Client.DynamicWindConfigLib"/>).
 ///
 /// Confirmed by decompiling the mod directly (not assumed): its <c>Modifiers.HumidityModifier</c> is
 /// currently an inert stub (always contributes 0 °C), and its <c>Modifiers.WetnessModifier</c> reads live
-/// <c>ClimateCondition.Rainfall</c> for the wetness-GAIN term only — the wetness-drying term is a flat,
+/// <c>ClimateCondition.Rainfall</c> for the wetness-GAIN term only - the wetness-drying term is a flat,
 /// climate-independent server config value (<c>ModConfigServer.Instance.WetnessDrySpeed</c>). So neither
 /// "humidity reduces cooling effectiveness" nor "stay damp longer" already happens once Dynamic Wind feeds
-/// live Rainfall (see <see cref="DynamicWindModCommon.OnGetClimate"/>) — both need new patches here.
+/// live Rainfall (see <see cref="DynamicWindModCommon.OnGetClimate"/>) - both need new patches here.
 ///
 /// Server-only: <c>EntityBehaviorBodyTemperature</c>'s modifiers tick on the server (entity/watched-attribute
 /// state is server-authoritative), so this reads <see cref="DynamicWindRuntime.ServerField"/>/
@@ -25,7 +25,7 @@ namespace DynamicWind.Compat;
 /// <see cref="Patches.WeatherCoupling"/> does.
 ///
 /// Entirely gated by <see cref="Config.DynamicWindConfig.HumidityBodyTempCompatEnabled"/> (checked by the
-/// caller before <see cref="Apply"/> is even invoked) — this reaches into another mod's private tick logic
+/// caller before <see cref="Apply"/> is even invoked) - this reaches into another mod's private tick logic
 /// and its exact internals could change on any update of that mod, so it must be trivial to turn off.
 /// </summary>
 internal static class ImmersiveBodyTemperatureCompat
@@ -77,7 +77,7 @@ internal static class ImmersiveBodyTemperatureCompat
         logger.Notification("[dynamicwind] Immersive Body Temperature compat enabled (humidity → cooling effectiveness + wetness drying).");
     }
 
-    /// <summary>Below this temperature, humidity doesn't impair evaporative cooling — the effect only makes
+    /// <summary>Below this temperature, humidity doesn't impair evaporative cooling - the effect only makes
     /// sense when the body is trying to shed heat.</summary>
     private const double WarmThresholdC = 20.0;
     private const double WarmFadeRangeC = 8.0; // fades in over this many °C above the threshold

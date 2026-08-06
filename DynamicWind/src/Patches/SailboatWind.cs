@@ -24,6 +24,7 @@ internal static class SailboatWind
 {
     // Former DynamicWindConfig tunables, now fixed constants (see DynamicWindConfig's class remarks).
     private const float SailboatTailwindMaxBoost = 0.5f;
+    private const float SailboatBeamReachMaxBoost = 0.3f;
     private const float SailboatHeadwindMaxPenalty = 0.1f;
     private const float SailboatMinThrust = 0.5f;
     private const float SailboatWindSpeedInfluence = 0.6f;
@@ -64,6 +65,10 @@ internal static class SailboatWind
         WindField? field = DynamicWindRuntime.FieldFor(side);
         if (cfg == null || field == null || !cfg.SailboatEnabled) return;
 
+        // Alternate trim control (Ctrl+A/D repurposing the tiller's own turn keys) — checked regardless of
+        // furl state, same as the bracket-key path, since trim works in all three sail positions.
+        if (cfg.SailboatSailAngleEnabled) HandleCtrlTrim(__instance, ref __result);
+
         // Only when under sail.
         if (__instance.WatchedAttributes.GetInt("sailPosition", 0) <= 0) return;
 
@@ -92,21 +97,69 @@ internal static class SailboatWind
     }
 
     /// <summary>
+    /// Alternate trim control: holding Ctrl repurposes the tiller's own turn keys (A/D → <c>EntityControls
+    /// .Left/Right</c>) to swing the sail instead of the hull, so trimming doesn't need a second pair of
+    /// hands off the steering keys — the bracket-key hotkeys (<c>SailTrimInput</c>) keep working
+    /// independently alongside this. Reads <c>EntityBehaviorSeatable.ControllingControls</c> — the same
+    /// synced, server-authoritative control state vanilla's own SeatsToMotion already used just above to
+    /// compute <paramref name="__result"/>'s turn term — rather than a new hotkey/packet, so this needs no
+    /// extra network traffic and works identically on both sides. Must run in the SAME postfix that
+    /// produced the turn term: suppressing it and redirecting Left/Right to the sail have to happen
+    /// together, or the hull would keep spinning under Ctrl while the sail also swings.
+    /// </summary>
+    private static void HandleCtrlTrim(EntityBoat boat, ref Vec2d __result)
+    {
+        EntityBehaviorSeatable? seatable = boat.GetBehavior<EntityBehaviorSeatable>();
+        EntityControls? controls = seatable?.ControllingControls;
+        EntityBehaviorSailTrim? trim = boat.GetBehavior<EntityBehaviorSailTrim>();
+        if (controls == null || trim == null) return;
+
+        if (!controls.CtrlKey)
+        {
+            trim.SetCtrlTrimIntent(false, 0);
+            return;
+        }
+
+        __result.Y = 0; // suppress vanilla's own turn term while Ctrl repurposes A/D for trim
+        sbyte dir = 0;
+        if (controls.Left) dir--;
+        if (controls.Right) dir++;
+        trim.SetCtrlTrimIntent(true, dir);
+    }
+
+    /// <summary>
     /// Thrust from how the wind meets the SAIL. The sail's normal points dead ahead at zero trim and
     /// swings with the yard, so two dot products describe the whole thing: how squarely the wind hits the
     /// sail's front face, and how much of that push actually points where the boat is going. Feathered
     /// (±90°) or backwinded therefore falls to <c>SailboatMinThrust</c> rather than to nothing, so a
     /// badly trimmed boat still creeps home instead of dying in the water.
+    ///
+    /// On top of that base curve (which already floors at feathered/backwinded and ceilings at a squared
+    /// sail running dead before the wind), a second term rewards trimming for actual aerodynamic LIFT
+    /// rather than pure drag: <c>lift</c> near 0.5 — the sail bisecting the angle to the wind, roughly a
+    /// beam reach — acts as an airfoil, whereas <c>lift</c> near 0 (luffing) or 1 (square to the wind, like
+    /// a parachute) generates none. <c>4·lift·(1−lift)</c> is the parabola peaking at exactly that midpoint
+    /// and vanishing at both ends, so it adds a beam-reach bonus without disturbing the existing floor or
+    /// ceiling — a well-trimmed reach beats a badly-trimmed one, but dead tailwind with a squared sail
+    /// still gives the single highest number, matching how these boats actually sail fastest downwind.
     /// </summary>
     private static double TrimmedFactor(EntityBoat boat, double tx, double tz, double wx, double wz, double windSpeed)
     {
         (double lift, double drive) = SailAlignment(boat, tx, tz, wx, wz);
         double trim = lift * drive;
+        double beamBonus = 4.0 * lift * (1.0 - lift) * drive;
 
         double speedFactor = SpeedFactor(windSpeed);
-
         double best = 1.0 + SailboatTailwindMaxBoost;
-        return SailboatMinThrust + (best - SailboatMinThrust) * trim * speedFactor;
+
+        double factor = SailboatMinThrust
+            + (best - SailboatMinThrust) * trim * speedFactor
+            + SailboatBeamReachMaxBoost * beamBonus * speedFactor;
+
+        // Half sail should catch roughly half the wind, not the same as full sail. Furled (sailPosition 0)
+        // never reaches here — the caller already gates the whole thrust replacement on sailPosition > 0.
+        int sailPosition = boat.WatchedAttributes.GetInt("sailPosition");
+        return factor * sailPosition; // sailPosition is 0..2 so no boost at furl, 1x at half, 2x at full.
     }
 
     /// <summary>

@@ -24,7 +24,7 @@ public abstract class DynamicWindWorldMapLayerBase : MapLayer
     private bool haveCache;
 
     // The base MapLayer.Active property is purely in-memory (the world map dialog's legend checkbox just
-    // sets it directly — see WorldMapManager/GuiDialogWorldMap — with no persistence of its own, for
+    // sets it directly - see WorldMapManager/GuiDialogWorldMap - with no persistence of its own, for
     // vanilla layers either); a game restart otherwise always resets every layer back to whatever OnLoaded
     // sets it to. RestoreActiveState/PersistActiveState round-trip it through a client setting instead, so
     // toggling one of our layers off in the legend actually stays off next session.
@@ -48,7 +48,7 @@ public abstract class DynamicWindWorldMapLayerBase : MapLayer
     private bool activeAtRestore;
     private bool restored;
 
-    /// <summary>Persists the current <see cref="MapLayer.Active"/> value so it survives a game restart —
+    /// <summary>Persists the current <see cref="MapLayer.Active"/> value so it survives a game restart -
     /// called whenever the world map dialog closes, which is when the legend checkboxes the user might
     /// have just clicked actually take effect. Only writes when the value actually CHANGED since it was
     /// restored: an unconditional write would persist the config-derived default on the very first map

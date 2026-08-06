@@ -45,7 +45,7 @@ public class BlockEntityRotorvane : BlockEntity
     // Former DynamicWindConfig tunable, now a fixed constant (see DynamicWindConfig's class remarks).
     private const float RotorvaneSpeedMult = 24f;
     // Raw wind speed (and GetDirectionalMod, which depends on the assembly's still-swinging yaw) is noisy
-    // tick-to-tick, especially at high wind-speed timescales/gusts — easing pitch AND volume toward their
+    // tick-to-tick, especially at high wind-speed timescales/gusts - easing pitch AND volume toward their
     // raw targets instead of snapping every tick keeps the whirring from warbling.
     private const float PitchEaseRatePerSecond = 2f;
     private const float VolumeEaseRatePerSecond = 2f;
@@ -139,7 +139,7 @@ public class BlockEntityRotorvane : BlockEntity
     }
 
     /// <summary>Angular speed (radians/s) the spinner should turn at: wind strength scaled by how well the
-    /// assembly's current facing catches the wind (see <see cref="GetDirectionalMod"/>) — head-on toward
+    /// assembly's current facing catches the wind (see <see cref="GetDirectionalMod"/>) - head-on toward
     /// the wind spins it forward at full rate, facing away reverses it.</summary>
     public float GetSpinSpeed()
     {
@@ -150,8 +150,8 @@ public class BlockEntityRotorvane : BlockEntity
     }
 
     /// <summary>Cosine of the angle between the assembly's current (eased) yaw and the yaw it's swinging
-    /// toward: +1 when fully caught up and facing the wind head-on, 0 when perpendicular (stalled), −1 when
-    /// still facing the opposite way (spins backwards) — same head-on/perpendicular/reversed convention the
+    /// toward: +1 when fully caught up and facing the wind head-on, 0 when perpendicular (stalled), -1 when
+    /// still facing the opposite way (spins backwards) - same head-on/perpendicular/reversed convention the
     /// windmill rotor patch uses. 1 (no modulation) when calm/occluded, since speed is already 0 then.</summary>
     private float GetDirectionalMod()
     {

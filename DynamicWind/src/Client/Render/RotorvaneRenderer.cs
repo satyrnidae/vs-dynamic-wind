@@ -9,13 +9,13 @@ namespace DynamicWind.Client.Render;
 /// Renders the rotating parts of a rotorvane: the arrow/mast assembly eases its yaw toward the wind
 /// bearing exactly like <see cref="WeathervaneRenderer"/>, while the 12-bladed spinner additionally spins
 /// about its own hub axis (the shape's local X axis at the spinner locator) at a rate driven by wind
-/// speed. The spinner's blades sweep the shape's local Y-Z plane (see rotorvane.json — each blade is
+/// speed. The spinner's blades sweep the shape's local Y-Z plane (see rotorvane.json - each blade is
 /// placed via <c>rotationX</c>), so spinning it is a second RotateX applied about the hub pivot BEFORE the
 /// shared yaw, rather than composed with it.
 /// </summary>
 public class RotorvaneRenderer : IRenderer
 {
-    // Real fan blades have rotational inertia — easing the spinner's angular speed toward its raw target
+    // Real fan blades have rotational inertia - easing the spinner's angular speed toward its raw target
     // instead of snapping to it every frame keeps gusty/noisy wind readings (and GetDirectionalMod, which
     // depends on the assembly's still-swinging yaw) from making it visibly jerk speed up/down or flicker
     // direction.

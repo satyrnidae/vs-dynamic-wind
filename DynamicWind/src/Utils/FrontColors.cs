@@ -5,7 +5,7 @@ namespace DynamicWind.Utils;
 /// <summary>
 /// Shared color palette for weather-front vector rendering (<see cref="DynamicWind.Client.MapLayers.FrontMapLayer"/>).
 /// Both <see cref="ColdBlue"/> and <see cref="WarmCrimson"/> are the same cobalt/crimson used to tint
-/// high/low-pressure wind arrows (<c>WindArrowMapLayer.HighColor</c>/<c>LowColor</c>) — fronts sit on the
+/// high/low-pressure wind arrows (<c>WindArrowMapLayer.HighColor</c>/<c>LowColor</c>) - fronts sit on the
 /// same pressure cells, so these are deliberate shared constants, not a coincidence. <see cref="OccludedPurple"/>
 /// is <see cref="ColdBlue"/> and <see cref="WarmCrimson"/> component-averaged, approximating the deep
 /// alizarin purple a real cold + warm front mix reads as.

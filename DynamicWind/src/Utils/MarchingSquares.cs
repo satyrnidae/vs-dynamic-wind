@@ -5,11 +5,11 @@ using Vintagestory.API.MathTools;
 namespace DynamicWind.Utils;
 
 /// <summary>
-/// Generic marching-squares contour extraction over a regular scalar grid — used by
+/// Generic marching-squares contour extraction over a regular scalar grid - used by
 /// <see cref="Client.MapLayers.FrontMapLayer"/> for isobars (traced over the whole visible viewport) and
 /// by <see cref="PressureSystem.FrontComputer"/> for front lines where two cells' footprints overlap
 /// enough that the single-cell analytic ellipse (<see cref="EllipseGeometry.RadiusToward(PressureCell,double,double)"/>)
-/// would no longer match the true (summed) pressure field. Contains no game-specific knowledge — callers
+/// would no longer match the true (summed) pressure field. Contains no game-specific knowledge - callers
 /// supply the sampled grid and get back raw, unordered line segments at a target level.
 /// </summary>
 internal static class MarchingSquares
@@ -22,10 +22,10 @@ internal static class MarchingSquares
 
     /// <summary>
     /// Traces every place the field crosses <paramref name="level"/> within a regular
-    /// <paramref name="nx"/>×<paramref name="nz"/> grid of samples (row-major, x fastest,
+    /// <paramref name="nx"/>x<paramref name="nz"/> grid of samples (row-major, x fastest,
     /// <paramref name="values"/>[j*nx+i] sampled at world position
     /// (<paramref name="originX"/> + i*<paramref name="step"/>, <paramref name="originZ"/> + j*<paramref name="step"/>)).
-    /// Returns disconnected 2-point segments — the standard 16-case marching-squares table, with the two
+    /// Returns disconnected 2-point segments - the standard 16-case marching-squares table, with the two
     /// ambiguous diagonal cases (5 and 10) resolved by the average-of-four-corners test. Callers that need
     /// one continuous ordered polyline (front lines, which sample along arc length for symbol placement)
     /// should feed the result through <see cref="ChainSegments"/>; callers that just draw each segment as
@@ -48,7 +48,7 @@ internal static class MarchingSquares
                 if (v10 > level) caseIdx |= 2;
                 if (v11 > level) caseIdx |= 4;
                 if (v01 > level) caseIdx |= 8;
-                if (caseIdx == 0 || caseIdx == 15) continue; // entirely below/above — no crossing
+                if (caseIdx == 0 || caseIdx == 15) continue; // entirely below/above - no crossing
 
                 double x0 = originX + i * step, x1 = x0 + step;
                 double z0 = originZ + j * step, z1 = z0 + step;
@@ -92,10 +92,10 @@ internal static class MarchingSquares
     }
 
     /// <summary>Greedily stitches an unordered segment bag into continuous polylines by matching
-    /// coincident endpoints (within <paramref name="mergeEps"/> world units — grid-cell-scale, since
+    /// coincident endpoints (within <paramref name="mergeEps"/> world units - grid-cell-scale, since
     /// marching-squares segments sharing a grid edge produce exactly matching interpolated endpoints up to
     /// floating-point error). O(n²) in segment count, which is fine for the small, LOCAL segment sets
-    /// <see cref="PressureSystem.FrontComputer"/> traces around one overlapping cell pair — not intended
+    /// <see cref="PressureSystem.FrontComputer"/> traces around one overlapping cell pair - not intended
     /// for isobars' much larger whole-viewport segment sets, which don't need ordering at all.</summary>
     public static List<Vec2d[]> ChainSegments(List<Segment> segments, double mergeEps)
     {

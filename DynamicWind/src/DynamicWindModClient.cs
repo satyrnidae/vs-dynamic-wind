@@ -47,8 +47,9 @@ public class DynamicWindModClient : DynamicWindModCommon
         ClientChannel.SetMessageHandler<DynamicWindConfig>(OnConfigReceived);
         ClientChannel.SetMessageHandler<WindFieldState>(OnStateReceived);
 
-        // Hold-to-swing sail trim keybinds (they send intent; the server owns the sail angle).
-        sailTrimInput = new SailTrimInput(api, ClientChannel);
+        // Sail trim diagnostics (".dynamicwindsail"). Trim itself now comes from Ctrl+A/D
+        // (SailboatWind.HandleCtrlTrim), read directly off synced EntityControls - no client input to wire up here.
+        sailTrimInput = new SailTrimInput(api);
         sailTrimInput.Register();
 
         harmony = new Harmony("dynamicwind.client");
@@ -89,7 +90,7 @@ public class DynamicWindModClient : DynamicWindModCommon
         // Optional ConfigLib GUI. Register HERE, not in StartClientSide: ConfigLib snapshots its mod
         // list once, when it builds the config window at world-join config sync. AssetsLoaded is the
         // one phase that runs both AFTER lang assets load (so setting labels localize) and BEFORE that
-        // snapshot — registering any later (e.g. StartClientSide) leaves us off the list entirely.
+        // snapshot - registering any later (e.g. StartClientSide) leaves us off the list entirely.
         // Isolated + guarded so a missing configlib.dll can never trip a type-load failure (see
         // DynamicWindConfigLib).
         if (api.ModLoader.IsModEnabled(DynamicWindConfigLib.ConfigLibModId))
@@ -106,7 +107,7 @@ public class DynamicWindModClient : DynamicWindModCommon
     }
 
     // Overwrites BaseStrength/MeanderAmplitude/CyclonicInflowAngle/SeasonalBiasZ set by OnConfigReceived's
-    // ApplyConfigToField — relies on DynamicWindModServer.OnPlayerJoin sending Config before this snapshot.
+    // ApplyConfigToField - relies on DynamicWindModServer.OnPlayerJoin sending Config before this snapshot.
     private void OnStateReceived(WindFieldState s)
     {
         if (s?.Cells == null) return;
@@ -149,7 +150,6 @@ public class DynamicWindModClient : DynamicWindModCommon
             capi.Event.OnGetWindSpeed -= OnGetWindSpeed;
             capi.Event.OnGetClimate -= OnGetClimate;
         }
-        sailTrimInput?.Dispose();
         sailTrimInput = null;
         harmony?.UnpatchAll("dynamicwind.client");
         DynamicWindRuntime.ClientField = null;

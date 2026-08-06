@@ -24,7 +24,7 @@ internal static class VaneWind
     {
         if (wind.X * wind.X + wind.Z * wind.Z < 1e-8) return float.NaN; // calm
         // Arrow points downwind (away from the source). The +π/2 corrects the model arrow's actual
-        // rendered orientation so it lands on the true downwind bearing (−π/2 was 90° off the other way
+        // rendered orientation so it lands on the true downwind bearing (-π/2 was 90° off the other way
         // and pointed into the wind; +π/2 is the correct quarter-turn).
         return (float)(Math.Atan2(wind.X, wind.Z) + Math.PI / 2.0);
     }

@@ -40,7 +40,7 @@ public class DynamicWindModServer : DynamicWindModCommon
         sampler = api.ModLoader.GetModSystem<TerrainSamplerMod>();
         if (sampler == null)
         {
-            Mod.Logger.Error("[dynamicwind] Algernons Terrain Sampler not found — orographic effects disabled. (It is a required dependency.)");
+            Mod.Logger.Error("[dynamicwind] Algernons Terrain Sampler not found - orographic effects disabled. (It is a required dependency.)");
         }
 
         SetupTerrainTempFunc(api);
@@ -70,7 +70,6 @@ public class DynamicWindModServer : DynamicWindModCommon
         api.Event.OnGetClimate += OnGetClimate;
 
         ServerChannel.SetMessageHandler<ConfigUpdateRequestPacket>(OnConfigUpdateRequest);
-        ServerChannel.SetMessageHandler<SailTrimRequestPacket>(OnSailTrimRequest);
 
         tickListenerId = api.Event.RegisterGameTickListener(OnServerTick, 2000);
 
@@ -80,7 +79,7 @@ public class DynamicWindModServer : DynamicWindModCommon
         WeatherCoupling.Apply(harmony, Mod.Logger);
 
         // Optional: Immersive Body Temperature's humidity/wetness compat, only entered if that mod is
-        // loaded (soft dependency, no modinfo entry — resolved entirely via AccessTools).
+        // loaded (soft dependency, no modinfo entry - resolved entirely via AccessTools).
         if (api.ModLoader.IsModEnabled(ImmersiveBodyTemperatureCompat.ModId) && Config.HumidityBodyTempCompatEnabled)
         {
             ImmersiveBodyTemperatureCompat.Apply(harmony, Mod.Logger);
@@ -115,35 +114,9 @@ public class DynamicWindModServer : DynamicWindModCommon
     {
         // Order matters: OnStateReceived's BaseStrength/MeanderAmplitude/etc. overwrite whatever
         // ApplyConfigToField set from OnConfigReceived, so Config must arrive first. The channel
-        // delivers packets in send order, so sending in this order is sufficient — don't reorder.
+        // delivers packets in send order, so sending in this order is sufficient - don't reorder.
         ServerChannel.SendPacket(Config, player);
         ServerChannel.SendPacket(sim.Snapshot(), player);
-    }
-
-    /// <summary>
-    /// Applies a client's held sail-trim direction. The client only ever states intent (−1/0/+1); the
-    /// server owns the angle and integrates it, so a lost or duplicated packet cannot accumulate drift.
-    /// Only a player actually sitting in a controllable seat of that boat may steer its sail.
-    /// </summary>
-    private void OnSailTrimRequest(IServerPlayer fromPlayer, SailTrimRequestPacket packet)
-    {
-        if (packet == null || !Config.SailboatEnabled || !Config.SailboatSailAngleEnabled) return;
-
-        Entity? boat = sapi.World.GetEntityById(packet.BoatEntityId);
-        EntityBehaviorSailTrim? trim = boat?.GetBehavior<EntityBehaviorSailTrim>();
-        if (trim == null) return;
-
-        EntityBehaviorSeatable? seatable = boat!.GetBehavior<EntityBehaviorSeatable>();
-        if (seatable?.Seats == null) return;
-
-        bool controlling = false;
-        foreach (IMountableSeat seat in seatable.Seats)
-        {
-            if (seat?.Passenger == fromPlayer.Entity && seat.Config?.Controllable == true) { controlling = true; break; }
-        }
-        if (!controlling) return;
-
-        trim.SetTrimIntent(packet.Dir);
     }
 
     private void OnConfigUpdateRequest(IServerPlayer fromPlayer, ConfigUpdateRequestPacket packet)

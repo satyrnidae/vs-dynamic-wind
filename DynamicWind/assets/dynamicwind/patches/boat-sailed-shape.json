@@ -4025,5 +4025,11 @@
     ]
    }
   ]
+ },
+ {
+  "file": "game:shapes/entity/nonliving/boat/sailed.json",
+  "op": "add",
+  "path": "/animations/2/keyframes/1/elements/FlagWrap/rotShortestDistanceY",
+  "value": true
  }
 ]

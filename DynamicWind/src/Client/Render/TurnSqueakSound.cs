@@ -10,7 +10,7 @@ namespace DynamicWind.Client.Render;
 /// squeak whenever the vane's eased yaw starts actively swinging toward a new wind bearing (edge-triggered
 /// on "was aligned, now turning" so a steady wind doesn't retrigger it every frame). Each play picks either
 /// the first or last second of the clip at random. Volume scales with the delta angle at the moment it
-/// triggers — the bigger the swing still ahead of it (so the faster it eases to catch up), the louder, up
+/// triggers - the bigger the swing still ahead of it (so the faster it eases to catch up), the louder, up
 /// to full volume at a 180° reversal; a small correction barely creaks.
 /// </summary>
 internal sealed class TurnSqueakSound

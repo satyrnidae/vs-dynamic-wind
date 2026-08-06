@@ -12,14 +12,14 @@ namespace DynamicWind.Client.Patches;
 /// <summary>
 /// Optional runtime patch for the locally-installed third-party "HUD Clock" mod (modid
 /// <see cref="HudClockModId"/>). Its own wind readout calls
-/// <c>WeatherSystemBase.WeatherDataSlowAccess.GetWindSpeed(pos)</c> directly — vanilla's raw scalar
-/// noise source — instead of <see cref="IBlockAccessor.GetWindSpeedAt(BlockPos)"/>, the API
+/// <c>WeatherSystemBase.WeatherDataSlowAccess.GetWindSpeed(pos)</c> directly - vanilla's raw scalar
+/// noise source - instead of <see cref="IBlockAccessor.GetWindSpeedAt(BlockPos)"/>, the API
 /// <see cref="DynamicWindModCommon.OnGetWindSpeed"/> actually rewrites. So it silently disagreed with
 /// this mod's true wind field and had no concept of direction at all.
 ///
 /// Postfixes HUD Clock's <c>MainHudViewModel.Tick()</c> to overwrite its private <c>_windSpeed</c>
 /// field with the correct directional magnitude, and its <c>WindText</c> getter to append an 8-point
-/// cardinal — after whatever text its own Percentage/Beaufort/Hidden setting already produced, so that
+/// cardinal - after whatever text its own Percentage/Beaufort/Hidden setting already produced, so that
 /// setting keeps working unmodified (Hidden mode still yields null, nothing appended).
 ///
 /// Resolved entirely via <see cref="AccessTools"/> (HUD Clock is not a compile-time dependency; it's

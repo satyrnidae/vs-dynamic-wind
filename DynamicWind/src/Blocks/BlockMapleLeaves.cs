@@ -10,17 +10,17 @@ namespace DynamicWind.Blocks;
 /// Maple branchy-leaf block that drops a samara (maple seed) on the wind. Subclasses vanilla
 /// <see cref="BlockLeaves"/> (assigned only to the maple / crimson-king-maple variants via a
 /// <c>classByType</c> patch) because the leaf random-tick is dispatched by the engine straight to
-/// <see cref="Block.ShouldReceiveServerGameTicks"/>/<see cref="Block.OnServerGameTick"/> — neither is
+/// <see cref="Block.ShouldReceiveServerGameTicks"/>/<see cref="Block.OnServerGameTick"/> - neither is
 /// forwarded to block behaviours, so a behaviour could never hook it. We keep vanilla decay ticking and
 /// add a very rare, wind- and season-gated seed drop on top.
 ///
 /// Rules:
-///  • Local wind speed at the leaf must exceed <see cref="MinWindSpeed"/> (90%).
-///  • In season: regular maple (sugar/Norway) late summer → end of October; crimson king maple also in
+///  - Local wind speed at the leaf must exceed <see cref="MinWindSpeed"/> (90%).
+///  - In season: regular maple (sugar/Norway) late summer → end of October; crimson king maple also in
 ///    late spring (mid-May → early June). Windows are expressed in hemisphere-aware
 ///    <see cref="IGameCalendar.GetSeasonRel"/> (0..1) so southern-hemisphere trees drop in their own
 ///    local autumn/spring.
-///  • Very low chance per tick (1 in 10 000), with a per-position cooldown of at least one game hour.
+///  - Very low chance per tick (1 in 10 000), with a per-position cooldown of at least one game hour.
 /// </summary>
 public class BlockMapleLeaves : BlockLeaves
 {

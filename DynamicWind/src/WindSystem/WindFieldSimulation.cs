@@ -20,13 +20,13 @@ namespace DynamicWind.WindSystem;
 /// Writes directly into the shared <see cref="WindField"/> the hook reads.
 ///
 /// Runs on its own dedicated thread (see <see cref="Start"/>/<see cref="Stop"/>) rather than the main
-/// server tick — the per-cell math (advection, occlusion's O(n^2) neighbour search, weather-feedback
+/// server tick - the per-cell math (advection, occlusion's O(n^2) neighbour search, weather-feedback
 /// climate sampling) is the dominant cost of this mod and has no reason to compete with the main tick
 /// for CPU time. World queries here (Calendar, GetClimateAt via ThermalCache, the terrain sampler) are
 /// already tolerated off the main thread elsewhere in this mod (see ThermalCache's own thread-safety
-/// note — item physics already queries wind, and therefore these same lookups, off-thread). The one
-/// genuinely unsafe piece — enumerating <c>IWorldAccessor.AllOnlinePlayers</c>/<c>NearestPlayer</c>
-/// concurrently with players joining/leaving on the main thread — is avoided by having the main thread
+/// note - item physics already queries wind, and therefore these same lookups, off-thread). The one
+/// genuinely unsafe piece - enumerating <c>IWorldAccessor.AllOnlinePlayers</c>/<c>NearestPlayer</c>
+/// concurrently with players joining/leaving on the main thread - is avoided by having the main thread
 /// snapshot player positions once per tick (see <see cref="CapturePlayerSnapshot"/>) into an immutable
 /// array the sim thread reads lock-free.
 /// </summary>
@@ -38,11 +38,11 @@ public class WindFieldSimulation
     // (0.15 → 0.05) alongside the larger CellRadius/SpawnDistanceBlocks scale-up: at the old rate a
     // cell's natural decay-driven lifespan (~50-90h at default DispersalRate) fell well short of the
     // ~95-190h it now takes to advect in from the farther spawn distance, so systems faded out long
-    // before ever reaching a player — leaving the jetstream's own circulation/direction effectively
+    // before ever reaching a player - leaving the jetstream's own circulation/direction effectively
     // unopposed. At 0.05 the decay-driven lifespan (~150-280h) comfortably covers that travel time.
     private const double DispersalSpreadPerHour = 120.0; // blocks/hour radius growth
     private const double DispersalDecayPerHour = 0.05;   // strength e-folding rate
-    private const double BernoulliPerHour = 0.5;         // strength push per (speed−1) per hour at strength 1
+    private const double BernoulliPerHour = 0.5;         // strength push per (speed-1) per hour at strength 1
     private const double MaxStrength = 3.0;
     private const double MinStrength = 0.04;             // below this a cell has dispersed away
     private const double MaxRadius = 80000.0;
@@ -59,13 +59,13 @@ public class WindFieldSimulation
     private const float BernoulliStrength = 0.3f;
 
     // Velocity easing (AdvectWithWind): a cell doesn't snap straight to the local background wind each
-    // tick, it exponentially eases its own velocity toward that target — real inertia, so a cell responds
+    // tick, it exponentially eases its own velocity toward that target - real inertia, so a cell responds
     // to nearby circulation and the base jetstream over several hours rather than jumping to a new
     // velocity on a single tick.
     private const double VelocityEaseRatePerHour = 0.15;
 
     // Air-mass movement bias: a cell's own AirMassTemp rotates its target advection bearing toward the
-    // pole (warm) or equator (cold) side — the same shape as WindField.SeasonalBiasZ tilting the base
+    // pole (warm) or equator (cold) side - the same shape as WindField.SeasonalBiasZ tilting the base
     // jetstream angle, so "poleward"/"equatorward" stay meaningful relative to whatever the local flow is
     // actually doing rather than a flat Z-axis push. See AirMassBiasedAngle.
     private const double AirMassTempMoveBiasMaxAngle = 25.0 * Math.PI / 180.0; // ~25° at |AirMassTemp|=1
@@ -84,40 +84,40 @@ public class WindFieldSimulation
     private const double StormLikelihoodGrowthPerHour = 0.04;
 
     // Front reach: each low's cold (equatorward) and warm (poleward) front sides carry an independent
-    // radial reach multiplier (PressureCell.ColdFrontReach/WarmFrontReach) that grows every hour — cold
-    // faster than warm at the base rate, since real cold fronts advect/extend faster — so the two sides
+    // radial reach multiplier (PressureCell.ColdFrontReach/WarmFrontReach) that grows every hour - cold
+    // faster than warm at the base rate, since real cold fronts advect/extend faster - so the two sides
     // visibly move and expand at different rates instead of a single symmetric contour. The base rate on
     // each side is further modulated by DeltaTSlowdownScale in ApplyOcclusion (a similar air mass ahead
-    // offers little resistance — the front sharpens/advances near its base rate — a starkly different one
+    // offers little resistance - the front sharpens/advances near its base rate - a starkly different one
     // slows it).
     private const double ColdReachGrowthPerHour = 0.08;
     private const double WarmReachGrowthPerHour = 0.02;
     private const double MaxFrontReach = 3.0;
 
     // Occlusion: a single low's (faster) cold front physically catching up to another pressure cell (low
-    // or high) on its equatorward side — a real two-cell event, not a fixed ratio against its own warm
+    // or high) on its equatorward side - a real two-cell event, not a fixed ratio against its own warm
     // front or an age timer. The cold front's reach must clear OcclusionCatchMinReach before a catch can
     // trigger (a freshly-spawned cell's own radius can already overlap a neighbour at reach=1, since
-    // cells are deliberately sized to overlap into broad blobs — this guards against an instant catch).
+    // cells are deliberately sized to overlap into broad blobs - this guards against an instant catch).
     // Growth rate on a side scales with |ΔAirMassTemp| to whatever cell sits there: a small delta (similar
-    // air masses) barely slows the base rate; a large one (starkly different air masses) slows it a lot —
+    // air masses) barely slows the base rate; a large one (starkly different air masses) slows it a lot -
     // see DeltaTSlowdownScale.
     private const float OcclusionCatchMinReach = 1.15f;
-    private const double OcclusionCatchRadiusFactor = 0.6;       // catch when dist <= this × ColdFrontReach × own radius + ...
-    private const double OcclusionCatchTargetRadiusFactor = 0.3; // ... this × the caught cell's own radius
+    private const double OcclusionCatchRadiusFactor = 0.6;       // catch when dist <= this x ColdFrontReach x own radius + ...
+    private const double OcclusionCatchTargetRadiusFactor = 0.3; // ... this x the caught cell's own radius
     private const float OcclusionNeighbourMinStrength = 0.15f;   // ignore trivial/dying cells as catch targets or reach-growth references
-    private const double DeltaTSlowdownScale = 1.5;               // reach growth divided by (1 + this × |ΔAirMassTemp|)
+    private const double DeltaTSlowdownScale = 1.5;               // reach growth divided by (1 + this x |ΔAirMassTemp|)
     private const double OccludedVisualHours = 8.0;      // how long it renders as the occluded symbol
-    private const double OcclusionDeathSpeedup = 0.4;    // remaining lifetime is cut to this fraction — occluded lows die out faster
+    private const double OcclusionDeathSpeedup = 0.4;    // remaining lifetime is cut to this fraction - occluded lows die out faster
     private const float OcclusionAftermathStormLikelihood = 0.1f; // storms drop hard once occluded
 
     // Weather → pressure feedback: the weather map nudges each cell's strength. Clear skies push toward
-    // high (−), clouds toward low (+), storms strongly toward low. Cloud cover below this reads as "clear".
+    // high (-), clouds toward low (+), storms strongly toward low. Cloud cover below this reads as "clear".
     private const double ClearCloudThreshold = 0.4;
     private const double StormForcingGain = 1.5; // extra low-ward push per unit of precipitation (storms)
 
     // Air-mass temperature: each cell's intrinsic warm/cold character (independent of low/high pressure),
-    // set once at spawn from birth latitude + season + random jitter — see ComputeAirMassTemp.
+    // set once at spawn from birth latitude + season + random jitter - see ComputeAirMassTemp.
     private const double AirMassLatitudeWeight = 0.6; // poleward (map-edge) birth → colder
     private const double AirMassSeasonWeight = 0.4;   // birth-hemisphere summer → warmer, winter → colder
     private const double AirMassJitter = 0.3;         // ± random spread on top of the above
@@ -128,11 +128,11 @@ public class WindFieldSimulation
     // rather than from a fixed scale reference, so it stays correct under user retuning instead of
     // drifting relative to a hardcoded constant.
 
-    // Spawn placement: a new front starts far out from a random player — like a real system approaching
-    // from a distance — generally upwind so it drifts back through the player's area, scattered across a
+    // Spawn placement: a new front starts far out from a random player - like a real system approaching
+    // from a distance - generally upwind so it drifts back through the player's area, scattered across a
     // spread of bearings rather than pinned to the exact upwind line. Distance is capped by the cell's own
     // radius so it never lands close enough to the DespawnMargin threshold to vanish the same tick it
-    // spawns (see IsTooFarFromAllPlayers) — a bigger cell can safely spawn a little farther out.
+    // spawns (see IsTooFarFromAllPlayers) - a bigger cell can safely spawn a little farther out.
     private const double SpawnDistanceBlocks = 40000.0;      // target distance from the anchor player
     private const double SpawnDistanceJitter = 8000.0;       // ± random spread on top of the target
     private const double SpawnDespawnSafetyMargin = 10000.0; // stay this far inside the despawn threshold
@@ -141,11 +141,11 @@ public class WindFieldSimulation
     private const double SpawnPlayerAvoidPush = 1500.0;      // extra clearance pushed past the avoid radius
 
     // NOTE: terrain-thermal seeding (mobile cells spawned from water/terrain hotspots) and the
-    // heat-wave/cold-wave events built on the same siting path were both REMOVED — every mobile cell now
+    // heat-wave/cold-wave events built on the same siting path were both REMOVED - every mobile cell now
     // comes from the jetstream spawner alone. TerrainThermal no longer feeds pressure at all: it is a
     // TEMPERATURE field driving the sea breeze directly (WindField.SeaBreezeStrength).
 
-    // How often the dedicated sim thread ticks — matches the old main-thread tick listener interval.
+    // How often the dedicated sim thread ticks - matches the old main-thread tick listener interval.
     private const int SimIntervalMs = 2000;
 
     private readonly ICoreServerAPI sapi;
@@ -160,7 +160,7 @@ public class WindFieldSimulation
     public bool Dirty { get => dirty; private set => dirty = value; }
 
     // Immutable snapshot of online-player X/Z positions, refreshed once per main-thread tick (see
-    // CapturePlayerSnapshot) and read lock-free by the sim thread — the array reference swap is the only
+    // CapturePlayerSnapshot) and read lock-free by the sim thread - the array reference swap is the only
     // publication needed since the array itself is never mutated after being built.
     private volatile PlayerPos[] playerSnapshot = Array.Empty<PlayerPos>();
 
@@ -171,7 +171,7 @@ public class WindFieldSimulation
     }
 
     // Nobody online (e.g. between CapturePlayerSnapshot's first call and a player actually joining, or a
-    // dedicated server sitting empty) ⇒ nothing to spawn near or despawn against — spawn/seed/despawn all
+    // dedicated server sitting empty) ⇒ nothing to spawn near or despawn against - spawn/seed/despawn all
     // abort up front rather than falling through to per-cell/per-attempt checks that always fail anyway.
     private bool HasPlayers => playerSnapshot.Length > 0;
 
@@ -239,7 +239,7 @@ public class WindFieldSimulation
         {
             // Cells were just restored from disk. The SAVED anchor (and even the load-time calendar) can
             // lag the first live tick's clock; anchoring to that stale time would make this tick advect +
-            // disperse every cell by a huge dt — teleporting them thousands of blocks, ballooning radii to
+            // disperse every cell by a huge dt - teleporting them thousands of blocks, ballooning radii to
             // the cap, and slamming strengths to the clamp (exactly the "completely different systems on
             // reload" symptom). Re-anchor to the authoritative current time instead: cells keep their saved
             // positions, treated as current (nothing simulates while the world is unloaded).
@@ -268,11 +268,11 @@ public class WindFieldSimulation
 
         if (!HasPlayers)
         {
-            // Pause the sim entirely when nobody's online — same idea as the world tick itself pausing:
+            // Pause the sim entirely when nobody's online - same idea as the world tick itself pausing:
             // no advection, occlusion, weather feedback, spawning, or despawning happens. Still re-anchor
             // so the stale gap doesn't accumulate: without this, once the field's anchor sat idle for a
             // long real-world stretch, the next Advect would extrapolate every cell's effective position
-            // across that entire gap using its last-known velocity, then jump it there in one tick — the
+            // across that entire gap using its last-known velocity, then jump it there in one tick - the
             // same "teleporting on reload" failure loadedPendingReanchor exists to avoid, just for an
             // empty-server gap instead of a save/load gap. Cells keep their frozen X/Z; only the anchor
             // moves, so nothing actually appears to move until the sim resumes.
@@ -294,7 +294,7 @@ public class WindFieldSimulation
 
     /// <summary>
     /// Recompute the global seasonal N/S jetstream bias from the season + hemisphere at a reference
-    /// position: +1 (poleward) at peak summer, −1 (equatorward) at peak winter, with the hemisphere
+    /// position: +1 (poleward) at peak summer, -1 (equatorward) at peak winter, with the hemisphere
     /// sign so northern sections blow southwesterly in summer and southern sections northwesterly. The
     /// result is globally uniform (the hemisphere flip and half-year season offset cancel), so a single
     /// reference sample represents the whole world; it is synced to clients via <see cref="WindFieldState"/>.
@@ -307,8 +307,8 @@ public class WindFieldSimulation
             var refPos = new BlockPos(sapi.WorldManager.MapSizeX / 2, sapi.World.SeaLevel, sapi.WorldManager.MapSizeZ / 2, 0);
             float seasonRel = sapi.World.Calendar.GetSeasonRel(refPos);
             EnumHemisphere hemi = sapi.World.Calendar.GetHemisphere(refPos);
-            double summerness = Math.Cos(2.0 * Math.PI * (seasonRel - SummerPeakRel)); // +1 midsummer, −1 midwinter
-            double polewardZdir = hemi == EnumHemisphere.South ? 1.0 : -1.0;            // N pole = −Z, S pole = +Z
+            double summerness = Math.Cos(2.0 * Math.PI * (seasonRel - SummerPeakRel)); // +1 midsummer, -1 midwinter
+            double polewardZdir = hemi == EnumHemisphere.South ? 1.0 : -1.0;            // N pole = -Z, S pole = +Z
             field.SeasonalBiasZ = polewardZdir * summerness;
         }
         catch
@@ -317,9 +317,9 @@ public class WindFieldSimulation
         }
     }
 
-    // Cloud-texture drift. Blocks per game-hour per unit of wind magnitude — the speed vanilla's
+    // Cloud-texture drift. Blocks per game-hour per unit of wind magnitude - the speed vanilla's
     // precipitation noise is dragged across the world. Matched to AdvectionSpeed's scale (cells and the
-    // cloud field should travel together; a storm's rain band shouldn't lag its own low by 30×) but kept
+    // cloud field should travel together; a storm's rain band shouldn't lag its own low by 30x) but kept
     // separate so it can be tuned without moving the pressure systems themselves.
     private const double CloudDriftSpeed = 400.0;
 
@@ -331,7 +331,7 @@ public class WindFieldSimulation
     /// prevailing synoptic flow.
     ///
     /// Accumulated here rather than derived on demand because it is a TIME INTEGRAL: the flow's bearing
-    /// changes over the year, and any closed-form "bearing × elapsed" shortcut would jump the entire
+    /// changes over the year, and any closed-form "bearing x elapsed" shortcut would jump the entire
     /// pattern whenever the bearing moved.
     /// </summary>
     private void AccumulateCloudDrift(double now, double dGameHours)
@@ -389,9 +389,9 @@ public class WindFieldSimulation
                 speed[i] = w.Length();
                 if (advectWithWind)
                 {
-                    // Ease toward the local wind rather than snapping to it — see VelocityEaseRatePerHour.
+                    // Ease toward the local wind rather than snapping to it - see VelocityEaseRatePerHour.
                     // The target bearing is also rotated toward the pole (warm) or equator (cold) side by
-                    // this cell's own AirMassTemp — see AirMassBiasedAngle.
+                    // this cell's own AirMassTemp - see AirMassBiasedAngle.
                     double baseAngle = Math.Atan2(w.Y, w.X);
                     double biasedAngle = AirMassBiasedAngle(baseAngle, ez, c.AirMassTemp);
                     double mag = speed[i] * AdvectionSpeed; // speed[i] == w.Length(), sampled just above
@@ -424,7 +424,7 @@ public class WindFieldSimulation
         }
     }
 
-    /// <summary>Radius/strength dispersal — see DispersalRate/DispersalSpreadPerHour/DispersalDecayPerHour.</summary>
+    /// <summary>Radius/strength dispersal - see DispersalRate/DispersalSpreadPerHour/DispersalDecayPerHour.</summary>
     private static void ApplyDispersal(PressureCell c, double dGameHours)
     {
         if (dGameHours <= 0) return;
@@ -456,7 +456,7 @@ public class WindFieldSimulation
     }
 
     /// <summary>Rotates <paramref name="baseAngle"/> toward the pole (warm) or equator (cold) side, scaled
-    /// by <paramref name="airMassTemp"/> — shared by <see cref="Advect"/> (the cell's actual eased target
+    /// by <paramref name="airMassTemp"/> - shared by <see cref="Advect"/> (the cell's actual eased target
     /// velocity) and <see cref="Spawn"/> (so a cell aims upwind of the path it will actually tend to drift,
     /// not just the flat jetstream bearing). Mirrors how <see cref="WindField.SeasonalBiasZ"/> tilts the
     /// base jetstream angle rather than pushing a raw Z velocity component, so the bias stays meaningful
@@ -466,7 +466,7 @@ public class WindFieldSimulation
 
     /// <summary>Eases the ellipse's stored orientation toward the cell's own travel bearing, rather than
     /// snapping, so the shape rotates smoothly. Frozen (not chased) at near-zero own speed to avoid
-    /// tracking a numerically noisy direction — common for slow/stalled systems, not a rare case.</summary>
+    /// tracking a numerically noisy direction - common for slow/stalled systems, not a rare case.</summary>
     private static void EaseOrientation(PressureCell c, double velX, double velZ, double dGameHours)
     {
         if (dGameHours <= 0) return;
@@ -482,13 +482,13 @@ public class WindFieldSimulation
     /// Grows each low's <see cref="PressureCell.ColdFrontReach"/>/<see cref="PressureCell.WarmFrontReach"/>
     /// every hour (rate modulated by <see cref="DeltaTSlowdownScale"/> against whatever cell sits on that
     /// side), then checks whether the low's advancing cold front has physically CAUGHT another pressure
-    /// cell (low or high) on its equatorward side — real occlusion is a cyclone's cold front overtaking
+    /// cell (low or high) on its equatorward side - real occlusion is a cyclone's cold front overtaking
     /// the boundary ahead of it, a genuine two-cell event, not a fixed ratio against its own warm front or
-    /// an age timer. Once caught (and only once — <see cref="PressureCell.OccludedUntilTotalHours"/> is a
+    /// an age timer. Once caught (and only once - <see cref="PressureCell.OccludedUntilTotalHours"/> is a
     /// one-shot latch), the temperature difference between the catching low and the cell it caught decides
     /// the occlusion's character (<see cref="PressureCell.OcclusionKind"/>): the catching air colder than
     /// or equal to the caught cell's behaves like a cold front (kind = cold), warmer behaves like a warm
-    /// front (kind = warm) — matching real synoptic classification. Storm likelihood then drops hard and
+    /// front (kind = warm) - matching real synoptic classification. Storm likelihood then drops hard and
     /// remaining lifetime is cut short, same as before.
     /// </summary>
     /// <summary>Reach-growth multiplier against whichever cell sits on a side (see DeltaTSlowdownScale
@@ -541,7 +541,7 @@ public class WindFieldSimulation
     }
 
     /// <summary>Finds the nearest OTHER significant pressure cell (any type) strictly on the
-    /// (<paramref name="dirX"/>, <paramref name="dirZ"/>) side of cell <paramref name="selfIndex"/> —
+    /// (<paramref name="dirX"/>, <paramref name="dirZ"/>) side of cell <paramref name="selfIndex"/> -
     /// used both to pick a low's cold/warm-front reach-growth reference and its cold-front occlusion
     /// catch target. Positions are read directly from <c>field.Cells</c>, valid because this is only
     /// called from <see cref="ApplyOcclusion"/>, which runs after <see cref="Advect"/> has brought every
@@ -566,8 +566,8 @@ public class WindFieldSimulation
 
     /// <summary>
     /// Let the weather map feed back onto pressure: sample cloud cover + precipitation at each cell and
-    /// nudge its strength. Clear skies push toward high (− strength), clouds toward low (+), and storms
-    /// strongly toward low — so a cell's own weather reinforces it (lows that storm deepen; highs that
+    /// nudge its strength. Clear skies push toward high (- strength), clouds toward low (+), and storms
+    /// strongly toward low - so a cell's own weather reinforces it (lows that storm deepen; highs that
     /// stay clear strengthen), bounded by the strength clamp + dispersal decay + finite cell lifetime.
     /// Reads the live climate (which already carries the pressure→weather coupling), closing the loop.
     /// </summary>
@@ -626,7 +626,7 @@ public class WindFieldSimulation
 
     /// <summary>
     /// True if the nearest online player is farther than <see cref="DespawnMargin"/> PLUS the cell's own
-    /// effective radius toward that player from the cell's centre — a system that's drifted this far off
+    /// effective radius toward that player from the cell's centre - a system that's drifted this far off
     /// nobody's business isn't going to be seen or felt, so let it despawn rather than simulate it
     /// forever. The radius term means a large cell's edge (not just its centre) has to clear the margin
     /// before it despawns. Only called from <see cref="Expire"/> after a <see cref="HasPlayers"/> guard,
@@ -649,7 +649,7 @@ public class WindFieldSimulation
 
     /// <summary>
     /// Distance from (<paramref name="x"/>, <paramref name="z"/>) to the nearest online player, or
-    /// <see cref="double.MaxValue"/> if nobody's online — used by <see cref="Spawn"/> to keep a new
+    /// <see cref="double.MaxValue"/> if nobody's online - used by <see cref="Spawn"/> to keep a new
     /// front from landing directly on top of a player. Reads the same <see cref="playerSnapshot"/> as
     /// <see cref="IsTooFarFromAllPlayers"/>, for the same off-main-thread safety reason.
     /// </summary>
@@ -671,9 +671,9 @@ public class WindFieldSimulation
 
     private void MaybeSpawn(double now, double dGameHours)
     {
-        if (dGameHours <= 0 || !HasPlayers) return; // nobody to spawn near — nothing else to do this tick
+        if (dGameHours <= 0 || !HasPlayers) return; // nobody to spawn near - nothing else to do this tick
         lock (field.CellsLock) { if (field.Cells.Count >= config.MaxActiveCells) return; }
-        // Expected count scales with elapsed GAME time, so pressure systems evolve on the world clock —
+        // Expected count scales with elapsed GAME time, so pressure systems evolve on the world clock -
         // and speed up while a player sleeps (the calendar fast-forwards → larger dGameHours per tick).
         SpawnExpected(now, LowSpawnRatePerDay / 24.0 * dGameHours, isLow: true);
         SpawnExpected(now, HighSpawnRatePerDay / 24.0 * dGameHours, isLow: false);
@@ -696,7 +696,7 @@ public class WindFieldSimulation
             if (field.Cells.Count >= config.MaxActiveCells) return;
             if (!TryGetSpawnAnchor(out double cx, out double cz)) return;
 
-            // Full-range variety across the configured [CellRadiusMin, CellRadiusMax] span — synoptic
+            // Full-range variety across the configured [CellRadiusMin, CellRadiusMax] span - synoptic
             // systems (unlike thermal seeds/heat-cold-waves below) span the whole configured size range.
             float radius = GameMath.Clamp(
                 (float)(CellRadiusMin + rand.NextDouble() * (CellRadiusMax - CellRadiusMin)),
@@ -704,12 +704,12 @@ public class WindFieldSimulation
 
             // Mean jetstream bearing (seasonally tilted N/S). Systems spawn UPWIND of this bearing (± a
             // scatter spread) so they drift back down the jet THROUGH the player's area rather than being
-            // carried off to the north/south when the stream tilts with the season — the old due-west lean
+            // carried off to the north/south when the stream tilts with the season - the old due-west lean
             // made seasonally-tilted systems sail past the player. Also pre-biased by this cell's own
-            // (estimated) AirMassTemp lean — see AirMassBiasedAngle — since a systematically warm/cold cell
+            // (estimated) AirMassTemp lean - see AirMassBiasedAngle - since a systematically warm/cold cell
             // drifts consistently one way once its lean eases in during Advect, and aiming purely upwind of
             // the flat jet would otherwise under-account for that. The estimate is coarse (sampled at the
-            // anchor, not the cell's actual spawn position below) — good enough to correct the systematic
+            // anchor, not the cell's actual spawn position below) - good enough to correct the systematic
             // lean; the cell's real, authoritative AirMassTemp is still computed at its true spawn position.
             double jetAng = field.SeasonalBiasMaxAngle * field.SeasonalBiasZ;
             float estimatedAirMassTemp = ComputeAirMassTemp(cx, cz);
@@ -722,7 +722,7 @@ public class WindFieldSimulation
             double velZ = fz * advect;
 
             // Lifetime: lows are shorter-lived/sharper than highs. Raised well past the ~50-90h dispersal-
-            // decay lifespan (see DispersalDecayPerHour) so decay — not this hard cap — is what actually
+            // decay lifespan (see DispersalDecayPerHour) so decay - not this hard cap - is what actually
             // ends a cell's life; at the old 12-72h range this cap fired first, cutting cells off long
             // before they'd naturally fade, which (at the current, farther spawn distance) meant most never
             // survived long enough to advect within range of a player at all.
@@ -740,7 +740,7 @@ public class WindFieldSimulation
             double startZ = cz + dirZ * dist;
 
             // Don't spawn directly on top of ANY online player (the anchor is only one randomly-picked
-            // player — the scatter above could still land near a different one) — push further upwind
+            // player - the scatter above could still land near a different one) - push further upwind
             // instead of just discarding the attempt.
             double nearestPlayerDist = NearestOnlinePlayerDistance(startX, startZ);
             if (nearestPlayerDist < SpawnPlayerAvoidRadius)
@@ -755,7 +755,7 @@ public class WindFieldSimulation
             // old -0.3..-1.0) left them below the marker/front threshold by the time they arrived, so the
             // overlay showed only lows and never drew a front line.
             // Widened from the old 0.6..1.6 (only a 2.67x weak-to-strong spread against the MaxStrength=3.0
-            // clamp) — too narrow to make front wind visibly track pressure strength. 0.4..2.6 gives a 6.5x
+            // clamp) - too narrow to make front wind visibly track pressure strength. 0.4..2.6 gives a 6.5x
             // spread so weak and intense systems actually feel different.
             float strength = isLow
                 ? (float)(0.4 + rand.NextDouble() * 2.2)
@@ -791,7 +791,7 @@ public class WindFieldSimulation
     };
 
     /// <summary>World-space orientation angle (radians) of a cell's major/cross-stream axis derived from
-    /// its velocity bearing — see <see cref="PressureCell.Orientation"/>.</summary>
+    /// its velocity bearing - see <see cref="PressureCell.Orientation"/>.</summary>
     private static float OrientationFromVelocity(double velX, double velZ)
         => (float)(Math.Atan2(velZ, velX) + Math.PI / 2.0);
 
@@ -801,22 +801,22 @@ public class WindFieldSimulation
     /// <see cref="PressureCell.AirMassTemp"/>): colder toward a real pole (via <see cref="WindField.LatitudeFunc"/>,
     /// a proxy for poleward birth), warmer/colder with the birth position's own season (via
     /// <see cref="IGameCalendar.GetSeasonRel"/>, which already accounts for hemisphere), plus random jitter
-    /// so same-latitude, same-season systems still vary — real air masses aren't perfectly uniform.
+    /// so same-latitude, same-season systems still vary - real air masses aren't perfectly uniform.
     /// </summary>
     private float ComputeAirMassTemp(double x, double z)
     {
         double poleward = field.LatitudeFunc != null
             ? GameMath.Clamp((float)Math.Abs(field.LatitudeFunc(z)), 0f, 1f) // 0 = equator, 1 = pole
-            : 0f; // latitude not ready yet — treat as neutral
+            : 0f; // latitude not ready yet - treat as neutral
 
         double seasonWarmth = 0;
         try
         {
             var pos = new BlockPos((int)x, sapi.World.SeaLevel, (int)z, 0);
             float seasonRel = sapi.World.Calendar.GetSeasonRel(pos); // hemisphere-aware
-            seasonWarmth = Math.Cos(2.0 * Math.PI * (seasonRel - SummerPeakRel)); // +1 that hemisphere's midsummer, −1 midwinter
+            seasonWarmth = Math.Cos(2.0 * Math.PI * (seasonRel - SummerPeakRel)); // +1 that hemisphere's midsummer, -1 midwinter
         }
-        catch { /* hemisphere/season not ready yet — treat as neutral */ }
+        catch { /* hemisphere/season not ready yet - treat as neutral */ }
 
         double jitter = (rand.NextDouble() * 2.0 - 1.0) * AirMassJitter;
         double t = -AirMassLatitudeWeight * poleward + AirMassSeasonWeight * seasonWarmth + jitter;
@@ -828,7 +828,7 @@ public class WindFieldSimulation
     /// into a single centre would, in multiplayer, drop systems in the empty middle between distant
     /// players; choosing a random player each call instead scatters systems around every player's area
     /// over time (and is identical to "the player" in singleplayer). Reads <see cref="playerSnapshot"/>
-    /// rather than <see cref="IWorldAccessor.AllOnlinePlayers"/> directly — see its doc comment.
+    /// rather than <see cref="IWorldAccessor.AllOnlinePlayers"/> directly - see its doc comment.
     /// </summary>
     private bool TryGetSpawnAnchor(out double x, out double z)
     {
@@ -886,13 +886,13 @@ public class WindFieldSimulation
             byte[] data = sapi.WorldManager.SaveGame.GetData(SaveKey);
             if (data == null)
             {
-                sapi.Logger.Notification("[dynamicwind] No saved wind field found under '{0}' — fresh start.", SaveKey);
+                sapi.Logger.Notification("[dynamicwind] No saved wind field found under '{0}' - fresh start.", SaveKey);
                 return;
             }
             WindFieldState s = SerializerUtil.Deserialize<WindFieldState>(data);
             if (s?.Cells == null)
             {
-                sapi.Logger.Warning("[dynamicwind] Saved wind field deserialized to null cells — fresh start.");
+                sapi.Logger.Warning("[dynamicwind] Saved wind field deserialized to null cells - fresh start.");
                 return;
             }
             lock (field.CellsLock)
@@ -932,7 +932,7 @@ public class WindFieldSimulation
 
                 // Cloud drift is a running integral, so it must survive a reload or the whole precipitation
                 // texture would snap back to its origin on every world load. A pre-drift save leaves these
-                // at protobuf's 0 default — i.e. no accumulated drift yet, which is exactly right.
+                // at protobuf's 0 default - i.e. no accumulated drift yet, which is exactly right.
                 field.CloudDriftX = s.DriftX;
                 field.CloudDriftZ = s.DriftZ;
                 field.CloudDriftVelX = s.DriftVelX;

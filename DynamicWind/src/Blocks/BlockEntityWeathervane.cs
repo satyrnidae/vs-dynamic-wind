@@ -11,13 +11,13 @@ namespace DynamicWind.Blocks;
 /// <summary>
 /// Weathervane block entity. The static post + compass letters (<c>stalk</c>, <c>nsbone</c>,
 /// <c>webone</c>) are baked into the block model; the <c>upperportion</c> (arrow) is rendered by
-/// <see cref="WeathervaneRenderer"/>, rotated to point downwind. The arrow points north (−Z) at yaw 0,
+/// <see cref="WeathervaneRenderer"/>, rotated to point downwind. The arrow points north (-Z) at yaw 0,
 /// matching the model. Wind is sampled via the directional <c>GetWindSpeedAt</c> hook.
 /// </summary>
 public class BlockEntityWeathervane : BlockEntity
 {
     // "name/*" includes the element AND its whole subtree. An exact name matches only that element and
-    // passes an EMPTY child filter (VS ShapeTesselator.SelectiveMatch), dropping children — and these
+    // passes an EMPTY child filter (VS ShapeTesselator.SelectiveMatch), dropping children - and these
     // groups are zero-size locators whose geometry lives entirely in their children. The model has two
     // top-level groups: "stationary" (post + compass letters, baked statically) and "rotating" (the
     // wind-tracking arrow assembly, drawn by WeathervaneRenderer rotated about the block centre).
@@ -65,7 +65,7 @@ public class BlockEntityWeathervane : BlockEntity
 
     /// <summary>True directional wind magnitude at this block (0 when calm or occluded); drives how fast
     /// <see cref="WeathervaneRenderer"/> eases the arrow toward its target yaw (see
-    /// <see cref="Client.Render.VaneTurnRate"/>) — same cave/undergroundWindmills gate as
+    /// <see cref="Client.Render.VaneTurnRate"/>) - same cave/undergroundWindmills gate as
     /// <see cref="GetTargetYaw"/>.</summary>
     public double GetWindSpeed()
     {

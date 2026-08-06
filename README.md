@@ -55,7 +55,7 @@ function locally rather than streaming per-block wind data.
 2. Grab the latest Dynamic Wind release and drop the zip into your `Mods` folder
    (alongside the Terrain Sampler mod), or use the in-game mod manager.
 3. (Optional) Install [ConfigLib](https://mods.vintagestory.at/configlib) for an
-   in-game settings GUI. Dynamic Wind works fine without it — settings can still be
+   in-game settings GUI. Dynamic Wind works fine without it - settings can still be
    edited directly in its JSON config file.
 
 ## Configuration

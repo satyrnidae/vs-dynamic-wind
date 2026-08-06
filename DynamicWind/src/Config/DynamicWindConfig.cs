@@ -12,14 +12,14 @@ namespace DynamicWind.Config;
 /// pushes to clients. Attributes (<see cref="DescriptionAttribute"/>/<see cref="RangeAttribute"/>/
 /// <see cref="CategoryAttribute"/>) are read reflectively by the optional ConfigLib integration to
 /// build the in-game GUI; they are inert when ConfigLib is absent. ConfigLib's managed-config reflection
-/// does NOT use <c>[Category]</c> for visual grouping — it only recognizes the literal tags
+/// does NOT use <c>[Category]</c> for visual grouping - it only recognizes the literal tags
 /// <c>"logarithmic"</c> (log-scale slider) and <c>"clientside"</c> (bypasses the controlserver privilege
 /// check), so it's applied only to properties that need one of those.
 ///
 /// Deliberately limited to feature on/off toggles and settings that affect performance
 /// (<see cref="MaxActiveCells"/> bounds the O(n^2) pressure-cell simulation cost). Every other tunable
 /// (strengths/rates/angles/thresholds that shape the wind/weather model) is a hardcoded constant at its
-/// point of use instead — letting players freely combine dozens of independent numeric knobs made it easy
+/// point of use instead - letting players freely combine dozens of independent numeric knobs made it easy
 /// to tune the mod into a broken or degenerate state (e.g. dead-calm air, runaway storms) with no way to
 /// validate the combination. All settings are FLAT top-level scalar properties: ConfigLib's managed-config
 /// reflection only sees top-level scalars (it does not recurse into nested objects), so flattening makes
@@ -28,11 +28,11 @@ namespace DynamicWind.Config;
 [ProtoContract(ImplicitFields = ImplicitFields.AllPublic)]
 public class DynamicWindConfig
 {
-    // ── Jetstream (base flow) ───────────────────────────────────────────────
+    //  Jetstream (base flow)
     [Description("description-SeasonalBias")]
     public bool SeasonalBias { get; set; } = true;
 
-    // ── Pressure systems ────────────────────────────────────────────────────
+    //  Pressure systems
     // Range covers the pre-retune default (9) even though the synoptic retune lowered the DEFAULT to 2:
     // Validate() clamps every int to its [Range], so narrowing below the old default would silently
     // rewrite (and re-persist) an existing user's saved value with no migration or log line.
@@ -40,7 +40,7 @@ public class DynamicWindConfig
     [Description("description-MaxActiveCells")]
     public int MaxActiveCells { get; set; } = 2;
 
-    // ── Humidity ────────────────────────────────────────────────────────────
+    //  Humidity
     [Description("description-HumidityEnabled")]
     public bool HumidityEnabled { get; set; } = true;
 
@@ -52,32 +52,32 @@ public class DynamicWindConfig
     [Description("description-HumidityHudClockLineEnabled")]
     public bool HumidityHudClockLineEnabled { get; set; } = true;
 
-    // ── Clouds ──────────────────────────────────────────────────────────────
+    //  Clouds
     [ProtoIgnore]
     [Category("clientside")]
     [Description("description-CloudsFollowWind")]
     public bool CloudsFollowWind { get; set; } = true;
 
-    // ── Pressure dynamics ───────────────────────────────────────────────────
+    //  Pressure dynamics
     [Description("description-AdvectWithWind")]
     public bool AdvectWithWind { get; set; } = true;
 
-    // ── Orographic (terrain) ────────────────────────────────────────────────
+    //  Orographic (terrain)
     [Description("description-OrographicEnabled")]
     public bool OrographicEnabled { get; set; } = true;
 
-    // ── Occlusion (indoor/underground shielding) ───────────────────────────
+    //  Occlusion (indoor/underground shielding)
     [Description("description-OcclusionEnabled")]
     public bool OcclusionEnabled { get; set; } = true;
 
     [Description("description-OcclusionRoomsZeroWind")]
     public bool OcclusionRoomsZeroWind { get; set; } = true;
 
-    // ── Windmill ────────────────────────────────────────────────────────────
+    //  Windmill
     [Description("description-WindmillDirectionality")]
     public bool WindmillDirectionality { get; set; } = true;
 
-    // ── Sailboat ────────────────────────────────────────────────────────────
+    //  Sailboat
     [Description("description-SailboatEnabled")]
     public bool SailboatEnabled { get; set; } = true;
 

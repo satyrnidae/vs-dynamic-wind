@@ -57,7 +57,7 @@ internal static class EllipseGeometry
 
     /// <summary>
     /// The cell's elliptical footprint radius in the direction of (<paramref name="dx"/>, <paramref name="dz"/>)
-    /// (a vector from the cell's centre outward, not necessarily normalized) — same ellipse geometry as
+    /// (a vector from the cell's centre outward, not necessarily normalized) - same ellipse geometry as
     /// <see cref="Norm2"/>, evaluated along this one direction rather than at a point.
     /// </summary>
     public static double RadiusToward(PressureCell cell, double dx, double dz)
