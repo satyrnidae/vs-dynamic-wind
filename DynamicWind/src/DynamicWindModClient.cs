@@ -44,6 +44,19 @@ public class DynamicWindModClient : DynamicWindModCommon
         api.Event.OnGetWindSpeed += OnGetWindSpeed;
         api.Event.OnGetClimate += OnGetClimate;
 
+        // Vanilla's rain particle template never opts into continuous wind-affectedness the way
+        // snow/dust/splash do (WeatherSimulationParticles' static particle-prop templates) - a raindrop's
+        // velocity is fixed at spawn from that tick's GetWindSpeedAt sample and never re-oriented in
+        // flight. That's invisible under vanilla's own always-due-East wind (spawn direction == in-flight
+        // direction, always), but becomes a visible bug here: as our field's bearing rotates, already-
+        // falling rain keeps the direction it spawned with instead of turning with the wind like snow
+        // does. WeatherParticleProps.BeginParticle re-seeds ParentVelocity from
+        // GlobalConstants.CurrentWindSpeedClient (itself sourced from GetWindSpeedAt, so already
+        // directional) once per particle whenever WindAffectednes > 0 - matching snow's own value turns
+        // that on for rain too. rainParticle is a public static field, so no Harmony patch is needed.
+        WeatherSimulationParticles.rainParticle.WindAffected = true;
+        WeatherSimulationParticles.rainParticle.WindAffectednes = 1f;
+
         ClientChannel.SetMessageHandler<DynamicWindConfig>(OnConfigReceived);
         ClientChannel.SetMessageHandler<WindFieldState>(OnStateReceived);
 

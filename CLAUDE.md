@@ -10,7 +10,17 @@ systems, and couples the rest of the world to it:
 
 - **Particles, foliage sway, blowing snow, dropped items (incl. maple seeds), ground-movement wind** -
   follow the true wind vector *for free*, because vanilla routes them through `GetWindSpeedAt` and we
-  rewrite that vector's X/Z in an `OnGetWindSpeed` hook. No patches for these.
+  rewrite that vector's X/Z in an `OnGetWindSpeed` hook. No patches for these. **One exception: rain.**
+  Vanilla's rain particle template (`WeatherSimulationParticles.rainParticle`) never opts into continuous
+  wind-affectedness the way snow/dust/splash do - a raindrop's velocity is fixed once at spawn from that
+  tick's `GetWindSpeedAt` sample and never re-oriented in flight, whereas `WeatherParticleProps.BeginParticle`
+  re-seeds every OTHER particle type's `ParentVelocity` from `GlobalConstants.CurrentWindSpeedClient` (itself
+  sourced from `GetWindSpeedAt`, already directional) each spawn, whenever `WindAffectednes > 0`. That
+  omission is invisible under vanilla's own always-due-East wind (spawn direction == in-flight direction,
+  always) but becomes a visible bug once direction genuinely rotates: already-falling rain keeps whatever
+  bearing it spawned with instead of turning with the wind the way snow does.
+  `DynamicWindModClient.StartClientSide` sets `rainParticle.WindAffected`/`WindAffectednes` directly (a
+  public static field on a vanilla class - no Harmony patch needed) to match snow's own value.
 - **Wind speed is additive, not multiplicative.** The hook keeps vanilla's own wind speed (SimplexNoise
   over time - its natural variation, *not* diurnal) as the baseline jetstream speed, points it along our
   direction, then ADDS front wind = `FrontWindStrength * max(0, |cell-only WindAt| - BaseStrength)` (the
