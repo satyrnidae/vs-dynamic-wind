@@ -16,8 +16,8 @@ namespace DynamicWind.Blocks;
 ///
 /// Rules:
 ///  - Local wind speed at the leaf must exceed <see cref="MinWindSpeed"/> (90%).
-///  - In season: regular maple (sugar/Norway) late summer → end of October; crimson king maple also in
-///    late spring (mid-May → early June). Windows are expressed in hemisphere-aware
+///  - In season: regular maple (sugar/Norway) late summer -> end of October; crimson king maple also in
+///    late spring (mid-May -> early June). Windows are expressed in hemisphere-aware
 ///    <see cref="IGameCalendar.GetSeasonRel"/> (0..1) so southern-hemisphere trees drop in their own
 ///    local autumn/spring.
 ///  - Very low chance per tick (1 in 10 000), with a per-position cooldown of at least one game hour.
@@ -30,14 +30,14 @@ public class BlockMapleLeaves : BlockLeaves
 
     // Season windows in GetSeasonRel (0..1). North: seasonRel == YearRel, so Month = ceil(seasonRel*12);
     // these correspond to the calendar months requested. South is auto-offset half a year by the engine.
-    private const float MapleStart = 0.62f, MapleEnd = 0.835f;                // late summer → end of October
-    private const float CrimsonSpringStart = 0.37f, CrimsonSpringEnd = 0.45f; // mid-May → early June
-    private const float CrimsonFallStart = 0.62f, CrimsonFallEnd = 0.78f;     // late August → early October
+    private const float MapleStart = 0.62f, MapleEnd = 0.835f;                // late summer -> end of October
+    private const float CrimsonSpringStart = 0.37f, CrimsonSpringEnd = 0.45f; // mid-May -> early June
+    private const float CrimsonFallStart = 0.62f, CrimsonFallEnd = 0.78f;     // late August -> early October
 
     // Marker passed through the random-tick so OnServerGameTick knows this is our drop check, not decay.
-    // A boxed string (matching vanilla BlockLeaves' own "melt" sentinel convention, not a bare reference
-    // object) so the check is a value comparison and survives the off-thread -> main-thread tick dispatch
-    // with no ambiguity.
+    // A boxed string (matching vanilla BlockLeaves' "melt" sentinel convention, not a bare reference
+    // object) so the check is an unambiguous value comparison that survives the off-thread -> main-thread
+    // tick dispatch.
     private const string MapleDropMarker = "mapledrop";
 
     // Per-position drop cooldown (server, main-thread only). Key = (x, y, z); value = last drop game-hour.

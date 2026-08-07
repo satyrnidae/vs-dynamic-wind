@@ -10,28 +10,26 @@ using Vintagestory.GameContent;
 namespace DynamicWind.Client.Gui;
 
 /// <summary>
-/// Cairo-drawn scrolling oscilloscope of the sailboat thrust MULT terms over TIME - the raw values added
+/// Cairo-drawn scrolling oscilloscope of the sailboat thrust MULT terms over time - the raw values added
 /// to/subtracted from the 1.0 baseline in <c>speed = vanillaSpeed * (1.0 + mult)</c> (see
-/// <see cref="SailboatWind.WindBoost"/>/<see cref="SailboatWind.AngleBoost"/>), each sampled once per
-/// rendered frame and scrolling right-to-left over the last <see cref="WindowMs"/> of real time. Exists
-/// because verifying the trim curve by re-running <c>.dwind sail</c> over and over while spinning the boat
-/// and sweeping the sail is slow and easy to misjudge from numbers alone - this instead lets you watch all
-/// three values respond live as you turn/trim, the same way you'd read a heart-rate monitor.
+/// <see cref="SailboatWind.WindBoost"/>/<see cref="SailboatWind.AngleBoost"/>), sampled once per rendered
+/// frame over the last <see cref="WindowMs"/>. Exists because verifying the trim curve by re-running
+/// <c>.dwind sail</c> repeatedly while spinning/trimming is slow and hard to judge from numbers alone -
+/// this lets you watch all three values respond live, like a heart-rate monitor.
 ///
-/// Plots the RAW mult terms, not the actual applied thrust factor - deliberately independent of
-/// <c>sailPosition</c> (furled/half/full). This is NOT because half and full sail perform identically:
-/// vanilla's own base sail-force term already differs between them (linear in `sailPosition`, before this
-/// mod's multiplier ever runs - see <see cref="SailboatWind.FactorForCosGamma"/>'s remarks) - it's that
-/// this mod's OWN factor shouldn't ALSO scale by sail position on top of vanilla's already-correct
-/// baseline. An earlier version of this graph plotted the sailPosition-scaled factor anyway, which made the
-/// combined line swing hard on every furl/unfurl even with wind and trim both dead flat - read as "combined
-/// is broken" when it was actually just tracking furl state (and, worse, meant a half-raised sail was
-/// getting double-penalized: vanilla's own halving AND this mod's).
+/// Plots the RAW mult terms, deliberately independent of <c>sailPosition</c> (furled/half/full) - NOT
+/// because half and full sail perform identically (vanilla's own base sail-force term already differs
+/// between them, linear in `sailPosition` before this mod's multiplier runs - see
+/// <see cref="SailboatWind.FactorForCosGamma"/>) but because this mod's own factor shouldn't ALSO scale by
+/// sail position on top of vanilla's already-correct baseline. An earlier version plotted the
+/// sailPosition-scaled factor anyway, which swung the combined line hard on every furl/unfurl even with
+/// wind and trim flat - read as "combined is broken" when it was just tracking furl state (and doubly
+/// penalized a half-raised sail: vanilla's halving plus this mod's).
 ///
-/// HUD dialog type (like the built-in tick profiler): never grabs input focus, so it can stay open while
-/// actively steering/trimming with the mouse ungrabbed. Toggled only via <c>.dwind sailgraph</c> - no
-/// keybind - and redrawn every frame while open (<see cref="OnRenderGUI"/>), since the whole point is
-/// watching it change live.
+/// HUD dialog type (like the built-in tick profiler): never grabs input focus, so it stays open while
+/// actively steering/trimming with the mouse ungrabbed. Toggled only via <c>.dwind sailgraph</c> (no
+/// keybind), redrawn every frame while open (<see cref="OnRenderGUI"/>) since the point is watching it
+/// change live.
 /// </summary>
 internal sealed class GuiDialogSailGraph : GuiDialog
 {
@@ -40,20 +38,22 @@ internal sealed class GuiDialogSailGraph : GuiDialog
 
     private const long WindowMs = 10_000; // width of the scrolling time window
 
-    // Fixed rather than autoscaled: an autoscaled axis dominated by the combined line's larger swing
-    // visually flattened the wind/trim lines' smaller ones even though they were changing correctly.
-    // -60%/+60% comfortably bounds the model's real range (worst case ~-50% at dead calm/dead headwind).
+    // Fixed rather than autoscaled: autoscaling let the combined line's larger swing visually flatten the
+    // wind/trim lines even though they were changing correctly. +-60% comfortably bounds the model's real
+    // range (worst case ~-50% at dead calm/dead headwind).
     private const double MultAxisMin = -0.60;
     private const double MultAxisMax = 0.60;
 
     // Secondary gridlines/labels at these levels, in addition to the 0% baseline.
     private static readonly double[] TickMarks = { -0.25, -0.10, 0.10, 0.25 };
 
-    // Distinct colors per line so the three components can't be confused: green = wind-speed term alone,
-    // cyan = trim/angle term alone, orange = combined (wind + trim - unscaled either way, see class remarks).
+    // Distinct colors per line: green = wind-speed term, cyan = trim/angle term, orange = combined
+    // (unscaled either way, see class remarks).
     private static readonly double[] WindColor = { 0.45, 0.9, 0.45, 0.9 };
     private static readonly double[] TrimColor = { 0.4, 0.75, 1.0, 0.9 };
     private static readonly double[] CombinedColor = { 1.0, 0.6, 0.15, 0.95 };
+
+    #region Sample buffer
 
     private readonly struct Sample
     {
@@ -62,9 +62,16 @@ internal sealed class GuiDialogSailGraph : GuiDialog
         public Sample(long t, float wind, float trim, float combined) { T = t; Wind = wind; Trim = trim; Combined = combined; }
     }
 
-    // Queue, not List: samples are appended at the back and expired off the front every frame, so this
-    // needs O(1) removal-from-front rather than a shifting array.
+    // Queue, not List: samples are appended at the back and expired off the front every frame, needing
+    // O(1) removal-from-front rather than a shifting array.
     private readonly Queue<Sample> samples = new();
+
+    private void Expire(long now)
+    {
+        while (samples.Count > 0 && samples.Peek().T < now - WindowMs) samples.Dequeue();
+    }
+
+    #endregion
 
     private readonly CairoFont labelFont = CairoFont.WhiteSmallText();
     private readonly CairoFont axisFont = CairoFont.WhiteDetailText().WithColor(new double[] { 1, 1, 1, 0.6 });
@@ -72,6 +79,8 @@ internal sealed class GuiDialogSailGraph : GuiDialog
     public override string ToggleKeyCombinationCode => null!;
     public override bool Focusable => false;
     public override EnumDialogType DialogType => EnumDialogType.HUD;
+
+    #region Dialog lifecycle
 
     public GuiDialogSailGraph(ICoreClientAPI capi) : base(capi)
     {
@@ -95,6 +104,10 @@ internal sealed class GuiDialogSailGraph : GuiDialog
         base.OnRenderGUI(deltaTime);
     }
 
+    #endregion
+
+    #region Cairo drawing
+
     private void OnDraw(Context ctx, ImageSurface surface, ElementBounds currentBounds)
     {
         const double marginL = 34, marginR = 8, marginT = 8, marginB = 34;
@@ -110,10 +123,10 @@ internal sealed class GuiDialogSailGraph : GuiDialog
         if (mount is not EntityBoat boat) status = "not sitting in a sailboat";
         else
         {
-            // Prefer the behaviour's own once-per-tick cache over recomputing here: GetWindSpeedAt runs the
-            // whole OnGetWindSpeed hook chain (front excess, orographic, occlusion), and this draw runs
-            // every rendered frame while the graph is open - re-evaluating from scratch each frame would
-            // triple up on that cost alongside SailboatWind.Postfix's own per-tick call.
+            // Prefer the behaviour's once-per-tick cache over recomputing: GetWindSpeedAt runs the whole
+            // OnGetWindSpeed hook chain (front excess, orographic, occlusion), and this draw runs every
+            // rendered frame while open - recomputing from scratch would triple up on that cost alongside
+            // SailboatWind.Postfix's own per-tick call.
             EntityBehaviorSailTrim? trim = boat.GetBehavior<EntityBehaviorSailTrim>();
             diag = trim != null ? trim.LastState : SailboatWind.Evaluate(boat);
             if (!diag.Valid) status = "sailboat wind response disabled";
@@ -140,11 +153,6 @@ internal sealed class GuiDialogSailGraph : GuiDialog
         }
 
         DrawLegend(ctx, marginL, GraphHeight - 22);
-    }
-
-    private void Expire(long now)
-    {
-        while (samples.Count > 0 && samples.Peek().T < now - WindowMs) samples.Dequeue();
     }
 
     private void PlotLine(Context ctx, double[] color, System.Func<long, double> px, System.Func<double, double> py,
@@ -229,4 +237,6 @@ internal sealed class GuiDialogSailGraph : GuiDialog
         ctx.MoveTo(x, y);
         ctx.ShowText(text);
     }
+
+    #endregion
 }

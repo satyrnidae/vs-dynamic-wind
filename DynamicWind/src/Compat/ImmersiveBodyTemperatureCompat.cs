@@ -12,12 +12,12 @@ namespace DynamicWind.Compat;
 /// or modinfo dependency - resolved entirely via <see cref="AccessTools"/>, isolated here so a missing DLL
 /// can never cause a type-load failure, same convention as <see cref="Client.DynamicWindConfigLib"/>).
 ///
-/// Confirmed by decompiling the mod directly (not assumed): its <c>Modifiers.HumidityModifier</c> is
-/// currently an inert stub (always contributes 0 °C), and its <c>Modifiers.WetnessModifier</c> reads live
-/// <c>ClimateCondition.Rainfall</c> for the wetness-GAIN term only - the wetness-drying term is a flat,
-/// climate-independent server config value (<c>ModConfigServer.Instance.WetnessDrySpeed</c>). So neither
-/// "humidity reduces cooling effectiveness" nor "stay damp longer" already happens once Dynamic Wind feeds
-/// live Rainfall (see <see cref="DynamicWindModCommon.OnGetClimate"/>) - both need new patches here.
+/// Confirmed by decompiling the mod directly (not assumed): its <c>Modifiers.HumidityModifier</c> is an
+/// inert stub (always contributes 0 degC), and its <c>Modifiers.WetnessModifier</c> reads live
+/// <c>ClimateCondition.Rainfall</c> for the wetness-GAIN term only - drying is a flat, climate-independent
+/// server config value (<c>ModConfigServer.Instance.WetnessDrySpeed</c>). So neither "humidity reduces
+/// cooling effectiveness" nor "stay damp longer" already happens once Dynamic Wind feeds live Rainfall
+/// (see <see cref="DynamicWindModCommon.OnGetClimate"/>) - both need new patches here.
 ///
 /// Server-only: <c>EntityBehaviorBodyTemperature</c>'s modifiers tick on the server (entity/watched-attribute
 /// state is server-authoritative), so this reads <see cref="DynamicWindRuntime.ServerField"/>/
@@ -25,8 +25,8 @@ namespace DynamicWind.Compat;
 /// <see cref="Patches.WeatherCoupling"/> does.
 ///
 /// Entirely gated by <see cref="Config.DynamicWindConfig.HumidityBodyTempCompatEnabled"/> (checked by the
-/// caller before <see cref="Apply"/> is even invoked) - this reaches into another mod's private tick logic
-/// and its exact internals could change on any update of that mod, so it must be trivial to turn off.
+/// caller before <see cref="Apply"/> is invoked) - this reaches into another mod's private tick logic, whose
+/// internals could change on any update, so it must be trivial to turn off.
 /// </summary>
 internal static class ImmersiveBodyTemperatureCompat
 {
@@ -35,6 +35,8 @@ internal static class ImmersiveBodyTemperatureCompat
     private const string ModifiersNamespace = "VS_ImmersiveBodyTemperature.Modifiers";
 
     private static bool patched;
+
+    #region Reflection setup
 
     // Resolved once in Apply, reused by both postfixes.
     private static PropertyInfo? entityGetter;       // TemperatureModifier.Entity (protected get)
@@ -74,17 +76,20 @@ internal static class ImmersiveBodyTemperatureCompat
             prefix: new HarmonyMethod(typeof(ImmersiveBodyTemperatureCompat), nameof(WetnessPrefix)),
             postfix: new HarmonyMethod(typeof(ImmersiveBodyTemperatureCompat), nameof(WetnessPostfix)));
         patched = true;
-        logger.Notification("[dynamicwind] Immersive Body Temperature compat enabled (humidity → cooling effectiveness + wetness drying).");
+        logger.Notification("[dynamicwind] Immersive Body Temperature compat enabled (humidity -> cooling effectiveness + wetness drying).");
     }
+
+    #endregion
+
+    #region Humidity patch
 
     /// <summary>Below this temperature, humidity doesn't impair evaporative cooling - the effect only makes
     /// sense when the body is trying to shed heat.</summary>
     private const double WarmThresholdC = 20.0;
-    private const double WarmFadeRangeC = 8.0; // fades in over this many °C above the threshold
+    private const double WarmFadeRangeC = 8.0; // fades in over this many degC above the threshold
 
-    // Former DynamicWindConfig tunables, now fixed constants (see DynamicWindConfig's class remarks).
+    // Former DynamicWindConfig tunable, now a fixed constant (see DynamicWindConfig's class remarks).
     private const float HumidityDiscomfortMax = 1.5f;
-    private const float HumidityWetnessDryingSuppression = 0.5f;
 
     private static void HumidityPostfix(object __instance)
     {
@@ -106,6 +111,13 @@ internal static class ImmersiveBodyTemperatureCompat
         float discomfort = (float)(HumidityDiscomfortMax * humidity * warmFactor);
         temperatureSetter!.Invoke(__instance, new object[] { discomfort });
     }
+
+    #endregion
+
+    #region Wetness patch
+
+    // Former DynamicWindConfig tunable, now a fixed constant (see DynamicWindConfig's class remarks).
+    private const float HumidityWetnessDryingSuppression = 0.5f;
 
     private static void WetnessPrefix(object __instance, out (Entity? entity, double lastUpdateHours, float wetnessBefore) __state)
     {
@@ -142,4 +154,6 @@ internal static class ImmersiveBodyTemperatureCompat
         if (newWetness < 0f) newWetness = 0f; else if (newWetness > 1f) newWetness = 1f;
         wetnessProp!.SetValue(__instance, newWetness);
     }
+
+    #endregion
 }

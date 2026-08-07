@@ -6,7 +6,7 @@ using ProtoBuf;
 namespace DynamicWind.Network;
 
 /// <summary>
-/// Server→client broadcast of the authoritative wind field: the pressure-cell list plus the base
+/// Server-to-client broadcast of the authoritative wind field: the pressure-cell list plus the base
 /// field parameters and the server calendar-time anchor at send. Clients rebuild their local
 /// <see cref="WindField"/> from this and interpolate cell positions against their own clock.
 /// </summary>
@@ -26,7 +26,7 @@ public class WindFieldState
     /// SERVER-ACCUMULATED and synced rather than derived client-side: it is a time integral of the base
     /// flow, and the flow's own seasonal tilt varies over the year, so multiplying an instantaneous
     /// bearing by total elapsed time would shear the whole pattern every time that tilt moved.
-    /// Absent on a pre-drift snapshot → protobuf leaves these 0, i.e. no drift. Safe.
+    /// Absent on a pre-drift snapshot - protobuf leaves these 0, i.e. no drift. Safe.
     /// </summary>
     public double DriftX;
     public double DriftZ;
@@ -37,7 +37,7 @@ public class WindFieldState
 }
 
 /// <summary>
-/// Client→server request to change the live config (e.g. from the ConfigLib GUI). The server
+/// Client-to-server request to change the live config (e.g. from the ConfigLib GUI). The server
 /// validates the sender's privilege before applying; non-privileged requests are ignored and the
 /// client is reverted on the next config broadcast.
 /// </summary>

@@ -27,7 +27,7 @@ internal static class EllipseGeometry
     /// <summary>
     /// Elliptical-gaussian normalized squared distance from a cell's centre to a (dx, dz) offset (already
     /// relative to the cell's advected position): 1.0 sits on the 1/e falloff contour. Reduces to the
-    /// familiar circular <c>dist²/Radius²</c> when <c>RadiusMinor == Radius</c>.
+    /// familiar circular <c>dist^2/Radius^2</c> when <c>RadiusMinor == Radius</c>.
     /// </summary>
     public static double Norm2(PressureCell cell, double dx, double dz)
     {

@@ -11,22 +11,23 @@ using Vintagestory.API.MathTools;
 // "rotatesail" shape animation, using the real VintagestoryAPI.dll primitives (Mat4f/Quaternionf/
 // ShapeElement) so this can't silently disagree with how the engine itself poses the model.
 //
-// The mast/spar/sail swing itself, and the sail-billow effect, are now hand-authored in Anego Studios'
-// model tool (see starting-point.json, the checked-in export) - this tool ONLY solves the clew ropes,
-// which the authoring tool can't do (they need to track a fixed hull anchor point through the swing).
-// Each branch's clew rope is now a single rigid chain rooted directly under that branch's ClewOrigin
-// (ClewORIGIN/ClewORIGINFurled/ClewRopeOrigin); only the chain's OWN root gets a keyframe (rotation +
-// stretchY) - every segment below it (including the terminal knot mesh) is a plain [0,16,0] translation
-// with no rotation of its own, so it rigidly follows the root through the composed transform for free.
-// Per-branch knot counter-rotation (the old rig's "keep the knot mesh looking tied to a fixed post" fix)
-// is gone: the new model's terminal knot pieces just ride the rope like any other segment.
+// The mast/spar/sail swing and sail-billow effect are hand-authored in Anego Studios' model tool (see
+// starting-point.json, the checked-in export) - this tool ONLY solves the clew ropes, since the authoring
+// tool can't track a fixed hull anchor point through the swing. Each branch's clew rope is a single rigid
+// chain rooted under that branch's ClewOrigin (ClewORIGIN/ClewORIGINFurled/ClewRopeOrigin); only the
+// chain's OWN root gets a keyframe (rotation + stretchY) - every segment below it (incl. the terminal knot
+// mesh) is a plain [0,16,0] translation with no rotation of its own, so it rigidly follows the root through
+// the composed transform for free. The old rig's per-branch knot counter-rotation (keeping the knot mesh
+// looking tied to a fixed post) is gone: the new model's terminal knot pieces just ride the rope.
 //
 // Usage: dotnet run -- [output keyframes.json]  (defaults to starting-point.json as input, clewkeyframes.json as output)
 //
 // IMPORTANT: GetLocalTransformMatrix does NOT reset its `output` matrix to identity - it post-multiplies
-// Translate/Rotate/Scale directly onto whatever is already there. Every call below resets its scratch
-// matrix with Mat4f.Identity() first; skipping that silently composes stale data from the previous loop
-// iteration and produces wrong, non-degenerate-looking garbage.
+// Translate/Rotate/Scale onto whatever is already there. Every call below resets its scratch matrix with
+// Mat4f.Identity() first; skipping that silently compounds stale data from the previous loop iteration into
+// wrong, non-degenerate-looking garbage.
+
+#region Shape loading
 
 string shapePath = args.Length > 0 ? args[0] : Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "starting-point.json");
 string outPath = args.Length > 1 ? args[1] : "clewkeyframes.json";
@@ -55,6 +56,10 @@ const string OriginName = "ORIGIN";
 const string AnchorR = "ClewKnotAnchorR";
 const string AnchorL = "ClewKnotAnchorL";
 
+#endregion
+
+#region Branch definitions
+
 // Mirrors the shape's own naming exactly (see starting-point.json) - keep in sync if it's regenerated
 // from a new export. StbdPulley/PortPulley only need a reciprocal-scale keyframe (see Solve): every other
 // element in the chain between root and the pulley/knot is a pure [0,16,0] translation with no pose of
@@ -65,6 +70,10 @@ Branch[] branches =
     new("SailHalf",     "ClewRopeOrigin",   "RClew1",     "LClew1",     "Block4",  "BlockL2"),
     new("SailUnfurled", "ClewORIGIN",       "ClewRopeR1", "ClewRopeL1", "Block1",  "BlockL"),
 };
+
+#endregion
+
+#region Matrix helpers
 
 float[] Sixteenths(double[]? v) => v == null ? new float[3] : new[] { (float)v[0] / 16f, (float)v[1] / 16f, (float)v[2] / 16f };
 
@@ -122,6 +131,10 @@ float[] RestChainMatrix(ElementPose[] chain)
     return mC;
 }
 
+#endregion
+
+#region Anchor capture
+
 Sheet Capture(ElementPose[] chain, string ropeName, string pulleyName, string anchorName)
 {
     ShapeElement rootElem = Find(ropeName);
@@ -174,9 +187,8 @@ Sheet Capture(ElementPose[] chain, string ropeName, string pulleyName, string an
 
     // Anchor must stay the TRUE fixed point in ORIGIN's own space, not reconstructed via pivot+R*offset:
     // Solve()'s `mA * sheet.Anchor` expects an ORIGIN-space input (mA maps ORIGIN-space -> the current
-    // frame's swung rope-root-local-space). Feeding it an already-local-space reconstruction instead
-    // double-transforms it, collapsing the solved target toward the rope root's own frame instead of
-    // tracking the real deck anchor - exactly the bug this comment is here to stop someone reintroducing.
+    // frame's swung rope-root-local-space). An already-local-space reconstruction would double-transform it,
+    // collapsing the solved target toward the rope root's own frame instead of the real deck anchor.
     return new Sheet
     {
         RootElem = rootElem, Pivot = pivot, Offset = offset, RestRotation = restRotation,
@@ -185,7 +197,11 @@ Sheet Capture(ElementPose[] chain, string ropeName, string pulleyName, string an
     };
 }
 
-// (rootRx,rootRy,rootRz,scale), or null if degenerate (should not happen across the full ±90deg sweep).
+#endregion
+
+#region Solve
+
+// (rootRx,rootRy,rootRz,scale), or null if degenerate (should not happen across the full +/-90deg sweep).
 (float rootRx, float rootRy, float rootRz, float scale)? Solve(Sheet sheet, float[] mA)
 {
     float[] target = new float[4];
@@ -221,6 +237,10 @@ Sheet Capture(ElementPose[] chain, string ropeName, string pulleyName, string an
     return (ex - (float)sheet.RootElem.RotationX, ey - (float)sheet.RootElem.RotationY, ez - (float)sheet.RootElem.RotationZ, (float)s);
 }
 
+#endregion
+
+#region Frame/angle mapping
+
 // Piecewise-linear angle for a given RotateSail frame, matching that animation's own three authored
 // keyframes exactly: frame 0 = +90 (full port), frame 89 = 0 (dead ahead), frame 179 = -90 (full
 // starboard). The two halves have slightly different per-frame slopes (90/89 vs 90/90) since the range
@@ -230,11 +250,15 @@ float AngleForFrame(int frame) => frame <= 89
     : 89f - frame;
 
 // Inverse of AngleForFrame, rounded to the nearest integer frame - used to bake at fixed ANGLE steps
-// (e.g. every 15°) rather than every frame, since frame spacing near 90/-90 vs. near 0 isn't uniform in
+// (e.g. every 15deg) rather than every frame, since frame spacing near 90/-90 vs. near 0 isn't uniform in
 // angle. Must stay the algebraic inverse of AngleForFrame above.
 int FrameForAngle(float angleDeg) => (int)Math.Round(angleDeg >= 0f
     ? (90f - angleDeg) * (89f / 90f)
     : 89f - angleDeg, MidpointRounding.AwayFromZero);
+
+#endregion
+
+#region Bake and emit keyframes
 
 const float BakeStepDeg = 15f;
 var bakeFrames = new List<int>();
@@ -336,6 +360,10 @@ sb.Append("}\n");
 File.WriteAllText(outPath, sb.ToString());
 Console.Error.WriteLine($"wrote {outPath}");
 
+#endregion
+
+#region Types
+
 readonly record struct Branch(string SailRoot, string ClewRoot, string StbdRope, string PortRope, string StbdPulley, string PortPulley);
 
 sealed class Sheet
@@ -347,3 +375,5 @@ sealed class Sheet
     public required float[] Anchor;
     public required ShapeElement PulleyElem;
 }
+
+#endregion

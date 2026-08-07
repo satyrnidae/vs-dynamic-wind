@@ -94,7 +94,7 @@ internal static class MarchingSquares
     /// <summary>Greedily stitches an unordered segment bag into continuous polylines by matching
     /// coincident endpoints (within <paramref name="mergeEps"/> world units - grid-cell-scale, since
     /// marching-squares segments sharing a grid edge produce exactly matching interpolated endpoints up to
-    /// floating-point error). O(n²) in segment count, which is fine for the small, LOCAL segment sets
+    /// floating-point error). O(n^2) in segment count, which is fine for the small, LOCAL segment sets
     /// <see cref="PressureSystem.FrontComputer"/> traces around one overlapping cell pair - not intended
     /// for isobars' much larger whole-viewport segment sets, which don't need ordering at all.</summary>
     public static List<Vec2d[]> ChainSegments(List<Segment> segments, double mergeEps)

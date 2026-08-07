@@ -21,32 +21,31 @@ public class BlockEntityRotorvane : BlockEntity
 {
     // See BlockEntityWeathervane for the "name/*" vs exact-name selective-tesselation semantics.
     private static readonly string[] BaseElements = { "stationary/*" };
-    // Rotating assembly minus the spinner (which is tesselated and spun separately).
+    // Rotating assembly minus the spinner (tesselated and spun separately).
     private static readonly string[] AssemblyElements = { "rotating/topper", "rotating/rod", "rotating/arrow/*" };
     private static readonly string[] SpinnerElements = { "rotating/spinner/*" };
 
-    // Element coordinates in this shape are relative to their immediate parent's rotationOrigin (each
-    // zero-size locator establishes a new local frame for its children, like a bone hierarchy), so the
-    // spinner's ABSOLUTE hub position is its own rotationOrigin ([5.375, 4.15, 0]) plus its parent
-    // "rotating" locator's rotationOrigin ([8, 8, 8]) = [13.375, 12.15, 8], normalized (/16) to the 0-1
-    // block-space the tesselated mesh and renderer matrices use. Using the spinner's own (un-accumulated)
-    // origin here spins the fan about a point near the block's corner instead of its hub.
+    // Element coordinates are relative to their immediate parent's rotationOrigin (each zero-size locator
+    // is a new local frame, like a bone hierarchy), so the spinner's ABSOLUTE hub position is its own
+    // rotationOrigin ([5.375, 4.15, 0]) plus its parent "rotating" locator's rotationOrigin ([8, 8, 8]) =
+    // [13.375, 12.15, 8], normalized (/16) to the 0-1 block-space the mesh/renderer matrices use. The
+    // spinner's own un-accumulated origin would spin the fan about a point near the block's corner.
     private static readonly Vec3f SpinnerPivot = new(13.375f / 16f, 12.15f / 16f, 8f / 16f);
 
     // "100% wind speed" reference for the sound's volume/pitch curve, matching WindArrowMapLayer's own
-    // RefSpeed convention (the field's magnitude at calm baseline jetstream flow) so the sound reaches
-    // full intended loudness/pitch at roughly the same wind strength the map overlay would call "100%".
+    // RefSpeed convention (field magnitude at calm baseline jetstream flow), so the sound hits full
+    // intended loudness/pitch at the same wind strength the map overlay calls "100%".
     private const double RefSpeed = 1.0;
-    private const float MaxVolume = 0.25f; // the sound asset is authored for 100% wind speed at full volume
+    private const float MaxVolume = 0.25f; // sound asset is authored for 100% wind speed at full volume
     private const float MinPitch = 0.6f;
     private const float MaxPitch = 1.4f;
     private const int SoundUpdateMs = 150;
 
     // Former DynamicWindConfig tunable, now a fixed constant (see DynamicWindConfig's class remarks).
     private const float RotorvaneSpeedMult = 24f;
-    // Raw wind speed (and GetDirectionalMod, which depends on the assembly's still-swinging yaw) is noisy
-    // tick-to-tick, especially at high wind-speed timescales/gusts - easing pitch AND volume toward their
-    // raw targets instead of snapping every tick keeps the whirring from warbling.
+    // Raw wind speed (and GetDirectionalMod, which depends on the still-swinging assembly yaw) is noisy
+    // tick-to-tick, especially in gusts - easing pitch and volume toward target instead of snapping keeps
+    // the whirring from warbling.
     private const float PitchEaseRatePerSecond = 2f;
     private const float VolumeEaseRatePerSecond = 2f;
 
@@ -68,6 +67,8 @@ public class BlockEntityRotorvane : BlockEntity
             RegisterGameTickListener(UpdateSound, SoundUpdateMs);
         }
     }
+
+    #region Sound
 
     private void StartSound(ICoreClientAPI capi)
     {
@@ -110,6 +111,18 @@ public class BlockEntityRotorvane : BlockEntity
         sound.SetPitch(currentPitch);
     }
 
+    private void StopSound()
+    {
+        if (sound == null) return;
+        sound.Stop();
+        sound.Dispose();
+        sound = null;
+    }
+
+    #endregion
+
+    #region Mesh and renderer setup
+
     private void BuildMeshesAndRenderer(ICoreClientAPI capi)
     {
         IAsset asset = capi.Assets.TryGet(new AssetLocation("dynamicwind", "shapes/block/rotorvane.json"));
@@ -127,6 +140,17 @@ public class BlockEntityRotorvane : BlockEntity
 
         MarkDirty(true); // re-tesselate now that baseMesh is ready (so the assembly/spinner aren't baked statically)
     }
+
+    public override bool OnTesselation(ITerrainMeshPool mesher, ITesselatorAPI tessThreadTesselator)
+    {
+        if (baseMesh == null) return false; // not ready yet -> let the full shape bake once
+        mesher.AddMeshData(baseMesh);
+        return true; // skip default (excludes the rotating assembly + spinner from the static mesh)
+    }
+
+    #endregion
+
+    #region Wind query API
 
     /// <summary>Yaw (radians) for the assembly to point downwind; NaN when calm/occluded (hold position).</summary>
     public float GetTargetYaw()
@@ -184,12 +208,7 @@ public class BlockEntityRotorvane : BlockEntity
         dsc.AppendLine(Lang.Get("dynamicwind:blockinfo-windspeed", (int)Math.Round(GetWindSpeed() / RefSpeed * 100)));
     }
 
-    public override bool OnTesselation(ITerrainMeshPool mesher, ITesselatorAPI tessThreadTesselator)
-    {
-        if (baseMesh == null) return false; // not ready yet → let the full shape bake once
-        mesher.AddMeshData(baseMesh);
-        return true; // skip default (excludes the rotating assembly + spinner from the static mesh)
-    }
+    #endregion
 
     public override void OnBlockRemoved()
     {
@@ -205,13 +224,5 @@ public class BlockEntityRotorvane : BlockEntity
         renderer?.Dispose();
         renderer = null;
         StopSound();
-    }
-
-    private void StopSound()
-    {
-        if (sound == null) return;
-        sound.Stop();
-        sound.Dispose();
-        sound = null;
     }
 }

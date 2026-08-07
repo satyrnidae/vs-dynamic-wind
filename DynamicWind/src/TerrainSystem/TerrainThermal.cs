@@ -6,7 +6,7 @@ using Vintagestory.API.MathTools;
 namespace DynamicWind.TerrainSystem;
 
 /// <summary>
-/// Terrain-driven near-surface TEMPERATURE anomaly, in °C relative to the local ambient: warm, sun-exposed
+/// Terrain-driven near-surface TEMPERATURE anomaly, in deg C relative to the local ambient: warm, sun-exposed
 /// dry land runs warmer than its surroundings, always. Water's sign is SEASONAL: in the warm season water
 /// is COOLER than the land beside it (the marine-layer/sea-breeze pattern); in the cold season relatively
 /// warm water is WARMER than the frozen land beside it (real nor'easters, polar lows, autumn/winter
@@ -30,13 +30,13 @@ namespace DynamicWind.TerrainSystem;
 /// </summary>
 internal static class TerrainThermal
 {
-    /// <summary>Nominal peak magnitude of the anomaly, in °C - a strong land/water contrast reads about
+    /// <summary>Nominal peak magnitude of the anomaly, in deg C - a strong land/water contrast reads about
     /// this far from ambient. Callers that need a normalised [-1, 1] shape divide by it.</summary>
     public const double Amplitude = 6.0;
     private const double WaterFullDepth = 20.0; // blocks of depth for full contribution
     private const double SummerPeakRel = 0.59725; // matches WindFieldSimulation.SummerPeakRel
 
-    /// <summary>Near-surface temperature anomaly in °C at (x, z). + = warmer than ambient, - = cooler.</summary>
+    /// <summary>Near-surface temperature anomaly in deg C at (x, z). + = warmer than ambient, - = cooler.</summary>
     public static double TemperatureAnomalyAt(IWorldAccessor world, double x, double z, double totalHours)
     {
         int ix = (int)x;
@@ -45,7 +45,7 @@ internal static class TerrainThermal
         var pos = new BlockPos(ix, 0, iz, 0);
         // Solid terrain (seabed under water); excludes the water column itself.
         int terrainY = world.BlockAccessor.GetTerrainMapheightAt(pos);
-        if (terrainY <= 0) return 0.0; // ungenerated/void → neutral
+        if (terrainY <= 0) return 0.0; // ungenerated/void -> neutral
 
         int seaLevel = world.SeaLevel;
         double depth = seaLevel - terrainY;
@@ -53,14 +53,14 @@ internal static class TerrainThermal
 
         if (depth > 0)
         {
-            // Water: sign follows the season (see class doc), scaled by depth (shallow → weak, deep →
+            // Water: sign follows the season (see class doc), scaled by depth (shallow -> weak, deep ->
             // strong), continuously blended so shoulder seasons taper toward neutral instead of a hard
             // switch. MORE pronounced (either sign) at night, once the land stops radiating.
             double depthFactor = depth / WaterFullDepth;
             if (depthFactor > 1) depthFactor = 1;
             double seasonWarmth = SeasonWarmthAt(world, pos); // +1 midsummer, -1 midwinter, 0 if season not ready
-            double sign = -seasonWarmth; // summer (+warmth) → water COOLER (-); winter → water WARMER (+)
-            double nightBoost = 1.0 + 0.6 * (1.0 - diurnal); // 1.0 at noon → 1.6 at night
+            double sign = -seasonWarmth; // summer (+warmth) -> water COOLER (-); winter -> water WARMER (+)
+            double nightBoost = 1.0 + 0.6 * (1.0 - diurnal); // 1.0 at noon -> 1.6 at night
             return sign * (0.6 * depthFactor) * Amplitude * nightBoost;
         }
 
@@ -70,7 +70,7 @@ internal static class TerrainThermal
         if (cc == null) return 0.0;
 
         double aridity = 1.0 - GameMath.Clamp(cc.Rainfall, 0f, 1f);
-        double tempFactor = GameMath.Clamp((cc.Temperature + 5.0) / 30.0, 0.0, 1.0); // -5..25°C → 0..1
+        double tempFactor = GameMath.Clamp((cc.Temperature + 5.0) / 30.0, 0.0, 1.0); // -5..25 deg C -> 0..1
         double coeff = 0.2 + 0.8 * aridity;                       // warmer than ambient (positive)
         // Stored heat: a solid 0.45 floor at night (ground stays warm) rising to full at solar noon - so
         // land thermals still drive pressure overnight, just less than under the midday sun.

@@ -36,14 +36,13 @@ public class PressureCell
     /// snapping when velocity changes (see WindFieldSimulation.Advect).</summary>
     public float Orientation;
 
-    /// <summary>Rolling storm-likelihood scalar in [0,1] for this front. Starts at a random value at
-    /// spawn and slowly builds over the cell's lifetime (see WindFieldSimulation.Advect) until its cold
-    /// front catches another pressure cell and it occludes (see WindFieldSimulation.ApplyOcclusion),
-    /// after which it drops hard - the storm winds down once occluded. Gates whether this low's own
-    /// weather-noise texture contributes at all (see <c>WeatherCoupling</c>'s per-cell noise-map
-    /// mechanic). Cells saved before this field existed deserialize it to the
-    /// protobuf default 0; WindFieldSimulation.Load migrates those to 1.0 (see the requirement that
-    /// migrated cells default to full storm likelihood).</summary>
+    /// <summary>Rolling storm-likelihood scalar in [0,1]. Starts random at spawn and slowly builds over
+    /// the cell's lifetime (see WindFieldSimulation.Advect) until its cold front catches another cell and
+    /// occludes (see WindFieldSimulation.ApplyOcclusion), after which it drops hard - the storm winds down
+    /// once occluded. Gates whether this low's own weather-noise texture contributes at all (see
+    /// <c>WeatherCoupling</c>'s per-cell noise-map mechanic). Cells saved before this field existed
+    /// deserialize to the protobuf default 0; WindFieldSimulation.Load migrates those to 1.0 (full storm
+    /// likelihood).</summary>
     public float StormLikelihood;
 
     /// <summary>Total-hours timestamp until which this (low) cell renders as an occluded front symbol
@@ -55,25 +54,25 @@ public class PressureCell
 
     /// <summary>Intrinsic air-mass character in [-1, 1] this system carries (-1 = cold/polar, +1 =
     /// warm/tropical), independent of whether it's a low or a high - a cold low and a warm high can both
-    /// exist, same as a polar low or a subtropical high in reality. Set once at spawn from the cell's
-    /// birth latitude + season + random jitter (see WindFieldSimulation.ComputeAirMassTemp) and carried
-    /// for the cell's lifetime. Drives the real temperature shift in DynamicWindModCommon.OnGetClimate
-    /// via <see cref="DynamicWind.WindSystem.WindField.CellTemperatureAt"/>; also drives which SINGLE front
-    /// symbol a moving low draws (warm → poleward/Warm, cold → equatorward/Cold - see
+    /// exist, same as a polar low or a subtropical high in reality. Set once at spawn from the cell's birth
+    /// latitude + season + random jitter (see WindFieldSimulation.ComputeAirMassTemp) and carried for its
+    /// lifetime. Drives the real temperature shift in DynamicWindModCommon.OnGetClimate via
+    /// <see cref="DynamicWind.WindSystem.WindField.CellTemperatureAt"/>; also drives which SINGLE front
+    /// symbol a moving low draws (warm -> poleward/Warm, cold -> equatorward/Cold - see
     /// DynamicWind.PressureSystem.FrontComputer) and biases the cell's own advection bearing toward the
     /// pole (warm) or equator (cold) side (see WindFieldSimulation.Advect/AirMassBiasedAngle).</summary>
     public float AirMassTemp;
 
     /// <summary>Radial reach multiplier for this (low) cell's COLD/equatorward front contour, on top of the
     /// base <see cref="Radius"/>/<see cref="RadiusMinor"/> ellipse - see FrontComputer. Starts at 1 and
-    /// grows FASTER than <see cref="WarmFrontReach"/> each hour (WindFieldSimulation.ApplyOcclusion) -
-    /// real cold fronts advect/extend faster than warm fronts - so the two sides visibly move and expand
-    /// at different rates over the cell's life; the growth rate on each side is itself modulated by how
-    /// close this cell's <see cref="AirMassTemp"/> is to whatever pressure cell sits on that side (similar
-    /// air masses offer little resistance - sharpen/advance fastest - while starkly different ones slow
-    /// the advance). Once this cell's cold-front reach physically reaches another pressure cell on its
-    /// equatorward side, the cold front has "caught" that cell and this low occludes (see
-    /// WindFieldSimulation.ApplyOcclusion) - a real two-cell event rather than a fixed ratio/age timer.</summary>
+    /// grows FASTER than <see cref="WarmFrontReach"/> each hour (WindFieldSimulation.ApplyOcclusion) - real
+    /// cold fronts advect/extend faster than warm - so the two sides move and expand at different rates
+    /// over the cell's life; each side's growth rate is further modulated by how close this cell's
+    /// <see cref="AirMassTemp"/> is to whatever pressure cell sits on that side (similar air masses offer
+    /// little resistance and advance fastest; starkly different ones slow the advance). Once this cell's
+    /// cold-front reach physically reaches another pressure cell on its equatorward side, the cold front
+    /// has "caught" that cell and this low occludes (see WindFieldSimulation.ApplyOcclusion) - a real
+    /// two-cell event, not a fixed ratio/age timer.</summary>
     public float ColdFrontReach = 1f;
 
     /// <summary>Radial reach multiplier for this (low) cell's WARM/poleward front contour. See

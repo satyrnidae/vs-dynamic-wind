@@ -13,28 +13,21 @@ namespace DynamicWind.Client.MapLayers;
 /// <summary>
 /// "Doppler radar" map overlay. Samples the precipitation noise field
 /// (<see cref="WeatherSystemBase.GetPrecipitation(double,double,double,double)"/>) on a grid anchored to
-/// WORLD coordinates (a fixed block step, not a fixed screen grid like the wind arrows), within a radar
-/// range around the player - so rain cells sit on their true world location and scale with map zoom.
-/// The vanilla precipitation noise provides the organic TEXTURE, but the PRESSURE DIFFERENTIAL drives it:
-/// the noise is gated by the local pressure from the synced wind field, so storms appear inside lows and
-/// the sky clears under highs (the radar is client-side, so it reads the client pressure field directly -
-/// the server-side rainfall coupling never reaches a client-side GetPrecipitation query).
-/// Colours ramp through several greens (light → heavy rain) before reaching yellow/orange/red, which are
-/// reserved for storm-core intensity - matching real doppler radar convention - via a CONCAVE-UP (power)
-/// response: light rain and the outer fringe of a storm stay in the greens, and only the high-precip storm
-/// core ramps through yellow/orange to red - so the overlay reads as "mostly green, red only at the
-/// epicentre" instead of painting the whole rain field hot. (An earlier logarithmic curve did the
-/// opposite - it lifted faint rain up toward red, turning entire cloud areas red - which is why this is a
-/// power curve, not a log.) Cells cold enough to be snow instead of rain use a separate blue → purple ramp
-/// instead - decided from the REAL block climate (<c>GetClimateAt</c>), which only gives a meaningful (not
-/// garbage/default) answer where the chunk is actually loaded. Outside the loaded area there is no
-/// reliable rain-vs-snow signal at all - a standalone climate estimate was tried and discarded, because
-/// guessing wrong there would confidently paint the wrong-coloured ramp (green rain over what is actually
-/// snowy terrain, or vice versa) well past the radar's real data horizon. Instead, unloaded cells render
-/// on a third, greyscale ramp (<see cref="GreyStops"/>) - still showing precipitation INTENSITY (via the
-/// same power-curve <c>t</c>), just without claiming to know its type. The grey stops are luminance-matched
-/// to the snow ramp's own three stops (same rec601 luma per step), so the grey bar reads as "the snow
-/// ramp with the colour information removed" rather than an unrelated palette.
+/// WORLD coordinates (fixed block step, not a fixed screen grid like the wind arrows), so rain cells sit
+/// at their true world location and scale with map zoom.
+/// Vanilla noise supplies the organic texture, but PRESSURE drives it: the radar is client-side, so it
+/// reads the client pressure field directly rather than the (server-only) rainfall coupling, and the noise
+/// is gated by that local pressure so storms appear inside lows and clear under highs.
+/// Colour ramp is greens (light->heavy rain) before yellow/orange/red, reserved for the storm core, via a
+/// CONCAVE-UP (power, not log) response - a power curve keeps light rain/storm fringes green and only the
+/// high-precip core climbs to red; an earlier log curve over-reddened faint rain instead.
+/// Snow cells use a separate blue->purple ramp, chosen from the REAL block climate (<c>GetClimateAt</c>)
+/// where the chunk is loaded - it's authoritative there and what vanilla itself uses. Outside loaded chunks
+/// there's no reliable rain-vs-snow signal (a standalone climate estimate was tried and discarded: guessing
+/// wrong would confidently paint the wrong ramp well past the radar's real data horizon), so those cells
+/// fall back to a third, type-agnostic greyscale ramp (<see cref="GreyStops"/>) that still shows intensity.
+/// Grey stops are luminance-matched to the snow ramp (same rec601 luma per step) so the grey bar reads as
+/// "the snow ramp with colour removed" rather than an unrelated palette.
 /// WORLD MAP ONLY (skips the minimap HUD, like the legend below).
 /// A static key (<see cref="BuildLegendTexture"/>, baked once as a Cairo texture) is pinned to the
 /// bottom-right corner of the map, drawn above every other overlay this mod adds to the world map so nothing
@@ -42,13 +35,15 @@ namespace DynamicWind.Client.MapLayers;
 /// </summary>
 public class DopplerRadarMapLayer : DynamicWindWorldMapLayerBase
 {
+    #region Color Ramp Data
+
     private const double WorldStep = 48.0;      // base world size of a radar cell, blocks
     private const double RadarRange = 1200.0;   // blocks around the player to scan
     private const int MaxCells = 1600;
     private const float MinPrecip = 0.04f;
     private const double RampFullPrecip = 0.9;  // precip level mapped to the red (storm-core) end
-    private const double RampExponent = 2.0;    // >1 keeps light/edge rain green; only intense precip → red
-    private const float SnowThresholdTemp = 4f; // °C; matches vanilla WeatherDataSnapshot.snowThresholdTemp default
+    private const double RampExponent = 2.0;    // >1 keeps light/edge rain green; only intense precip -> red
+    private const float SnowThresholdTemp = 4f; // degC; matches vanilla WeatherDataSnapshot.snowThresholdTemp default
 
     private static readonly Vec4f LightGreen = Rgb(0x86, 0xF4, 0x68);
     private static readonly Vec4f MedGreen = Rgb(0x3C, 0x93, 0x25);
@@ -74,6 +69,10 @@ public class DopplerRadarMapLayer : DynamicWindWorldMapLayerBase
     private static readonly Vec4f[] SnowStops = { SkyBlue, Cerulean, LightPurple };
     private static readonly Vec4f[] GreyStops = { LightGrey, MedGrey, DarkGrey };
 
+    #endregion
+
+    #region Legend Layout
+
     // Legend panel, baked once as a Cairo texture (PlayerMapLayer-style) and re-drawn as a fixed
     // screen-space quad anchored to the bottom-right corner of the map element - a static reference for
     // the RainStops/SnowStops ramps above, so it never needs rebuilding per-frame like the radar cells.
@@ -89,6 +88,8 @@ public class DopplerRadarMapLayer : DynamicWindWorldMapLayerBase
     private const double LegendBarToTextGap = 12;  // bar bottom -> endpoint-label baseline
     private const double LegendRowGap = 14;        // bottom of one row's endpoint labels -> next row label's top
     private static readonly Vec4f White = new(1f, 1f, 1f, 1f);
+
+    #endregion
 
     private DynamicWindConfig? cfg;
     private ICoreClientAPI? capi;
@@ -120,6 +121,8 @@ public class DopplerRadarMapLayer : DynamicWindWorldMapLayerBase
         RestoreActiveState(cfg?.DopplerRadarMapLayerVisibleByDefault ?? false);
         BuildLegendTexture();
     }
+
+    #region Rendering
 
     public override void Render(GuiElementMap mapElem, float dt)
     {
@@ -169,6 +172,10 @@ public class DopplerRadarMapLayer : DynamicWindWorldMapLayerBase
             capi.Render.RenderMesh(quad);
         }
     }
+
+    #endregion
+
+    #region Legend Baking
 
     /// <summary>Bakes the legend panel (rain ramp, snow ramp, row/endpoint labels) once into a Cairo
     /// texture - PlayerMapLayer-style - since it's static reference art, not per-frame data. Panel height
@@ -255,6 +262,10 @@ public class DopplerRadarMapLayer : DynamicWindWorldMapLayerBase
         ctx.ShowText(highText);
     }
 
+    #endregion
+
+    #region Sampling
+
     protected override void Resample(GuiElementMap mapElem)
     {
         cells.Clear();
@@ -263,7 +274,7 @@ public class DopplerRadarMapLayer : DynamicWindWorldMapLayerBase
         double playerZ = capi.World.Player?.Entity?.Pos.Z ?? 0;
         double playerY = capi.World.Player?.Entity?.Pos.Y ?? capi.World.SeaLevel;
 
-        // Only scan where data exists: the view ∩ a radar range around the player.
+        // Only scan where data exists: the view intersected with a radar range around the player.
         double minX = Math.Max(vb.X1, playerX - RadarRange), maxX = Math.Min(vb.X2, playerX + RadarRange);
         double minZ = Math.Max(vb.Z1, playerZ - RadarRange), maxZ = Math.Min(vb.Z2, playerZ + RadarRange);
         if (maxX <= minX || maxZ <= minZ) return;
@@ -334,6 +345,8 @@ public class DopplerRadarMapLayer : DynamicWindWorldMapLayerBase
     }
 
     private static Vec4f Rgb(int r, int g, int b) => new(r / 255f, g / 255f, b / 255f, 1f);
+
+    #endregion
 
     public override void Dispose()
     {

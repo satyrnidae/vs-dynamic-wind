@@ -20,6 +20,8 @@ namespace DynamicWind;
 /// different APIs, but bundled under the same <c>dwind</c> root name for parity.</summary>
 internal static class DynamicWindCommands
 {
+    #region Registration
+
     public static void Register(ICoreServerAPI api, WindField field, DynamicWindConfig config)
     {
         api.ChatCommands.Create("dwind")
@@ -38,6 +40,10 @@ internal static class DynamicWindCommands
                 .HandleWith(args => Sail(args, api, config))
             .EndSubCommand();
     }
+
+    #endregion
+
+    #region Debug Command
 
     private static TextCommandResult Debug(TextCommandCallingArgs args, ICoreServerAPI api, WindField field, DynamicWindConfig config)
     {
@@ -63,12 +69,15 @@ internal static class DynamicWindCommands
         return TextCommandResult.Success(sb.ToString());
     }
 
+    #endregion
+
+    #region Sail Command
+
     /// <summary>
-    /// Reports the whole sail-trim chain for the boat the caller is sitting on, so an inert control can
-    /// be traced to a specific link rather than guessed at: is the behaviour even attached (i.e. did the
-    /// entity patch apply), is the baked <c>rotatesail</c> swing animation active (i.e. did the shape patch
-    /// apply), and is the angle actually moving when a key is held. Server-side state only - the client
-    /// runs its own copy of the animation for rendering.
+    /// Reports the whole sail-trim chain for the boat the caller is sitting on, so a broken control traces
+    /// to a specific link rather than a guess: is the behaviour attached (entity patch applied), is the
+    /// baked <c>rotatesail</c> swing animation active (shape patch applied), and is the angle actually
+    /// moving when a key is held. Server-side state only - the client runs its own copy for rendering.
     /// </summary>
     private static TextCommandResult Sail(TextCommandCallingArgs args, ICoreServerAPI api, DynamicWindConfig config)
     {
@@ -99,7 +108,7 @@ internal static class DynamicWindCommands
         }
 
         sb.AppendLine($"behaviour: attached. sailPosition={boat.WatchedAttributes.GetInt("sailPosition")}, "
-                      + $"target={trim.TargetAngleDeg:0.0}°, current={trim.CurrentAngleDeg:0.0}°, intent={trim.TrimIntent:+0;-0;0}");
+                      + $"target={trim.TargetAngleDeg:0.0}deg, current={trim.CurrentAngleDeg:0.0}deg, intent={trim.TrimIntent:+0;-0;0}");
         sb.AppendLine(trim.SwingAnimationActive
             ? $"swing animation: active (server copy of '{EntityBehaviorSailTrim.SwingAnimCode}')"
             : $"swing animation: NOT ACTIVE - could not find/start '{EntityBehaviorSailTrim.SwingAnimCode}'. "
@@ -114,6 +123,10 @@ internal static class DynamicWindCommands
         sb.AppendLine($"sheet selection boxes: {(codes.Length == 0 ? "<none resolved>" : codes)}");
         return TextCommandResult.Success(sb.ToString().TrimEnd());
     }
+
+    #endregion
+
+    #region Cells Command
 
     private static TextCommandResult Cells(TextCommandCallingArgs args, ICoreServerAPI api, WindField field)
     {
@@ -134,4 +147,6 @@ internal static class DynamicWindCommands
         }
         return TextCommandResult.Success(sb.ToString().TrimEnd());
     }
+
+    #endregion
 }
