@@ -14,12 +14,15 @@ using Vintagestory.GameContent;
 
 namespace DynamicWind;
 
-/// <summary>Server debug/inspection commands: <c>/dynamicwind debug</c>, <c>/dynamicwind cells</c>.</summary>
+/// <summary>Server debug/inspection commands: <c>/dwind debug</c>, <c>/dwind cells</c>, <c>/dwind sail</c>.
+/// Client-side counterparts (<c>.dwind sail</c>, <c>.dwind sailgraph</c>) live in <c>Client/SailTrimInput</c> -
+/// separate command trees since server (<c>/</c>) and client (<c>.</c>) chat commands are registered on
+/// different APIs, but bundled under the same <c>dwind</c> root name for parity.</summary>
 internal static class DynamicWindCommands
 {
     public static void Register(ICoreServerAPI api, WindField field, DynamicWindConfig config)
     {
-        api.ChatCommands.Create("dynamicwind")
+        api.ChatCommands.Create("dwind")
             .WithDescription(Lang.Get("dynamicwind:command-description"))
             .RequiresPrivilege(Privilege.chat)
             .BeginSubCommand("debug")

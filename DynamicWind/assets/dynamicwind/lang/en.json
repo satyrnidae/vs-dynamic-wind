@@ -34,6 +34,7 @@
     "description-SailboatSailAngleEnabled": "Let the sail be trimmed from port to starboard, and take thrust from how the wind meets the sail rather than the hull. Off: use the simpler heading-vs-wind speed curve.",
     "setting-SailboatSailAngleEnabled": "Trimmable sails",
     "command-sail-description": "Diagnose sail trim on the boat you are sitting in",
+    "command-sailgraph-description": "Toggle a live graph of the sailboat thrust multiplier vs. wind-to-sail alignment",
     "sailboat-trimport": "Trim sail to port",
     "sailboat-trimstarboard": "Trim sail to starboard",
     "*-selectionbox-SheetLAP": "Trim sails left",

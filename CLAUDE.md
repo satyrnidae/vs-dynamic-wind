@@ -122,31 +122,66 @@ systems, and couples the rest of the world to it:
   from the cursor, and there are just two APs total instead of one per branch. Sizing matters because
   `EntityBehaviorSelectionBoxes` takes the box from the AP's PARENT element, and the knots alone are
   ~4x2.5x3px - under a third of a block, and far too easy to slip off while the boat rocks.
-  `/dynamicwind sail` reports the whole chain (behaviour attached? swing animation active? angle moving?)
-  for the boat you are sitting in, so an inert control localises to a link instead of needing a guess. The
-  keybinds send **intent** (-1/0/+1), not increments - the server integrates it, so a lost packet can't
-  accumulate drift and the sail stops by itself on dismount/disconnect. The Harmony postfix on
-  `EntityBoat.SeatsToMotion` then computes `lift * drive`: how squarely the wind hits the sail's front
-  face, times how much of that push points where the boat is going, scaled by wind magnitude via
-  `SailboatWindSpeedInfluence` and floored at `SailboatMinThrust` so a badly trimmed boat still creeps
-  rather than dying in the water. Vanilla zeroes `paddleForce` whenever sails are up, so with
-  `sailPosition > 0` the whole of `__result.X` IS the sail term and scaling it is a complete substitution.
-  `SailboatSailAngleEnabled = false` restores the old heading-vs-wind curve (tailwind +50% / headwind
-  -10%) for existing worlds. Trim works in all three sail positions - see the clew-rope rig below. Tacking
-  remains out of scope. Three refinements on top of the base curve: (1) **beam-reach lift bonus** -
-  `TrimmedFactor` adds `SailboatBeamReachMaxBoost * 4*lift*(1-lift)*drive * speedFactor`, a parabola
-  peaking where `lift≈0.5` (sail bisecting the wind angle, roughly a beam reach - real aerodynamic lift)
-  and vanishing at `lift`=0 (luffing) or 1 (square-to-wind, pure drag), so a well-trimmed reach beats a
-  badly-trimmed one without disturbing the existing feathered floor or dead-tailwind ceiling. (2)
-  **Half-sail scaling** - the result is scaled by `sailPosition / 2.0` so half sail catches roughly half
-  the thrust of full sail instead of the same amount (furled never reaches this method - the caller
-  already gates on `sailPosition > 0`). (3) **Alternate trim control** (`SailboatWind.HandleCtrlTrim`,
-  called unconditionally before the furl gate, since trim works furled or not) - reads
+  `/dwind sail` (client twin: `.dwind sail`) reports the whole chain (behaviour attached? swing animation
+  active? angle moving?) for the boat you are sitting in, so an inert control localises to a link instead
+  of needing a guess; `.dwind sailgraph` toggles a live Cairo-drawn HUD graph (`Client/Gui/GuiDialogSailGraph`)
+  scrolling the wind/trim/combined mult terms over the last 10s, for visually confirming the trim curve
+  while sweeping the sail instead of re-running `.dwind sail` over and over. The keybinds send **intent**
+  (-1/0/+1), not increments - the server integrates it, so a lost packet can't accumulate drift and the
+  sail stops by itself on dismount/disconnect. The Harmony postfix on `EntityBoat.SeatsToMotion`
+  (`SailboatWind.TrimmedFactor`/`FactorForCosGamma`) multiplies vanilla's constant sail force by
+  `1 + windBoost + angleBoost`, the two terms entirely independent of each other and of boat travel
+  direction: **windBoost** (`SailboatWind.WindBoost`) is linear in wind speed alone (unclamped above the
+  "100%" reference speed, so a storm keeps extrapolating it upward) - a -15% floor in dead calm up to +25%
+  at reference wind. **angleBoost** (`SailboatWind.AngleBoost`) is a function of `cosGamma` alone - the
+  alignment between the wind and the sail's own normal (`SailNormal`, hull-forward rotated by
+  `EntityBehaviorSailTrim.CurrentAngleDeg`) - independent of where the boat is actually heading: +25% at
+  pure tailwind, -25% at pure headwind, 0% at pure crosswind, with the headwind→crosswind half overshooting
+  to a "tacking" bonus peaking near +15% via a parabola that vanishes at both ends by construction. Vanilla
+  zeroes `paddleForce` whenever sails are up, so with `sailPosition > 0` the whole of `__result.X` IS the
+  sail term and scaling it is a complete substitution. `SailboatSailAngleEnabled = false` restores the old
+  heading-vs-wind curve (tailwind +50% / headwind -10%, `LegacyFactor`) for existing worlds. Trim works in
+  all three sail positions - see the clew-rope rig below. Tacking remains out of scope.
+  `FactorForCosGamma` does NOT scale by `sailPosition` at all - not because half and full sail perform
+  identically (they don't: vanilla's OWN base sail-force term, `EntityBoat.SeatsToMotion`, is already
+  linear in `sailPosition` - `num4 * dt * sailPosition * 1.5f`, half gets 1x, full gets 2x - before this
+  postfix ever runs), but because this mod's own multiplicative factor shouldn't ALSO scale by it on top of
+  that. An earlier version of `FactorForCosGamma` did (`* (sailPosition / 2.0)`), double-applying the
+  halving so half sail delivered roughly a QUARTER of full sail's thrust instead of vanilla's own intended
+  half - read in-game as "half sail is basically not moving." Furled (`sailPosition == 0`) is the one case
+  that's still a pure on/off gate, handled entirely by `Postfix` returning before the sail-force
+  replacement is ever reached. **Alternate trim control** (`SailboatWind.HandleCtrlTrim`, called
+  unconditionally before the furl gate, since trim works furled or not) - reads
   `EntityBehaviorSeatable.ControllingControls`, the same synced control state vanilla's own turn term
   already used, and while Ctrl is held zeroes that turn term and repurposes A/D to drive
-  `EntityBehaviorSailTrim.SetCtrlTrimIntent` instead - the same `trimIntent` field the bracket-key hotkeys
-  write. A `ctrlTrimActive` latch zeroes the intent only on the tick Ctrl is *released*, not every tick
-  Ctrl happens to be up, so this path can't stomp the independent bracket-key path when Ctrl isn't held.
+  `EntityBehaviorSailTrim.SetTrimIntent` instead - the same `trimIntent` field the bracket-key hotkeys
+  write, zeroed unconditionally whenever Ctrl isn't held so this path can't stomp the independent
+  bracket-key path.
+
+  `SailboatWind.Evaluate(boat)` is the shared, general-purpose readout of this whole model for a given
+  boat (`SailboatWind.SailState`: raw `WindMult`/`TrimMult` - neither term ever carries the `1.0 +`
+  baseline `FactorForCosGamma` applies for actual thrust - plus `CombinedMult = WindMult +
+  TrimMult`), NOT a diagnostics-only helper despite the name's history: both the `.dwind sailgraph` HUD
+  and `EntityBehaviorSailTrim.UpdateBillow` (see "Sail billow" below) read it. Because `GetWindSpeedAt`
+  runs the whole `OnGetWindSpeed` hook chain (front excess, orographic, occlusion) and isn't a cheap read,
+  `EntityBehaviorSailTrim` computes it once per tick (`LastState`) rather than each caller re-evaluating
+  it independently - `Evaluate` itself sources wind DIRECTION from `field.WindAt` rather than
+  `GetWindSpeedAt`'s own vector (see "Sail billow" below for why: the latter's magnitude genuinely reaches
+  zero, which would zero the direction and so `TrimMult` along with it, independent of trim or heading).
+
+- **Sail billow intensity** (not to be confused with "REMOVED: sail billow" below, a different, abandoned
+  panel-curvature approach) - `EntityBehaviorSailTrim.BillowIntensity` (eased 0..1, drives the existing
+  `billowsail` frame-scrub animation described under "Sailboats" above) is a direct readout of
+  `LastState.CombinedMult` - both terms, so wind speed still matters (a becalmed but well-trimmed sail is a
+  real, distinct situation from a filled one), just not the ONLY thing that matters the way the old `lift *
+  SpeedFactor(windSpeed)` calc made it. 0% `CombinedMult` or below (badly trimmed and/or no wind) shows no
+  billow; `BillowMaxMult` (45%, 5 points below the model's realistic ~50% ceiling so a genuinely maxed-out
+  sail still visibly reads as "fully filled" rather than sitting just short of it) shows a fully filled
+  sail. Mapped through `sqrt` rather than linearly - a linear map made low-mult sails look almost
+  imperceptibly different from luffing, since most of a modestly-trimmed sail's usable range sits in the
+  bottom third of `[0, 45%]`; `sqrt` front-loads visible growth into that low range and tapers off
+  approaching the max instead of spreading it out evenly. Zero whenever furled or the legacy heading model
+  is active (no per-angle mult to read).
 - **Mast7 counter-swing** - `MastORIGIN`'s subtree also holds the halyard rope (`RopeKnot`/
   `HalyardForeMast*`) and the weathervane flag (`FlagWrap`/`Flag`, see below), both of which run to fixed
   points and must NOT swing with the sail - but they hang off `Mast7`, a SIBLING of the sail/spar/pulley
@@ -464,7 +499,7 @@ systems, and couples the rest of the world to it:
   reference position (`summerness = cos(2π*(seasonRel - 0.597))`, times the poleward Z sign: N pole = -Z,
   S pole = +Z) and syncs it in `WindFieldState`. It is **globally uniform** because VS offsets southern-
   hemisphere seasons by half a year (`GetSeasonRel` returns `(YearRel+0.5)%1` there), so the hemisphere flip
-  and the season offset cancel - one reference sample is correct everywhere. Shows in `/dynamicwind debug`.
+  and the season offset cancel - one reference sample is correct everywhere. Shows in `/dwind debug`.
 - **Pressure dynamics** (evolved in `WindFieldSimulation`; nearly every rate/strength below is a hardcoded
   constant now, not config - see Conventions) - cells are a living field, not static gaussians:
   - **Advection** - each server tick a cell EASES its velocity toward the *local background wind*
@@ -479,7 +514,7 @@ systems, and couples the rest of the world to it:
   - **Altitude lapse** - `WindField.PressureAt(x,y,z,t)` adds a vertical term: real air pressure falls with
     height, read as "more low" (+), reaching +`AltitudePressureDrop` (default 0.5 = -50%) at the build ceiling,
     0 at/below sea level. Vertical-only, so it never alters wind - only the displayed/weather-coupled pressure
-    (map tint, `WeatherCoupling`, `/dynamicwind debug` all pass their Y). `SeaLevel`/`WorldHeight`/`MapCenterZ`
+    (map tint, `WeatherCoupling`, `/dwind debug` all pass their Y). `SeaLevel`/`WorldHeight`/`MapCenterZ`
     (= `MapSizeZ / 2`, now only a fallback for `PolewardZSign` before `LatitudeFunc` is wired - see "Real
     latitude" above) are set per side from world geometry, not synced.
 - **Directional steering** - a pressure cell's circulation keeps bending the ambient wind's DIRECTION well
@@ -527,7 +562,7 @@ systems, and couples the rest of the world to it:
 ## Axis convention
 
 `+X = East`, `+Z = South` (so North = -Z, West = -X). Jetstream base flow = +X. Bearing in
-`/dynamicwind debug` is `atan2(Z, X)` degrees: 0 = E, 90 = S, ±180 = W, -90 = N.
+`/dwind debug` is `atan2(Z, X)` degrees: 0 = E, 90 = S, ±180 = W, -90 = N.
 
 Because the map is north-up with +Z pointing *down* (south), the screen-CCW tangent is `(rz, -rx)`, so
 lows circulate **counter-clockwise** and highs **clockwise** (NH convention). Pressure-cell radii are
@@ -551,7 +586,7 @@ Three-class ModSystem split (modelled on `D:\satyrnidae\vs-balladeer-class`):
   `OnGetWindSpeed` hook (with a virtual orographic step).
 - `DynamicWindModServer` (`ShouldLoad => Server`) - owns `WindFieldSimulation`, is the authoritative
   config + field source, syncs both (on `PlayerJoin` and on change), applies the server Harmony patches
-  (windmill, sailboat) + `WeatherCoupling`, orographic via the sampler, and the `/dynamicwind` command.
+  (windmill, sailboat) + `WeatherCoupling`, orographic via the sampler, and the `/dwind` command.
   `WindFieldSimulation` itself runs on its own dedicated thread (`WindFieldSimulation.Start`/`Stop`,
   spun up via `TyronThreadPool.CreateDedicatedThread` once `SaveGameLoaded` fires), ticking independently
   of the main server tick - its per-cell math (advection, occlusion's O(n²) neighbour search,

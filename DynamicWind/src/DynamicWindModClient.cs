@@ -47,7 +47,7 @@ public class DynamicWindModClient : DynamicWindModCommon
         ClientChannel.SetMessageHandler<DynamicWindConfig>(OnConfigReceived);
         ClientChannel.SetMessageHandler<WindFieldState>(OnStateReceived);
 
-        // Sail trim diagnostics (".dynamicwindsail"). Trim itself now comes from Ctrl+A/D
+        // Sail trim diagnostics (".dwind sail" / ".dwind sailgraph"). Trim itself now comes from Ctrl+A/D
         // (SailboatWind.HandleCtrlTrim), read directly off synced EntityControls - no client input to wire up here.
         sailTrimInput = new SailTrimInput(api);
         sailTrimInput.Register();

@@ -1,4 +1,5 @@
 using System.Text;
+using DynamicWind.Client.Gui;
 using DynamicWind.Config;
 using DynamicWind.Entities;
 using Vintagestory.API.Client;
@@ -9,7 +10,7 @@ using Vintagestory.API.Config;
 namespace DynamicWind.Client;
 
 /// <summary>
-/// Client-side sail trim diagnostics (<c>.dynamicwindsail</c>). Trim input itself now comes from
+/// Client-side sail trim diagnostics (<c>.dwind sail</c>). Trim input itself now comes from
 /// <c>SailboatWind.HandleCtrlTrim</c> (Ctrl+A/D repurposing the tiller's own turn keys, read directly off
 /// synced <c>EntityControls</c> in the SeatsToMotion postfix) - the earlier hold-to-swing bracket-key
 /// hotkeys and their packet path were removed once that alternate control was confirmed working, since
@@ -19,6 +20,7 @@ namespace DynamicWind.Client;
 internal sealed class SailTrimInput
 {
     private readonly ICoreClientAPI capi;
+    private GuiDialogSailGraph? sailGraph;
 
     public SailTrimInput(ICoreClientAPI capi)
     {
@@ -27,12 +29,30 @@ internal sealed class SailTrimInput
 
     public void Register()
     {
-        // Client-side twin of `/dynamicwind sail`. The server command can only see the server's copy of
-        // the state; rendering happens here, so a sail that reports a moving angle yet visibly does not
-        // budge can only be diagnosed from this side. Invoked as ".dynamicwindsail".
-        capi.ChatCommands.Create("dynamicwindsail")
-            .WithDescription(Lang.Get("dynamicwind:command-sail-description"))
-            .HandleWith(_ => ClientDiagnostics());
+        // Client-side command tree, bundled under the same "dwind" root as the server's `/dwind` (see
+        // DynamicWindCommands) but invoked with "." since these are client-only (no round trip) - the
+        // client and server chat command registries are entirely separate, so the shared root name is
+        // just for parity, not a literal shared namespace.
+        capi.ChatCommands.Create("dwind")
+            .WithDescription(Lang.Get("dynamicwind:command-description"))
+            // Client-side twin of `/dwind sail`. The server command can only see the server's copy of the
+            // state; rendering happens here, so a sail that reports a moving angle yet visibly does not
+            // budge can only be diagnosed from this side. Invoked as ".dwind sail".
+            .BeginSubCommand("sail")
+                .WithDescription(Lang.Get("dynamicwind:command-sail-description"))
+                .HandleWith(_ => ClientDiagnostics())
+            .EndSubCommand()
+            // Live Cairo-drawn plot of the trim curve - see GuiDialogSailGraph. Built lazily on first
+            // toggle (not in the constructor) since most players will never open it.
+            .BeginSubCommand("sailgraph")
+                .WithDescription(Lang.Get("dynamicwind:command-sailgraph-description"))
+                .HandleWith(_ =>
+                {
+                    sailGraph ??= new GuiDialogSailGraph(capi);
+                    sailGraph.Toggle();
+                    return TextCommandResult.Success();
+                })
+            .EndSubCommand();
     }
 
     private TextCommandResult ClientDiagnostics()

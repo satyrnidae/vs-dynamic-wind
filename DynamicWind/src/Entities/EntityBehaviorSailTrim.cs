@@ -1,7 +1,6 @@
 using System;
 using DynamicWind.Config;
 using DynamicWind.Patches;
-using DynamicWind.WindSystem;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
@@ -21,13 +20,13 @@ namespace DynamicWind.Entities;
 /// target at the same configured rate, which keeps them converged without streaming the angle each tick.
 ///
 /// The swing itself is driven through a real shape <c>Animation</c> (<see cref="SwingAnimCode"/>, added by
-/// <c>patches/boat-sailed-shape.json</c>), scrubbed via <c>RunningAnimation.CurrentFrame</c> — exactly the
+/// <c>patches/boat-sailed-shape.json</c>), scrubbed via <c>RunningAnimation.CurrentFrame</c> - exactly the
 /// technique vanilla itself uses for the weathervane flag. The mast/yard/sail-root swing itself, and the
 /// billow effect, are hand-authored in the modelling tool (<c>tools/keyframegen/starting-point.json</c> is
 /// the checked-in export); <c>tools/keyframegen</c> only bakes the clew ropes' aim-and-stretch solve on top
 /// of that, since the authoring tool has no way to track a fixed hull anchor point through the swing.
 ///
-/// Trim works in ALL THREE sail positions — the source model includes clew ropes for the furled sail too.
+/// Trim works in ALL THREE sail positions - the source model includes clew ropes for the furled sail too.
 /// Trimming a furled sail produces no thrust, but that falls out for free: vanilla contributes no sail
 /// force at all at <c>sailPosition == 0</c>.
 /// </summary>
@@ -38,14 +37,14 @@ public class EntityBehaviorSailTrim : EntityBehavior
 
     /// <summary>Shape animation code (see <c>boat-sailed-shape.json</c>) for the mast/yard/sail-root swing
     /// plus the generated clew-rope keyframes. 180 frames (0..179), piecewise-linear in swing angle: frame
-    /// 0 = 90° (full port), frame 89 = 0° (dead ahead), frame 179 = −90° (full starboard) — see
+    /// 0 = 90° (full port), frame 89 = 0° (dead ahead), frame 179 = -90° (full starboard) - see
     /// <see cref="FrameForAngle"/>.</summary>
     public const string SwingAnimCode = "rotatesail";
 
-    /// <summary>Shape animation code (see <c>boat-sailed-shape.json</c>) for the sail-billow effect — two
+    /// <summary>Shape animation code (see <c>boat-sailed-shape.json</c>) for the sail-billow effect - two
     /// endpoint keyframes (0 = flat/rest, 99 = full billow) since the billow rotations are a plain linear
     /// function of intensity. Disjoint element set from <see cref="SwingAnimCode"/> (sail panels vs.
-    /// mast/yard/ropes), so the two animations run concurrently without conflict — same pattern vanilla
+    /// mast/yard/ropes), so the two animations run concurrently without conflict - same pattern vanilla
     /// itself uses to run several animations on one entity at once.</summary>
     public const string BillowAnimCode = "billowsail";
     private const float BillowMaxFrame = 99f;
@@ -60,7 +59,7 @@ public class EntityBehaviorSailTrim : EntityBehavior
 
     private bool warnedMissing;
 
-    /// <summary>Server-side trim intent: −1 to port, 0 idle, +1 to starboard. Set by the input packet.</summary>
+    /// <summary>Server-side trim intent: -1 to port, 0 idle, +1 to starboard. Set by the input packet.</summary>
     private sbyte trimIntent;
 
     public EntityBehaviorSailTrim(Entity entity) : base(entity) { }
@@ -70,10 +69,17 @@ public class EntityBehaviorSailTrim : EntityBehavior
     /// <summary>Eased sail angle in degrees, + = trimmed to starboard. What the thrust model reads.</summary>
     public float CurrentAngleDeg { get; private set; }
 
-    /// <summary>Eased 0..1 billow intensity — how full the sail looks. Computed independently on both
+    /// <summary>Eased 0..1 billow intensity - how full the sail looks. Computed independently on both
     /// sides from the same deterministic wind field + <see cref="CurrentAngleDeg"/>, same as the rest of
     /// this mod's client/server split, so no extra network traffic is needed for it.</summary>
     public float BillowIntensity { get; private set; }
+
+    /// <summary>The sail-thrust model's state for this boat, refreshed once per <see cref="OnGameTick"/> -
+    /// <see cref="UpdateBillow"/> reads it, and so does the <c>.dwind sailgraph</c> HUD when open, rather
+    /// than each independently re-running <c>SailboatWind.Evaluate</c>'s full <c>GetWindSpeedAt</c> call
+    /// (the whole <c>OnGetWindSpeed</c> hook chain - front excess, orographic, occlusion - not a cheap
+    /// read) on their own schedule. Default/invalid until the first gated tick below runs.</summary>
+    internal SailboatWind.SailState LastState { get; private set; }
 
     public float TargetAngleDeg
     {
@@ -81,7 +87,7 @@ public class EntityBehaviorSailTrim : EntityBehavior
         private set => entity.WatchedAttributes.SetFloat(SailAngleAttr, value);
     }
 
-    // Exposed for `/dynamicwind sail`, which needs to see each link of the chain to localise a fault.
+    // Exposed for `/dwind sail`, which needs to see each link of the chain to localise a fault.
     public sbyte TrimIntent => trimIntent;
     public bool SwingAnimationActive =>
         entity.AnimManager?.Animator != null && entity.AnimManager.IsAnimationActive(SwingAnimCode);
@@ -98,9 +104,9 @@ public class EntityBehaviorSailTrim : EntityBehavior
         // (RemoveElementByName) itself, entirely outside the engine's `shapeIsCloned` out-param that
         // Entity.OnTesselation uses to decide whether to rebuild the animator fresh (AnimationManager.
         // LoadAnimator) or reuse a cached one (AnimationCache.LoadAnimatorCached, keyed only by
-        // `entity.Code + shape base path` — NOT by sailPosition). Since EntityBoat's own clone never flips
+        // `entity.Code + shape base path` - NOT by sailPosition). Since EntityBoat's own clone never flips
         // that flag, every re-tessellation after the FIRST ever hits the cache and reuses whichever sail
-        // branch's RootPoses/RootElems got cached first — elements unique to any other branch (our
+        // branch's RootPoses/RootElems got cached first - elements unique to any other branch (our
         // per-branch clew ropes, billow's panel elements) then never receive a pose at all and render at
         // raw rest geometry. Force-clearing the cache on every sailPosition change makes the next
         // tessellation take the LoadAnimator (non-cached, correct) path instead.
@@ -127,7 +133,8 @@ public class EntityBehaviorSailTrim : EntityBehavior
         }
 
         Ease(dt);
-        UpdateBillow(dt, cfg);
+        LastState = entity is EntityBoat boat ? SailboatWind.Evaluate(boat) : default;
+        UpdateBillow(dt);
         Pose();
     }
 
@@ -140,33 +147,30 @@ public class EntityBehaviorSailTrim : EntityBehavior
     }
 
     /// <summary>
-    /// Eases <see cref="BillowIntensity"/> toward how squarely the wind currently fills the sail
-    /// (<c>lift</c> from <see cref="SailAlignment"/>, the same term the thrust model reads), scaled by
-    /// wind magnitude via the same <see cref="SailboatWind.SpeedFactor"/> the thrust model uses.
-    /// Deliberately <c>lift</c> alone, not <c>lift * drive</c>: billow is about how full the sail looks
-    /// from the wind hitting it, independent of whether that push happens to point where the boat is
-    /// going — a boat reaching across the wind should still show a full sail. Zero whenever furled
-    /// (<c>sailPosition == 0</c>, vanilla contributes no sail force there either) or wind is negligible.
+    /// Eases <see cref="BillowIntensity"/> toward a direct readout of
+    /// <see cref="SailboatWind.SailState.CombinedMult"/> - both terms, so wind speed still matters
+    /// (a becalmed but well-trimmed sail is a real, distinct situation from a filled one), just not the
+    /// ONLY thing that matters the way the old <c>lift * SpeedFactor(windSpeed)</c> calc made it. 0%
+    /// <c>CombinedMult</c> or below (badly trimmed and/or no wind) shows no billow; <c>BillowMaxMult</c>
+    /// (45%, deliberately 5 points below the model's realistic ~50% ceiling so a genuinely maxed-out sail
+    /// still visibly reads as "fully filled" rather than sitting just short of it) shows a fully filled
+    /// sail. Mapped through <c>sqrt</c> rather than linearly: a linear map made low-mult sails look
+    /// almost imperceptibly different from luffing, since most of a modestly-trimmed sail's usable range
+    /// sits in the bottom third of [0, 45%] - <c>sqrt</c> front-loads visible growth into that low range
+    /// and tapers off approaching the max, instead of spreading it out evenly. Zero whenever furled
+    /// (<c>sailPosition == 0</c>, vanilla contributes no sail force there either) or the legacy heading
+    /// model is active (no per-angle mult to read).
     /// </summary>
-    private void UpdateBillow(float dt, DynamicWindConfig cfg)
+    private const float BillowMaxMult = 0.45f;
+
+    private void UpdateBillow(float dt)
     {
         float target = 0f;
-        WindField? field = DynamicWindRuntime.FieldFor(entity.World.Side);
-        if (field != null && entity is EntityBoat boat && boat.WatchedAttributes.GetInt("sailPosition", 0) > 0)
+        if (entity is EntityBoat boat && boat.WatchedAttributes.GetInt("sailPosition", 0) > 0
+            && LastState.Valid && LastState.AngleModel)
         {
-            Vec3d pos = boat.Pos.XYZ;
-            Vec2d w = field.WindAt(pos.X, pos.Z, boat.World.Calendar.TotalHours);
-            double len = w.Length();
-            Vec3f vv = boat.Pos.GetViewVector();
-            double tx = -vv.X, tz = -vv.Z;
-            double tl = Math.Sqrt(tx * tx + tz * tz);
-            if (len >= 1e-6 && tl >= 1e-6)
-            {
-                tx /= tl; tz /= tl;
-                double wx = w.X / len, wz = w.Y / len;
-                (double lift, _) = SailboatWind.SailAlignment(boat, tx, tz, wx, wz);
-                target = (float)GameMath.Clamp(lift * SailboatWind.SpeedFactor(len), 0, 1);
-            }
+            float fraction = GameMath.Clamp((float)LastState.CombinedMult / BillowMaxMult, 0, 1);
+            target = (float)Math.Sqrt(fraction);
         }
 
         float step = BillowEaseRatePerSec * dt;
@@ -177,14 +181,14 @@ public class EntityBehaviorSailTrim : EntityBehavior
     /// <summary>Flips which physical side <see cref="CurrentAngleDeg"/>'s sign swings the sail toward.
     /// <c>CurrentAngleDeg</c> is defined as "+ = trimmed to starboard" by <see cref="SailboatWind"/>'s own
     /// convention; the source model's swing animation defines frame 0 as full port (+90°) and frame 179 as
-    /// full starboard (−90°) — i.e. the model's own angle parameter runs the OPPOSITE sign from
+    /// full starboard (-90°) - i.e. the model's own angle parameter runs the OPPOSITE sign from
     /// <c>CurrentAngleDeg</c>. Flip this if the sail is ever found visually swinging to the wrong side
     /// in-game.</summary>
     private const bool MirrorTrimDirection = true;
 
-    /// <summary>Maps <see cref="CurrentAngleDeg"/> (−90 port .. +90 starboard) to a frame on
+    /// <summary>Maps <see cref="CurrentAngleDeg"/> (-90 port .. +90 starboard) to a frame on
     /// <see cref="SwingAnimCode"/>, the exact inverse of that animation's own three authored keyframes
-    /// (frame 0 = +90, frame 89 = 0, frame 179 = −90) — see <c>tools/keyframegen/Program.cs</c>'s
+    /// (frame 0 = +90, frame 89 = 0, frame 179 = -90) - see <c>tools/keyframegen/Program.cs</c>'s
     /// <c>AngleForFrame</c>, which this must stay the algebraic inverse of.</summary>
     private static float FrameForAngle(float angleDeg)
     {
@@ -195,7 +199,7 @@ public class EntityBehaviorSailTrim : EntityBehavior
     }
 
     /// <summary>
-    /// Scrubs the baked swing animation to the current angle. Safe to call every tick on both sides —
+    /// Scrubs the baked swing animation to the current angle. Safe to call every tick on both sides -
     /// scrubbing <c>CurrentFrame</c> has no ordering dependency on the animator's own per-frame blend,
     /// unlike a live pose write, so it doesn't matter whether this runs before or after that frame's blend,
     /// only before the next one.
@@ -203,17 +207,17 @@ public class EntityBehaviorSailTrim : EntityBehavior
     private void Pose()
     {
         // AnimationManager.GetAnimationState/StartAnimation/IsAnimationActive dereference Animator with no
-        // null check of their own, and Animator stays null until the entity's first tessellation — an
+        // null check of their own, and Animator stays null until the entity's first tessellation - an
         // early OnGameTick (right after spawn/chunk load) would otherwise crash here.
         IAnimationManager? animManager = entity.AnimManager;
         if (animManager?.Animator == null) return;
 
         // GetAnimationState looks up the animator's static table of every animation the SHAPE defines, so
-        // it returns non-null forever once the animator exists — regardless of whether this animation is
+        // it returns non-null forever once the animator exists - regardless of whether this animation is
         // actually active. Checking that for "already started" (as an earlier version of this did) means
         // StartAnimation only ever fires once, on the very first tick, and never again if the animation
         // is ever deactivated (e.g. a re-tessellation rebuilds the animator with fresh, inactive
-        // RunningAnimation objects). IsAnimationActive checks the real active-state flag instead — this is
+        // RunningAnimation objects). IsAnimationActive checks the real active-state flag instead - this is
         // the exact pattern vanilla's own EntityBoat.OnRenderFrame uses to keep the weathervane running.
         if (!animManager.IsAnimationActive(SwingAnimCode))
         {
@@ -238,7 +242,7 @@ public class EntityBehaviorSailTrim : EntityBehavior
         state.EasingFactor = 1f;
 
         // Billow runs as a second, independent animation on a disjoint element set (sail panels, not
-        // mast/yard/ropes) — no mirroring needed, it's a plain 0..1 intensity, not a signed swing angle.
+        // mast/yard/ropes) - no mirroring needed, it's a plain 0..1 intensity, not a signed swing angle.
         if (!animManager.IsAnimationActive(BillowAnimCode))
         {
             animManager.StartAnimation(BillowAnimCode);
@@ -264,12 +268,16 @@ public class EntityBehaviorSailTrim : EntityBehavior
         TargetAngleDeg = value;
     }
 
-    /// <summary>Server-side: set the held trim direction for this boat.</summary>
+    /// <summary>
+    /// Server-side: set the held trim direction for this boat, from <c>SailboatWind.HandleCtrlTrim</c>
+    /// (Ctrl+A/D repurposing the tiller's own turn keys - the only input path now, after the earlier
+    /// bracket-key hotkeys/packet were removed once this was confirmed working).
+    /// </summary>
     public void SetTrimIntent(sbyte dir) => trimIntent = (sbyte)Math.Sign(dir);
 
     /// <summary>Server-side: nudge the sail by one configured step, as the clew-knot boxes do. Uses the
     /// selection-box step (not the keyboard's per-tick <see cref="SailboatTrimStepDeg"/>) since
-    /// <see cref="OnInteract"/> only fires once every few ticks, not every tick — sized so, combined
+    /// <see cref="OnInteract"/> only fires once every few ticks, not every tick - sized so, combined
     /// with <see cref="Ease"/>'s constant-rate catch-up, both input methods converge on the same
     /// effective trim speed.</summary>
     public void StepTrim(int dir)
@@ -321,7 +329,7 @@ public class EntityBehaviorSailTrim : EntityBehavior
         MouseButton = EnumMouseButton.Right,
     };
 
-    /// <summary>−1 if the player is looking at the port sheet's knot, +1 for starboard, 0 for neither.</summary>
+    /// <summary>-1 if the player is looking at the port sheet's knot, +1 for starboard, 0 for neither.</summary>
     private int SheetDirection(EntityAgent byEntity)
     {
         EntityBehaviorSelectionBoxes? boxes = entity.GetBehavior<EntityBehaviorSelectionBoxes>();
