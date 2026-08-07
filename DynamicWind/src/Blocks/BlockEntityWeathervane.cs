@@ -86,7 +86,7 @@ public class BlockEntityWeathervane : BlockEntity
 
     public override bool OnTesselation(ITerrainMeshPool mesher, ITesselatorAPI tessThreadTesselator)
     {
-        if (baseMesh == null) return false; // not ready yet → let the full shape bake once
+        if (baseMesh == null) return false; // not ready yet -> let the full shape bake once
         mesher.AddMeshData(baseMesh);
         return true; // skip default (excludes the rotating arrow from the static mesh)
     }

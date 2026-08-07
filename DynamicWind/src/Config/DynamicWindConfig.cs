@@ -81,7 +81,7 @@ public class DynamicWindConfig
     [Description("description-SailboatEnabled")]
     public bool SailboatEnabled { get; set; } = true;
 
-    // Trimmable sail. Off → thrust falls back to the older heading-vs-wind alignment curve
+    // Trimmable sail. Off -> thrust falls back to the older heading-vs-wind alignment curve
     // and the sail never leaves square.
     [Description("description-SailboatSailAngleEnabled")]
     public bool SailboatSailAngleEnabled { get; set; } = true;

@@ -20,8 +20,8 @@ internal static class WindCompass
     {
         if (windX * windX + windZ * windZ < 1e-8) return Lang.Get("dynamicwind:direction-calm");
 
-        // atan2(Z,X): 0=E,90=S,±180=W,-90=N (this repo's bearing convention). Compass bearing (0=N,90=E,...)
-        // = local + 90.
+        // atan2(Z,X): 0=E,90=S,+/-180=W,-90=N (this repo's bearing convention). Compass bearing
+        // (0=N,90=E,...) = local + 90.
         double compassDeg = (Math.Atan2(windZ, windX) * GameMath.RAD2DEG + 90 + 360) % 360;
         int idx = (int)Math.Round(compassDeg / 45.0) % 8;
         return Lang.Get("dynamicwind:direction-" + Dirs8Keys[idx]);

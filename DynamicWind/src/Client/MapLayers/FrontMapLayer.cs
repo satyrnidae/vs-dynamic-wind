@@ -13,30 +13,29 @@ using Vintagestory.GameContent;
 namespace DynamicWind.Client.MapLayers;
 
 /// <summary>
-/// Synoptic weather-front overlay (world map only, not the minimap). Draws the classic surface-analysis
-/// symbols derived from the synced pressure field by <see cref="FrontComputer"/>: an "H"/"L" letter for
-/// each pressure system (at its true centre when that's on-screen; otherwise clamped to the system's OWN
-/// elliptical edge toward the viewport - <see cref="Utils.EllipseGeometry.RadiusToward(double,double,double,double,double)"/>,
-/// the same boundary a front's own leading-edge arc traces - never drawn at all if even that edge is
-/// off-screen, since cell radii are now large enough that a system's centre routinely sits off the visible
-/// map, and the icon must never read as further "ahead" of the system than its actual influence reaches),
-/// drawn BEHIND everything else so it never covers the front geometry it labels, and a procedurally drawn
-/// contour around each system - a single connecting line for a near-stationary/occluded system, or (a
-/// moving open-wave low) BOTH a warm front leading ahead of its travel direction and a cold front trailing
-/// behind it, each tilted toward its real-world side (warm poleward, cold equatorward - see
-/// <see cref="FrontComputer"/>) so together they read as the classic Norwegian-cyclone "comma" shape.
-/// Each front is drawn as two independent
-/// passes: a continuous stroke that bridges every true fine-sampled segment of the curve (so the line
-/// always follows the curve exactly, however sharply it bends - no more angle-lerped icon tiles
-/// gapping/overlapping at sharp bends), and a periodic decoration pass (triangles for cold, hemicircles for
-/// warm, alternating for stationary/generic-occluded) stamped at even on-screen arc-length spacing, both
-/// colored per <see cref="FrontColors"/>. Also draws isobars (<see cref="ComputeIsobars"/>) as faint
-/// marching-squares contour segments behind everything else - real-chart-style constant-pressure lines
-/// traced over the WHOLE combined pressure field across the visible viewport (highs included, unlike
-/// fronts), tinted the same low/high colors as the wind arrows. Toggle via the map legend.
+/// Synoptic weather-front overlay (world map only, not the minimap). Draws surface-analysis symbols from
+/// the synced pressure field via <see cref="FrontComputer"/>: an "H"/"L" letter per system (at its true
+/// centre when on-screen, else clamped to the system's own elliptical edge toward the viewport - see
+/// <see cref="Utils.EllipseGeometry.RadiusToward(double,double,double,double,double)"/>, the same boundary
+/// a front's leading-edge arc traces, and skipped entirely if even that edge is off-screen - cell radii
+/// are large enough that a centre routinely sits off-map, and the icon must never read as further "ahead"
+/// than the system's actual influence reaches), drawn BEHIND the front geometry it labels, and a
+/// procedural contour per system - one line for a near-stationary/occluded system, or (a moving open-wave
+/// low) both a warm front leading its travel direction and a cold front trailing it, each tilted toward
+/// its real-world side (warm poleward, cold equatorward - see <see cref="FrontComputer"/>) forming the
+/// classic Norwegian-cyclone "comma" shape. Each front draws as two passes: a continuous stroke bridging
+/// every fine-sampled segment (so it tracks the curve exactly, however sharply it bends, unlike
+/// angle-lerped icon tiles which gap/overlap at sharp bends), and a periodic decoration pass (triangles
+/// cold, hemicircles warm, alternating for stationary/generic-occluded) at even on-screen arc-length
+/// spacing, colored per <see cref="FrontColors"/>. Also draws isobars (<see cref="ComputeIsobars"/>) as
+/// faint marching-squares contours behind everything else - real-chart constant-pressure lines over the
+/// WHOLE combined pressure field across the viewport (highs included, unlike fronts), tinted like the wind
+/// arrows. Toggle via the map legend.
 /// </summary>
 public class FrontMapLayer : DynamicWindWorldMapLayerBase
 {
+    #region Constants and Fields
+
     private const float TilePx = 32f;     // on-screen spacing between decorations (and stroke/decoration color alternation)
     private const float MarkerPx = 48f;   // on-screen size of an H/L letter
     private const float LineWidthPx = 4f;       // stroke width
@@ -47,11 +46,10 @@ public class FrontMapLayer : DynamicWindWorldMapLayerBase
     private const float IsobarAlphaStep = 0.04f; // opacity reduction per ring outward from the innermost
     private const float IsobarMinAlpha = 0.12f;
 
-    // Isobar grid: traced over the whole visible viewport (unlike the overlap-aware front-line fallback's
-    // small LOCAL grid - see FrontComputer.BuildFrontLineViaOverlap), since isobars need to cover
-    // potentially huge, mostly-empty areas efficiently. Coarsened exactly like DopplerRadarMapLayer's own
-    // grid (fixed base step, doubled whenever the visible area would exceed the cell budget) so resolution
-    // scales down automatically when zoomed out.
+    // Isobar grid spans the whole visible viewport (unlike the overlap-aware front-line fallback's small
+    // LOCAL grid - see FrontComputer.BuildFrontLineViaOverlap), since isobars must cover potentially huge,
+    // mostly-empty areas cheaply. Coarsened like DopplerRadarMapLayer's grid: fixed base step, doubled
+    // whenever the visible area would exceed the cell budget, so resolution auto-scales down when zoomed out.
     private const double IsobarGridBaseStep = 512.0;
     private const int IsobarGridMaxCells = 4000;
     private const double IsobarStep = 0.2;    // fixed absolute pressure spacing - real-chart style (see remarks below)
@@ -103,6 +101,10 @@ public class FrontMapLayer : DynamicWindWorldMapLayerBase
         }
     }
 
+    #endregion
+
+    #region Lifecycle
+
     public FrontMapLayer(ICoreAPI api, IWorldMapManager mapSink) : base(api, mapSink) { }
 
     public override string Title => Lang.Get("game:maplayer-dynamicwindfronts");
@@ -125,6 +127,10 @@ public class FrontMapLayer : DynamicWindWorldMapLayerBase
     }
 
     private int Tex(string name) => capi!.Render.GetOrLoadTexture(new AssetLocation("dynamicwind", "textures/icons/" + name + ".png"));
+
+    #endregion
+
+    #region Style Helpers
 
     /// <summary>Picks the stroke/decoration color and decoration shape for a given front type at a given
     /// decoration tile index (used to alternate Stationary/generic-Occluded fronts between cold- and
@@ -159,6 +165,10 @@ public class FrontMapLayer : DynamicWindWorldMapLayerBase
                 break;
         }
     }
+
+    #endregion
+
+    #region Rendering
 
     public override void Render(GuiElementMap mapElem, float dt)
     {
@@ -212,14 +222,13 @@ public class FrontMapLayer : DynamicWindWorldMapLayerBase
             capi.Render.RenderMesh(quad);
         }
 
-        // H / L letters, drawn BEHIND the front lines/decorations below. With cell radii now large enough
-        // to routinely push a system's true centre off the visible map, an off-screen marker falls back to
-        // the system's OWN elliptical edge (toward the viewport) - the same boundary a front's own
-        // leading-edge arc traces (FrontComputer.BuildLeadingEdgeArc) - rather than an arbitrary on-screen
-        // position: the icon must never read as further "ahead" (advected past the player) than the
-        // system's actual influence has reached. If even that edge is off-screen, the marker isn't drawn
-        // at all. Drawing markers first, under the front geometry, also keeps this fallback placement from
-        // ever covering the very front pips/strokes it's meant to be labelling.
+        // H / L letters, drawn BEHIND the front lines/decorations below. Cell radii are now large enough
+        // to routinely push a system's true centre off-map, so an off-screen marker falls back to the
+        // system's OWN elliptical edge toward the viewport (the same boundary a front's leading-edge arc
+        // traces - FrontComputer.BuildLeadingEdgeArc), not an arbitrary on-screen position: the icon must
+        // never read as further "ahead" than the system's actual influence reaches. If even that edge is
+        // off-screen, skip the marker. Drawing markers first (under the front geometry) keeps this
+        // fallback placement from covering the pips/strokes it labels.
         shader.Uniform("rgbaIn", White);
         float mHalf = MarkerPx * 0.5f;
         for (int mi = 0; mi < markers.Count; mi++)
@@ -262,11 +271,11 @@ public class FrontMapLayer : DynamicWindWorldMapLayerBase
             if (curveLen < 1e-3) continue;
             double lenPx = curveLen * scaleX;
 
-            // Walk the curve finely (world space -> screen space) so the on-screen polyline stays smooth
-            // at any zoom level and decorations (Pass B) can be placed at even ACTUAL on-screen arc-length
-            // spacing regardless of how the underlying (now purely elliptical, no added wobble - see
-            // FrontComputer.BuildLeadingEdgeArc) control points happen to be distributed. The stroke pass
-            // below draws directly between these fine samples, so it always tracks the true curve exactly.
+            // Walk the curve finely (world -> screen space) so the polyline stays smooth at any zoom and
+            // decorations (Pass B) land at even ACTUAL on-screen arc-length spacing regardless of how the
+            // underlying control points (purely elliptical, no wobble - see
+            // FrontComputer.BuildLeadingEdgeArc) are distributed. The stroke pass draws directly between
+            // these fine samples, so it always tracks the true curve.
             int nFine = (int)Math.Clamp(Math.Ceiling(lenPx / (TilePx * 0.5)), 32, 3000);
 
             while (scratch.Count <= li) scratch.Add(new LineScratch());
@@ -327,7 +336,7 @@ public class FrontMapLayer : DynamicWindWorldMapLayerBase
             // arc length. Always drawn exactly perpendicular to the on-screen line AT the symbol's own
             // midpoint - the angle comes straight from that segment's screen-space tangent (same source
             // Pass A's stroke uses), not interpolated between the two bracketing fine samples' facing
-            // angles, which could drift off 90° wherever the curve bends between them. The tangent's two
+            // angles, which could drift off 90deg wherever the curve bends between them. The tangent's two
             // possible perpendiculars are disambiguated by whichever is closer to the (interpolated)
             // FrontComputer.ChooseFacing direction, preserving the correct "outward"/travel-direction
             // sense - for a full loop that's outward; for a Warm/Cold open curve it's whichever
@@ -371,6 +380,10 @@ public class FrontMapLayer : DynamicWindWorldMapLayerBase
         }
     }
 
+    #endregion
+
+    #region Resampling and Isobar Computation
+
     protected override void Resample(GuiElementMap mapElem)
     {
         WindField? field = DynamicWindRuntime.ClientField;
@@ -382,15 +395,14 @@ public class FrontMapLayer : DynamicWindWorldMapLayerBase
 
     /// <summary>
     /// Traces constant-pressure contours across the WHOLE visible viewport via <see cref="MarchingSquares"/>
-    /// over the actual combined field (<see cref="WindField.CellPressureAt(double,double,double)"/>,
-    /// cells only - no terrain-thermal baseline, matching the front lines' own convention). This is
-    /// unconditionally the marching-squares path (unlike front lines, which only fall back to it when two
-    /// cells overlap - see FrontComputer.BuildFrontLine): isobars are a whole-field visualization, not a
-    /// single system's own boundary, so there's no cheaper single-cell analytic shortcut available here in
-    /// the first place. Real-chart style: a FIXED absolute pressure step (<see cref="IsobarStep"/>) means a
-    /// weak system shows one or two widely-spaced rings and a strong one shows many tightly-packed ones -
+    /// over the actual combined field (<see cref="WindField.CellPressureAt(double,double,double)"/>, cells
+    /// only - no terrain-thermal baseline, matching the front lines' convention). Unconditionally the
+    /// marching-squares path (unlike front lines, which only fall back to it on cell overlap - see
+    /// FrontComputer.BuildFrontLine): isobars are a whole-field visualization with no single-cell analytic
+    /// shortcut available. Real-chart style: a FIXED absolute pressure step (<see cref="IsobarStep"/>) means
+    /// a weak system shows one or two widely-spaced rings and a strong one shows many tightly-packed ones -
     /// that density variation is a feature, not something to normalize away. Grid resolution is coarsened
-    /// exactly like DopplerRadarMapLayer's own grid so it stays cheap at any zoom.
+    /// like DopplerRadarMapLayer's own grid so it stays cheap at any zoom.
     /// </summary>
     private void ComputeIsobars(WindField field, Cuboidd vb, double totalHours)
     {
@@ -446,6 +458,10 @@ public class FrontMapLayer : DynamicWindWorldMapLayerBase
         }
     }
 
+    #endregion
+
+    #region Lifecycle
+
     public override void Dispose()
     {
         quad?.Dispose();
@@ -455,4 +471,6 @@ public class FrontMapLayer : DynamicWindWorldMapLayerBase
         semiMesh?.Dispose();
         semiMesh = null;
     }
+
+    #endregion
 }

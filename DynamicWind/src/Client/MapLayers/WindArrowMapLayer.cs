@@ -11,22 +11,24 @@ using Vintagestory.GameContent;
 namespace DynamicWind.Client.MapLayers;
 
 /// <summary>
-/// World-map overlay (full map only, NOT the minimap HUD) that draws wind direction as a fixed 24x24
-/// grid of arrows across the map element. Each arrow takes exactly one sample per cell, at its world
-/// midpoint (player Y): vanilla's raw wind noise via <c>WeatherSystemBase.WeatherDataSlowAccess.GetWindSpeed</c>,
-/// fed through <see cref="DynamicWindModCommon.ComputeWindSpeed"/> with <c>applyOcclusion: false</c> - the
-/// same true directional speed <c>GetWindSpeedAt</c> would give, minus its indoor/underground occlusion
-/// check (room-registry flood fill + light lookups), which is both meaningless at this scale (a regional
-/// overview arrow isn't "indoors") and the single biggest per-sample cost once many of the 576 cells land
-/// in chunks that happen to be loaded/cached. Requires chunk-loaded map region data (<see cref="RequireChunkLoaded"/>),
-/// same as the underlying vanilla wind-speed reader.
+/// World-map overlay (full map only, NOT the minimap HUD) drawing wind direction as a fixed 24x24 grid of
+/// arrows. Each arrow samples once per cell, at its world midpoint (player Y): vanilla's raw wind noise via
+/// <c>WeatherSystemBase.WeatherDataSlowAccess.GetWindSpeed</c>, fed through
+/// <see cref="DynamicWindModCommon.ComputeWindSpeed"/> with <c>applyOcclusion: false</c> - the same true
+/// directional speed <c>GetWindSpeedAt</c> gives, minus the indoor/underground occlusion check (room-registry
+/// flood fill + light lookups), which is meaningless at this scale (a regional overview arrow isn't
+/// "indoors") and is the single biggest per-sample cost once many of the 576 cells land in loaded chunks.
+/// Requires chunk-loaded map region data (<see cref="RequireChunkLoaded"/>), same as the underlying vanilla
+/// wind-speed reader.
 ///
-/// The arrow's length (its vertical axis) scales logarithmically with wind speed so low speeds stay
-/// legible (base footprint = half a grid cell); cells with no wind are hidden. Samples are recomputed a
-/// few times per second and cached, so the per-frame cost stays low.
+/// Arrow length scales logarithmically with wind speed so low speeds stay legible (base footprint = half a
+/// grid cell); cells with no wind are hidden. Samples are recomputed a few times per second and cached, so
+/// per-frame cost stays low.
 /// </summary>
 public class WindArrowMapLayer : DynamicWindWorldMapLayerBase
 {
+    #region Grid Setup
+
     public const int Grid = 24;
     private const double RefSpeed = 1.0;       // wind speed treated as "100%"
 
@@ -69,6 +71,10 @@ public class WindArrowMapLayer : DynamicWindWorldMapLayerBase
         arrowTexId = capi.Render.GetOrLoadTexture(new AssetLocation("dynamicwind", "textures/icons/wind-direction.png"));
         RestoreActiveState(cfg?.WindDirectionMapLayerVisibleByDefault ?? false); // hidden by default; the map legend can still toggle it
     }
+
+    #endregion
+
+    #region Rendering
 
     public override void Render(GuiElementMap mapElem, float dt)
     {
@@ -117,7 +123,11 @@ public class WindArrowMapLayer : DynamicWindWorldMapLayerBase
         }
     }
 
-    /// <summary>Fixed screen slot (row,col) → nearest cell index in the world grid cached at the last
+    #endregion
+
+    #region Sampling and Caching
+
+    /// <summary>Fixed screen slot (row,col) -> nearest cell index in the world grid cached at the last
     /// Resample. If the cached bounds are degenerate (first frame), falls back to the same slot.</summary>
     private int NearestCachedIndex(int row, int col, Cuboidd vb, double cvbSpanX, double cvbSpanZ)
     {
@@ -176,7 +186,7 @@ public class WindArrowMapLayer : DynamicWindWorldMapLayerBase
                 cAngle[idx] = (float)Math.Atan2(w.X, -w.Z);
                 cVScale[idx] = (float)vfrac;
 
-                // Pressure tint: low (+) → crimson, high (-) → sky blue, neutral → white. The map is a
+                // Pressure tint: low (+) -> crimson, high (-) -> sky blue, neutral -> white. The map is a
                 // horizontal slice, so we use the 2D field WITHOUT the vertical altitude lapse (which is
                 // a per-Y effect - adding it here just washes every tile by a constant playerY offset).
                 double p = field?.PressureAt(wx, wz, th) ?? 0.0;
@@ -187,6 +197,8 @@ public class WindArrowMapLayer : DynamicWindWorldMapLayerBase
             }
         }
     }
+
+    #endregion
 
     public override void Dispose()
     {

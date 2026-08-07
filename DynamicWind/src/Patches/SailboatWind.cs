@@ -24,6 +24,8 @@ namespace DynamicWind.Patches;
 /// </summary>
 internal static class SailboatWind
 {
+    #region Constants
+
     // Former DynamicWindConfig tunables, now fixed constants (see DynamicWindConfig's class remarks).
     private const float SailboatTailwindMaxBoost = 0.5f;
     private const float SailboatHeadwindMaxPenalty = 0.1f;
@@ -35,11 +37,15 @@ internal static class SailboatWind
     private const float SailboatWindBoostBase = 0.15f;
 
     // Sail-angle term: +SailboatAngleBoostMax at pure tailwind, -SailboatAngleBoostMax at pure headwind,
-    // 0 at pure crosswind. The headwind→crosswind half additionally overshoots to a "tacking" peak via
+    // 0 at pure crosswind. The headwind->crosswind half additionally overshoots to a "tacking" peak via
     // SailboatTackBonusCoefficient (see AngleBoost below) - swiveling off dead headwind rewards trim before
     // the boost settles back to 0 at crosswind, matching how a helmsman actually recovers ground upwind.
     private const float SailboatAngleBoostMax = 0.25f;
     private const float SailboatTackBonusCoefficient = 1.05f;
+
+    #endregion
+
+    #region Harmony Patch Entry Point
 
     public static void Apply(Harmony harmony, ILogger logger)
     {
@@ -118,8 +124,12 @@ internal static class SailboatWind
             : LegacyFactor(tx, tz, wx, wz);
     }
 
+    #endregion
+
+    #region Trim Control Input
+
     /// <summary>
-    /// Trim control: holding Ctrl repurposes the tiller's own turn keys (A/D → <c>EntityControls.Left
+    /// Trim control: holding Ctrl repurposes the tiller's own turn keys (A/D -> <c>EntityControls.Left
     /// /Right</c>) to swing the sail instead of the hull. Reads <c>EntityBehaviorSeatable.ControllingControls</c>
     /// - the same synced, server-authoritative control state vanilla's own SeatsToMotion already used just
     /// above to compute <paramref name="__result"/>'s turn term - rather than a dedicated hotkey/packet, so
@@ -149,6 +159,10 @@ internal static class SailboatWind
         trim.SetTrimIntent(dir);
     }
 
+    #endregion
+
+    #region Wind and Angle Boost Calculation
+
     /// <summary>
     /// Thrust multiplier on vanilla's constant sail force: <c>1 + windBoost + angleBoost</c>, the two terms
     /// entirely independent of each other and of boat travel direction.
@@ -159,8 +173,8 @@ internal static class SailboatWind
     ///
     /// <c>angleBoost</c> is a function of <c>cosGamma</c> alone - the alignment between the wind and the
     /// sail's own normal (<see cref="SailNormal"/>), independent of where the boat is actually heading:
-    /// +25% at pure tailwind, -25% at pure headwind, 0% at pure crosswind. The crosswind→tailwind half is a
-    /// plain ramp between those two anchors. The headwind→crosswind half is NOT a plain ramp: swiveling off
+    /// +25% at pure tailwind, -25% at pure headwind, 0% at pure crosswind. The crosswind->tailwind half is a
+    /// plain ramp between those two anchors. The headwind->crosswind half is NOT a plain ramp: swiveling off
     /// dead headwind rewards trim with a "tacking" bonus that peaks near +15% - well above both of that
     /// half's own endpoints - before settling back down to 0% at crosswind, via a parabola
     /// (<c>K*s*(1-s)</c>) that vanishes at both ends by construction regardless of <c>K</c>, so the -25%
@@ -210,6 +224,10 @@ internal static class SailboatWind
         double s = -cosGamma; // 0 at crosswind, 1 at dead headwind
         return -SailboatAngleBoostMax * s + SailboatTackBonusCoefficient * s * (1.0 - s);
     }
+
+    #endregion
+
+    #region Diagnostics Snapshot (Evaluate)
 
     /// <summary>Live snapshot of the sail-thrust model for a mounted boat - a general-purpose readout, not
     /// just for diagnostics: both the trim graph (<c>.dwind sailgraph</c>) AND
@@ -275,12 +293,16 @@ internal static class SailboatWind
         return new SailState(true, len, cosGamma, WindBoost(len), AngleBoost(cosGamma), sailPosition, true);
     }
 
+    #endregion
+
+    #region Shared Helpers
+
     /// <summary>Sail normal = hull forward axis rotated by the current trim angle about Y. Zero trim points
     /// the sail dead ahead; the sign convention matches <see cref="EntityBehaviorSailTrim.CurrentAngleDeg"/>
     /// (+ = trimmed to starboard).</summary>
     private static (double nx, double nz) SailNormal(EntityBoat boat, double tx, double tz)
     {
-        // No behaviour → an unpatched or third-party boat whose sail cannot swing; treat it as square.
+        // No behaviour -> an unpatched or third-party boat whose sail cannot swing; treat it as square.
         double angle = (boat.GetBehavior<EntityBehaviorSailTrim>()?.CurrentAngleDeg ?? 0f) * GameMath.DEG2RAD;
         double cos = Math.Cos(angle);
         double sin = Math.Sin(angle);
@@ -304,4 +326,6 @@ internal static class SailboatWind
             ? SailboatTailwindMaxBoost * align
             : SailboatHeadwindMaxPenalty * align);
     }
+
+    #endregion
 }

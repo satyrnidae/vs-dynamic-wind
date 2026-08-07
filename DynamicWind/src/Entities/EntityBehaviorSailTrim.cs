@@ -11,8 +11,8 @@ using Vintagestory.GameContent;
 namespace DynamicWind.Entities;
 
 /// <summary>
-/// Makes a sailboat's yard trimmable: the sail swings from 90° to port, through square-astern, to 90° to
-/// starboard, and the thrust the boat gets from the wind follows from how the wind meets the SAIL rather
+/// Makes a sailboat's yard trimmable: the sail swings from 90deg to port, through square-astern, to 90deg
+/// to starboard, and the thrust the boat gets from the wind follows from how the wind meets the SAIL rather
 /// than merely the hull (see <c>Patches/SailboatWind</c>).
 ///
 /// The target angle lives in <c>WatchedAttributes</c>, so it is server-authoritative, synced to every
@@ -32,12 +32,14 @@ namespace DynamicWind.Entities;
 /// </summary>
 public class EntityBehaviorSailTrim : EntityBehavior
 {
+    #region Constants and Fields
+
     public const string Code = "dynamicwindsailtrim";
     public const string SailAngleAttr = "dynamicwind:sailAngle";
 
     /// <summary>Shape animation code (see <c>boat-sailed-shape.json</c>) for the mast/yard/sail-root swing
     /// plus the generated clew-rope keyframes. 180 frames (0..179), piecewise-linear in swing angle: frame
-    /// 0 = 90° (full port), frame 89 = 0° (dead ahead), frame 179 = -90° (full starboard) - see
+    /// 0 = 90deg (full port), frame 89 = 0deg (dead ahead), frame 179 = -90deg (full starboard) - see
     /// <see cref="FrameForAngle"/>.</summary>
     public const string SwingAnimCode = "rotatesail";
 
@@ -52,17 +54,21 @@ public class EntityBehaviorSailTrim : EntityBehavior
     private const float BillowEaseRatePerSec = 1.5f;
 
     private const float SailboatTrimStepDeg = 1.0f;
-    private const float SailboatSelectionBoxTrimStepDeg = SailboatTrimStepDeg * 6; // selection boxes only trigger about once every six frames
+    private const float SailboatSelectionBoxTrimStepDeg = SailboatTrimStepDeg * 6; // selection boxes fire about once every six frames
 
-    // SelectionBox and keyboard movement should both use the same interpolation rate, so that the player sees the same trim speed regardless of which input method they use.
-    private const float SailboatTrimRateDegPerSec = SailboatTrimStepDeg * 30f; // 15°/sec at 30 ticks/sec, same as the old ClewRopeRig
+    // SelectionBox and keyboard input share this rate so trim speed feels the same regardless of input method.
+    private const float SailboatTrimRateDegPerSec = SailboatTrimStepDeg * 30f; // 15deg/sec at 30 ticks/sec, same as the old ClewRopeRig
 
     private bool warnedMissing;
 
     /// <summary>Server-side trim intent: -1 to port, 0 idle, +1 to starboard. Set by the input packet.</summary>
     private sbyte trimIntent;
 
+    #endregion
+
     public EntityBehaviorSailTrim(Entity entity) : base(entity) { }
+
+    #region Properties
 
     public override string PropertyName() => Code;
 
@@ -94,6 +100,10 @@ public class EntityBehaviorSailTrim : EntityBehavior
 
     private DynamicWindConfig? Config => DynamicWindRuntime.ConfigFor(entity.World.Side);
 
+    #endregion
+
+    #region Lifecycle
+
     public override void Initialize(EntityProperties properties, JsonObject attributes)
     {
         base.Initialize(properties, attributes);
@@ -117,6 +127,10 @@ public class EntityBehaviorSailTrim : EntityBehavior
     {
         if (entity.Api != null) AnimationCache.ClearCache(entity.Api, entity);
     }
+
+    #endregion
+
+    #region Angle Easing and Sync
 
     public override void OnGameTick(float dt)
     {
@@ -146,20 +160,21 @@ public class EntityBehaviorSailTrim : EntityBehavior
         CurrentAngleDeg += Math.Abs(delta) <= step ? delta : Math.Sign(delta) * step;
     }
 
+    #endregion
+
+    #region Sail Billow
+
     /// <summary>
-    /// Eases <see cref="BillowIntensity"/> toward a direct readout of
-    /// <see cref="SailboatWind.SailState.CombinedMult"/> - both terms, so wind speed still matters
-    /// (a becalmed but well-trimmed sail is a real, distinct situation from a filled one), just not the
-    /// ONLY thing that matters the way the old <c>lift * SpeedFactor(windSpeed)</c> calc made it. 0%
-    /// <c>CombinedMult</c> or below (badly trimmed and/or no wind) shows no billow; <c>BillowMaxMult</c>
-    /// (45%, deliberately 5 points below the model's realistic ~50% ceiling so a genuinely maxed-out sail
-    /// still visibly reads as "fully filled" rather than sitting just short of it) shows a fully filled
-    /// sail. Mapped through <c>sqrt</c> rather than linearly: a linear map made low-mult sails look
-    /// almost imperceptibly different from luffing, since most of a modestly-trimmed sail's usable range
-    /// sits in the bottom third of [0, 45%] - <c>sqrt</c> front-loads visible growth into that low range
-    /// and tapers off approaching the max, instead of spreading it out evenly. Zero whenever furled
-    /// (<c>sailPosition == 0</c>, vanilla contributes no sail force there either) or the legacy heading
-    /// model is active (no per-angle mult to read).
+    /// Target for <see cref="UpdateBillow"/>: a direct readout of <see cref="SailboatWind.SailState.CombinedMult"/>
+    /// (both terms), so wind speed still matters - a becalmed but well-trimmed sail is a real, distinct
+    /// situation from a filled one, unlike the old <c>lift * SpeedFactor(windSpeed)</c> calc. 0%
+    /// <c>CombinedMult</c> or below shows no billow; <c>BillowMaxMult</c> (45%, 5 points below the model's
+    /// realistic ~50% ceiling so a maxed-out sail still visibly reads as "fully filled") shows a fully
+    /// filled sail. Mapped through <c>sqrt</c> rather than linearly, since most of a modestly-trimmed
+    /// sail's usable range sits in the bottom third of [0, 45%] - a linear map made those low-mult sails
+    /// look almost imperceptibly different from luffing; <c>sqrt</c> front-loads visible growth into that
+    /// low range and tapers off near the max. Zero whenever furled (vanilla contributes no sail force at
+    /// <c>sailPosition == 0</c> either) or the legacy heading model is active (no per-angle mult to read).
     /// </summary>
     private const float BillowMaxMult = 0.45f;
 
@@ -178,10 +193,14 @@ public class EntityBehaviorSailTrim : EntityBehavior
         BillowIntensity += Math.Abs(delta) <= step ? delta : Math.Sign(delta) * step;
     }
 
+    #endregion
+
+    #region Animation Pose Scrubbing
+
     /// <summary>Flips which physical side <see cref="CurrentAngleDeg"/>'s sign swings the sail toward.
     /// <c>CurrentAngleDeg</c> is defined as "+ = trimmed to starboard" by <see cref="SailboatWind"/>'s own
-    /// convention; the source model's swing animation defines frame 0 as full port (+90°) and frame 179 as
-    /// full starboard (-90°) - i.e. the model's own angle parameter runs the OPPOSITE sign from
+    /// convention; the source model's swing animation defines frame 0 as full port (+90deg) and frame 179
+    /// as full starboard (-90deg) - i.e. the model's own angle parameter runs the OPPOSITE sign from
     /// <c>CurrentAngleDeg</c>. Flip this if the sail is ever found visually swinging to the wrong side
     /// in-game.</summary>
     private const bool MirrorTrimDirection = true;
@@ -256,10 +275,14 @@ public class EntityBehaviorSailTrim : EntityBehavior
         }
     }
 
+    #endregion
+
+    #region Trim Intent Input
+
     /// <summary>
     /// Writes the synced target, skipping no-op writes. <c>SyncedTreeAttribute.SetFloat</c> calls
     /// <c>MarkPathDirty</c> on every call, so assigning unconditionally each tick would re-broadcast the
-    /// angle and re-fire modified listeners even while the sail sits pinned against its ±limit stop with
+    /// angle and re-fire modified listeners even while the sail sits pinned against its +/-limit stop with
     /// the key still held.
     /// </summary>
     private void SetTarget(float value)
@@ -344,4 +367,6 @@ public class EntityBehaviorSailTrim : EntityBehavior
 
     private const string SheetLAP = "SheetLAP";
     private const string SheetRAP = "SheetRAP";
+
+    #endregion
 }

@@ -18,31 +18,37 @@ namespace DynamicWind.WindSystem;
 /// </summary>
 public class WindField
 {
+    #region Jetstream & Circulation Parameters
+
     public double BaseStrength = 0.7;
     /// <summary>Maximum meander of the base jetstream angle, in radians.</summary>
     public double MeanderAmplitude = 0.9;
     /// <summary>Spatial/temporal frequency multiplier for the jetstream meander (higher = the bearing
     /// wiggles over shorter N/S distances and faster in time).</summary>
     public double MeanderFrequency = 2.0;
-    /// <summary>Inflow/outflow tilt of cyclonic circulation, in radians (~20°).</summary>
+    /// <summary>Inflow/outflow tilt of cyclonic circulation, in radians (~20deg).</summary>
     public double CyclonicInflowAngle = 0.35;
     /// <summary>Multiplier on each pressure cell's induced circulation (tangential + radial flow).
     /// &gt;1 makes the wind swirl around lows/highs more strongly.</summary>
     public double CirculationStrength = 2.5;
 
     /// <summary>
-    /// Seasonal meridional (north/south) bias factor in [-1, 1] applied to the base jetstream:
-    /// &gt;0 tilts the westerly toward +Z (south), &lt;0 toward -Z (north). Computed server-side from
-    /// the season + hemisphere (poleward in summer, equatorward in winter) and synced to clients -
-    /// the value is globally uniform because the hemisphere flip and the half-year season offset cancel.
+    /// Seasonal north/south bias in [-1, 1] applied to the base jetstream: positive tilts the
+    /// westerly toward +Z (south), negative toward -Z (north). Server recomputes it each tick from
+    /// season + hemisphere (poleward in summer, equatorward in winter) and syncs it; the value is
+    /// globally uniform because the hemisphere flip and the half-year season offset cancel.
     /// </summary>
     public double SeasonalBiasZ;
     /// <summary>Maximum N/S tilt of the base jetstream at peak summer/winter, in radians.</summary>
     public double SeasonalBiasMaxAngle;
 
     /// <summary>Amplitude of the slow jet-streak speed noise. The jetstream baseline speed is multiplied
-    /// by 1 ± this, giving faster/slower jet streaks that wander over space and time. 0 = none.</summary>
+    /// by 1 +/- this, giving faster/slower jet streaks that wander over space and time. 0 = none.</summary>
     public double JetNoiseAmplitude = 0.3;
+
+    #endregion
+
+    #region Pressure Cell State
 
     /// <summary>
     /// Calendar time (total hours) at which each cell's <see cref="PressureCell.X"/>/<c>Z</c> was the
@@ -60,8 +66,12 @@ public class WindField
     /// calls that already hold this lock (e.g. WindAt's gradient sampling calling PressureAt) are safe.</summary>
     public readonly object CellsLock = new();
 
+    #endregion
+
+    #region Terrain & Weather Data Hooks
+
     /// <summary>
-    /// Optional terrain-driven near-surface TEMPERATURE anomaly (°C) at (x, z, totalHours) - see
+    /// Optional terrain-driven near-surface TEMPERATURE anomaly (deg C) at (x, z, totalHours) - see
     /// <see cref="TerrainSystem.TerrainThermal"/>. Set per side (server uses world data; client samples its
     /// loaded world). + = warmer than ambient (sun-warmed land, or relatively warm water in the cold
     /// season), - = cooler. Drives the sea-breeze wind term in <see cref="WindAt"/> and the climate
@@ -84,13 +94,17 @@ public class WindField
     /// </summary>
     public Func<double, double, double, double>? TerrainHumidityFunc;
 
-    /// <summary>Strength of down-gradient (high→low) pressure flow added to the wind. 0 = off.</summary>
+    /// <summary>Strength of down-gradient (high-&gt;low) pressure flow added to the wind. 0 = off.</summary>
     public double GradientWindScale = 150.0;
 
     // Humidity overlay strengths (config-driven, see HumidityAt).
     public double HumidityWaterProximityStrength = 0.25;
     public double HumidityPressureStrength = 0.15;
     public double HumidityNoiseAmplitude = 0.1;
+
+    #endregion
+
+    #region Orographic Tuning
 
     // Orographic (terrain) interaction.
     public bool OrographicEnabled;
@@ -99,12 +113,20 @@ public class WindField
     public double OroWake = 0.5;       // lee-side (downwind) speed loss in a hill's shadow (0..1)
     public double OroHeightThreshold = 130; // terrain height (blocks) below which orographic effects don't apply
 
+    #endregion
+
+    #region Altitude Lapse
+
     // Altitude pressure lapse: real air pressure falls with height. Sampled in the Y-aware
     // PressureAt overload only (a vertical-only term, so it adds no horizontal wind gradient).
     public double SeaLevel = 110;
     public double WorldHeight = 256;
     /// <summary>Fractional pressure drop reached at the build ceiling (0.5 = -50%), toward LOW (+).</summary>
     public double AltitudeMaxDrop = 0.5;
+
+    #endregion
+
+    #region Latitude & Poleward Direction
 
     /// <summary>World Z of the map's N/S midline - set per side from MapSizeZ / 2, same on both sides
     /// since it's derived from world geometry, not synced. Vintage Story's REAL climate latitude
@@ -145,6 +167,10 @@ public class WindField
         return m1 >= m0 ? 1.0 : -1.0;
     }
 
+    #endregion
+
+    #region Sea Breeze & Front Geometry Parameters
+
     /// <summary>
     /// Strength of the sea-breeze/land-breeze term in <see cref="WindAt"/>: wind blows TOWARD warmer air
     /// (into the thermal low), i.e. up the <see cref="TerrainTempFunc"/> gradient, scaled by this. A
@@ -184,6 +210,10 @@ public class WindField
         coldAngle = travelAngle + Math.PI + poleSign * WaveFrontTiltAngle;
     }
 
+    #endregion
+
+    #region Wind Field Tuning Constants
+
     private const double GradSampleDist = 48.0;
     private const double GradMaxWind = 1.5;
 
@@ -206,18 +236,23 @@ public class WindField
     private const double DirectionalSteeringStrength = 1.2; // weighted influence -> bearing-blend fraction
     private const double MaxDirectionalBlend = 0.6;         // cap on how far the bearing can be pulled per cell pass
     private const double OroGradDist = 24.0;   // terrain gradient sample spacing
-    private const double OroSlopeSens = 3.0;   // slope (blocks/block) → climb factor
+    private const double OroSlopeSens = 3.0;   // slope (blocks/block) -> climb factor
     private const double OroWakeProbe = 48.0;  // how far upwind to look for a sheltering rise
     private const double OroWakeMinRise = 8.0; // upwind terrain must be this much higher to count
-    private const double OroWakeScale = 40.0;  // rise over this → full wake
+    private const double OroWakeScale = 40.0;  // rise over this -> full wake
 
     // Elliptical-footprint math (falloff/gradient sampling against a cell's along-stream/cross-stream
     // axes) is shared with WindFieldSimulation via EllipseGeometry.Norm2/Radial/RadiusToward.
 
+    #endregion
+
+    #region Deterministic Helper Functions
+
     /// <summary>
-    /// Slow jet-streak multiplier in [1-<see cref="JetNoiseAmplitude"/>, 1+…]: a multiplied sinusoidal
-    /// layout (a slow X wave x a slow Z wave) that evolves slowly over time, giving the jetstream faster
-    /// and slower "streaks" on top of the seasonal drift and bearing meander. Mild and never zero.
+    /// Slow jet-streak multiplier in [1-<see cref="JetNoiseAmplitude"/>, 1+<see cref="JetNoiseAmplitude"/>]:
+    /// a multiplied sinusoidal layout (a slow X wave x a slow Z wave) that evolves slowly over time, giving
+    /// the jetstream faster and slower "streaks" on top of the seasonal drift and bearing meander. Mild and
+    /// never zero.
     /// </summary>
     public double JetStreak(double x, double z, double totalHours)
     {
@@ -227,8 +262,8 @@ public class WindField
     }
 
     /// <summary>
-    /// Precipitation gate from local pressure (+ = low, - = high): a high clears the sky (→0) and a low
-    /// opens the tap (→1). Shared by the Doppler radar overlay and the front computer so both treat the
+    /// Precipitation gate from local pressure (+ = low, - = high): a high clears the sky (-> 0) and a low
+    /// opens the tap (-> 1). Shared by the Doppler radar overlay and the front computer so both treat the
     /// pressure differential as the driver of where precipitation (and thus fronts) appear.
     /// </summary>
     public static double PrecipGate(double pressure)
@@ -252,9 +287,13 @@ public class WindField
         return (a + b + c) / 3.0;
     }
 
+    #endregion
+
+    #region Wind Vector Queries (WindAt)
+
     /// <summary>
     /// Wind vector at a world position. X/Z components are East/South; the magnitude is the strength
-    /// multiplier (≈1.0 in calm jetstream flow, higher near strong lows).
+    /// multiplier (~1.0 in calm jetstream flow, higher near strong lows).
     /// </summary>
     public Vec2d WindAt(double x, double z, double totalHours) => WindAt(x, z, totalHours, -1, out _);
 
@@ -310,7 +349,7 @@ public class WindField
         lock (CellsLock)
         {
             // Base jetstream: due-East flow with a slow meandering bearing, tilted N/S by the season
-            // (poleward in summer → -Z, equatorward in winter → +Z; sign is in SeasonalBiasZ).
+            // (poleward in summer -> -Z, equatorward in winter -> +Z; sign is in SeasonalBiasZ).
             double meander = MeanderAmplitude * Meander(x, z, totalHours, MeanderFrequency);
             double angle = meander + SeasonalBiasMaxAngle * SeasonalBiasZ;
             wx = BaseStrength * Math.Cos(angle);
@@ -339,7 +378,7 @@ public class WindField
                 double dirFalloff = Math.Exp(-norm2 * DirectionalFalloffFactor);
                 if (dirFalloff < 1e-4) continue;
 
-                // Radial unit (center → sample, generalized to the cell's elliptical footprint) and tangent.
+                // Radial unit (center -> sample, generalized to the cell's elliptical footprint) and tangent.
                 // With +X=East, +Z=South (north-up map view), (rz, -rx) is the COUNTER-clockwise tangent on
                 // screen - so a low (s>0) circulates CCW and a high (s<0) circulates CW, matching the
                 // (northern-hemisphere) real-world convention.
@@ -403,7 +442,7 @@ public class WindField
                 }
             }
 
-            // 3. Down-gradient flow: air bleeds from high toward low pressure (+∇P points to lows).
+            // 3. Down-gradient flow: air bleeds from high toward low pressure (+gradient P points toward lows).
             // Pressure is purely synoptic now (moving cells; the altitude lapse is vertical-only and so has
             // no horizontal gradient), which makes this term identical for the full and the cells-only
             // field - what separates them is the SEA BREEZE below, gated by includeTerrainGradient.
@@ -428,10 +467,10 @@ public class WindField
             // 4. Sea breeze / land breeze - a thermally DIRECT circulation, driven straight off the terrain
             // temperature field rather than through a terrain-pinned pressure baseline: surface air flows
             // toward warmer air (into the thermal low), i.e. UP the temperature gradient. Warm-season
-            // daytime coast → water is cooler → flow runs inland (sea breeze); at night, and through the
+            // daytime coast -> water is cooler -> flow runs inland (sea breeze); at night, and through the
             // cold season, TerrainThermal's sign flips and this reverses into a land breeze for free.
             // The gradient is normalised by TerrainThermal.Amplitude so the gain stays meaningful if that
-            // field's °C scale is retuned.
+            // field's deg C scale is retuned.
             if (includeTerrainGradient && SeaBreezeStrength > 0 && TerrainTempFunc != null)
             {
                 double d = SeaBreezeSampleDist;
@@ -447,7 +486,7 @@ public class WindField
             }
         }
 
-        // 4. Orographic interaction with terrain - doesn't touch Cells, so runs outside the lock.
+        // 5. Orographic interaction with terrain - doesn't touch Cells, so runs outside the lock.
         orographicFactor = 1.0;
         if (OrographicEnabled && TerrainHeightFunc != null)
         {
@@ -456,6 +495,10 @@ public class WindField
 
         return new Vec2d(wx, wz);
     }
+
+    #endregion
+
+    #region Orographic Terrain Application
 
     /// <summary>
     /// Terrain interaction: wind climbing into a slope slows (stagnation) and curves along the contour
@@ -478,7 +521,7 @@ public class WindField
         double hz = (H(x, z + d) - H(x, z - d)) / (2 * d);
         double gmag = Math.Sqrt(hx * hx + hz * hz);
 
-        // Windward: climbing into rising terrain → slow + deflect along the contour toward lower ground.
+        // Windward: climbing into rising terrain -> slow + deflect along the contour toward lower ground.
         double along = dirx * hx + dirz * hz; // > 0 = uphill ahead
         if (gmag > 1e-5 && along > 0)
         {
@@ -496,7 +539,7 @@ public class WindField
             spd *= 1.0 - OroSlowdown * climb;
         }
 
-        // Lee wake: terrain upwind significantly higher than here → sheltered, low wind.
+        // Lee wake: terrain upwind significantly higher than here -> sheltered, low wind.
         double hUp = H(x - dirx * OroWakeProbe, z - dirz * OroWakeProbe);
         double rise = hUp - h;
         if (rise > OroWakeMinRise)
@@ -511,21 +554,29 @@ public class WindField
         orographicFactor = spd / origSpd;
     }
 
+    #endregion
+
+    #region Front Pressure Falloff
+
     /// <summary>
     /// Radial pressure falloff for one cell, from <see cref="EllipseGeometry.Norm2"/> (1.0 on the cell's own
     /// elliptical boundary). <c>exp(-sqrt(norm2))</c>, NOT the gaussian <c>exp(-norm2)</c> the circulation
-    /// terms use: both agree exactly at the boundary (e⁻¹ ≈ 0.37) but this one has a far fatter tail, which
+    /// terms use: both agree exactly at the boundary (e^-1 ~ 0.37) but this one has a far fatter tail, which
     /// is what makes a system's pressure differential still MEAN something out where its front lines are
     /// actually drawn. A front sits at <c>radius x reach</c> with reach growing to <c>MaxFrontReach</c> = 3,
-    /// i.e. norm2 = 9 - under a gaussian that is e⁻⁹ ≈ 0.0001, four orders of magnitude down, so pressure
+    /// i.e. norm2 = 9 - under a gaussian that is e^-9 ~ 0.0001, four orders of magnitude down, so pressure
     /// (and anything derived from it: weather coupling, isobars, map tint, gradient wind) was effectively
-    /// dead along a mature front. Here it is e⁻³ ≈ 0.05, ~500x stronger.
+    /// dead along a mature front. Here it is e^-3 ~ 0.05, ~500x stronger.
     ///
-    /// The reach ↔ level identity <c>FrontComputer</c> relies on follows this function: the contour at
-    /// <c>radius x reach</c> sits at <c>|Strength| * PressureFalloff(reach²)</c> = <c>|Strength| * e^-reach</c>.
+    /// The reach &lt;-&gt; level identity <c>FrontComputer</c> relies on follows this function: the contour at
+    /// <c>radius x reach</c> sits at <c>|Strength| * PressureFalloff(reach^2)</c> = <c>|Strength| * e^-reach</c>.
     /// Keep the two in step if this is ever retuned.
     /// </summary>
     public static double PressureFalloff(double norm2) => Math.Exp(-Math.Sqrt(norm2));
+
+    #endregion
+
+    #region Cloud Drift
 
     /// <summary>
     /// Accumulated wind drift of the cloud/precipitation texture (blocks) at <paramref name="totalHours"/>,
@@ -551,6 +602,10 @@ public class WindField
     /// <see cref="AnchorHours"/>, since the cell anchor moves whenever a cell spawns/expires and the drift
     /// integral must not be re-based by that. The snapshot re-bases it to the anchor on the wire.</summary>
     public double CloudDriftX, CloudDriftZ, CloudDriftVelX, CloudDriftVelZ, CloudDriftHours;
+
+    #endregion
+
+    #region Pressure Queries
 
     /// <summary>Signed pressure at a position (sum of cell contributions). + = low, - = high.</summary>
     public double PressureAt(double x, double z, double totalHours) => PressureAt(x, z, totalHours, -1);
@@ -586,6 +641,10 @@ public class WindField
             return p;
         }
     }
+
+    #endregion
+
+    #region Front Regime Classification
 
     /// <summary>
     /// Falloff+<see cref="PressureCell.StormLikelihood"/>-weighted share of nearby lows' influence at a
@@ -656,6 +715,10 @@ public class WindField
         }
     }
 
+    #endregion
+
+    #region Air Mass Temperature
+
     /// <summary>
     /// Falloff-weighted blend of nearby cells' intrinsic <see cref="PressureCell.AirMassTemp"/> in
     /// [-1, 1] - a cold low and a warm high can both exist, so this is deliberately independent of
@@ -683,6 +746,10 @@ public class WindField
             return wSum > 1e-6 ? tSum / wSum : 0.0;
         }
     }
+
+    #endregion
+
+    #region Water Proximity & Humidity
 
     // Water-proximity ring-sample radii (blocks), nearest first - mirrors the style of the orographic
     // consts above (named, tuned by feel) rather than a per-block flood search, which would be far too
@@ -753,6 +820,10 @@ public class WindField
         return h < 0.0 ? 0.0 : (h > 1.0 ? 1.0 : h);
     }
 
+    #endregion
+
+    #region Altitude & Vertical Pressure
+
     /// <summary>
     /// As <see cref="PressureAt(double,double,double)"/> but optionally excluding one cell index (used
     /// when advecting that cell on the background flow). Horizontal pressure is now purely the moving
@@ -781,4 +852,6 @@ public class WindField
         if (frac > 1) frac = 1;
         return AltitudeMaxDrop * frac; // + = low (lower real pressure aloft)
     }
+
+    #endregion
 }

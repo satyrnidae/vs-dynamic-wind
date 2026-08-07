@@ -72,7 +72,7 @@ internal sealed class SailTrimInput
         }
 
         sb.AppendLine($"behaviour: attached. sailPosition={boat!.WatchedAttributes.GetInt("sailPosition")}, "
-                      + $"target={trim.TargetAngleDeg:0.0}°, current={trim.CurrentAngleDeg:0.0}°");
+                      + $"target={trim.TargetAngleDeg:0.0}deg, current={trim.CurrentAngleDeg:0.0}deg");
         sb.Append($"swing animation '{EntityBehaviorSailTrim.SwingAnimCode}' active: {trim.SwingAnimationActive}");
         return TextCommandResult.Success(sb.ToString());
     }

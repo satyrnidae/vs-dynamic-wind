@@ -17,11 +17,11 @@ namespace DynamicWind.Patches;
 /// disconnected from this mod's actual wind field (front excess, jetstream noise, orographic slowdown,
 /// occlusion). Our postfix OVERWRITES it (not scales it) with the magnitude of the real, hooked wind at
 /// this block (<see cref="IBlockAccessor.GetWindSpeedAt"/>, the same value the HUD/particles/etc. see),
-/// then scales it by |cos θ| between that wind and the rotor axle (<c>ownFacing</c>) rescaled onto
+/// then scales it by |cos theta| between that wind and the rotor axle (<c>ownFacing</c>) rescaled onto
 /// [<see cref="WindmillMinEfficiency"/>, 1] - parallel = full power, perpendicular = the
 /// configured minimum efficiency (NOT a flat floor on the result: the whole curve is remapped, so power
 /// still varies continuously across every angle) - and records the SIGN of the alignment: when the wind
-/// comes from behind the rotor (cos θ &lt; 0) the mill should turn backwards. Exactly edge-on that sign is
+/// comes from behind the rotor (cos theta &lt; 0) the mill should turn backwards. Exactly edge-on that sign is
 /// numerical noise, so the direction there comes from which SIDE the wind passes on instead
 /// (<see cref="PerpendicularDeadBand"/>).
 ///
@@ -33,12 +33,14 @@ namespace DynamicWind.Patches;
 /// a stall and back up the other way instead of flipping direction outright the instant the raw wind does.
 ///
 /// The engine can't reverse from a negative windSpeed alone (<see cref="BEBehaviorMPRotor"/>.GetTorque
-/// does <c>Max(0, …)</c>, so a negative target just stalls). So we keep windSpeed as the positive torque
+/// does <c>Max(0, ...)</c>, so a negative target just stalls). So we keep windSpeed as the positive torque
 /// magnitude and instead NEGATE the rotor's torque in a GetTorque postfix when it's wind-reversed, which
 /// drives the mechanical network the other way.
 /// </summary>
 internal static class WindmillDirectionality
 {
+    #region Constants
+
     // Windmills have real rotational inertia; ease toward each tick's raw wind reading instead of
     // snapping straight to it (see class remarks).
     private const double SpeedEaseRatePerSecond = 0.4;
@@ -59,6 +61,10 @@ internal static class WindmillDirectionality
 
     // Former DynamicWindConfig tunable, now a fixed constant (see DynamicWindConfig's class remarks).
     private const float WindmillMinEfficiency = 0.5f;
+
+    #endregion
+
+    #region State
 
     private sealed class SmoothState
     {
@@ -81,6 +87,10 @@ internal static class WindmillDirectionality
     private static readonly ConditionalWeakTable<BEBehaviorMPRotor, StrongBox<bool>> reversed = new();
     // Per-rotor eased wind speed/alignment (see SmoothState).
     private static readonly ConditionalWeakTable<BEBehaviorWindmillRotor, SmoothState> smoothing = new();
+
+    #endregion
+
+    #region Patch entry point
 
     public static void Apply(Harmony harmony, ILogger logger)
     {
@@ -110,6 +120,10 @@ internal static class WindmillDirectionality
         }
     }
 
+    #endregion
+
+    #region Speed, alignment and reversal ramp
+
     private static void CheckWindSpeedPostfix(BEBehaviorWindmillRotor __instance, float dt)
     {
         DynamicWindConfig? cfg = DynamicWindRuntime.ServerConfig;
@@ -120,8 +134,8 @@ internal static class WindmillDirectionality
         BlockPos pos = __instance.Blockentity.Pos;
         ICoreAPI api = __instance.Blockentity.Api;
 
-        // Align against the rotor's own facing axis. (The earlier "E/W↔N/S reversed" report was a
-        // spin-DIRECTION inversion - a 180° flip - not a 90° axis swap, so we keep ownFacing and flip the
+        // Align against the rotor's own facing axis. (The earlier "E/W<->N/S reversed" report was a
+        // spin-DIRECTION inversion - a 180deg flip - not a 90deg axis swap, so we keep ownFacing and flip the
         // sign below instead of rotating the axis.)
         double ax = axle.Normalf.X;
         double az = axle.Normalf.Z;
@@ -153,7 +167,7 @@ internal static class WindmillDirectionality
         }
 
         // WindmillMinEfficiency is the efficiency of a rotor sitting exactly PERPENDICULAR to the wind, so
-        // it rescales the alignment curve: |alignment| 0 → MinEfficiency, 1 (head-on) → full. Clamping the
+        // it rescales the alignment curve: |alignment| 0 -> MinEfficiency, 1 (head-on) -> full. Clamping the
         // magnitude to it instead (max(|dot|, min)) would flatten the whole band below MinEfficiency to one
         // constant - every rotor from perpendicular out to half-aligned turning at identical speed - and
         // would hold full MinEfficiency power right up to the crossing, so the mill snaps into reverse
@@ -162,7 +176,7 @@ internal static class WindmillDirectionality
         double minEff = WindmillMinEfficiency;
         double mag = minEff + (1.0 - minEff) * aligned;
 
-        // Which way it wants to turn, from the EASED readings. Normally the alignment sign (180° flip vs
+        // Which way it wants to turn, from the EASED readings. Normally the alignment sign (180deg flip vs
         // the naive sign). Edge-on - where that sign is numerical noise and a square-on rotor would
         // otherwise chatter every tick - the side the wind passes on decides instead.
         bool desiredReversed = Math.Abs(state.Dot) >= PerpendicularDeadBand
@@ -214,6 +228,10 @@ internal static class WindmillDirectionality
         fWindSpeed.SetValue(__instance, state.Len * mag * state.Ramp);
     }
 
+    #endregion
+
+    #region Torque direction flip
+
     // When the wind is on the rotor's back, flip its network propagation direction for the duration of
     // GetTorque. That flips the `num` sign inside, so the rotor drives the network the other way AND the
     // vanilla speed-governor branch applies in reverse (capping the speed). Restored immediately after.
@@ -234,4 +252,6 @@ internal static class WindmillDirectionality
         if (__state is BlockFacing dir && fPropagationDir != null)
             fPropagationDir.SetValue(__instance, dir);
     }
+
+    #endregion
 }

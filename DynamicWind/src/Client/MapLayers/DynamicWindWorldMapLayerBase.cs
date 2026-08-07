@@ -10,7 +10,7 @@ namespace DynamicWind.Client.MapLayers;
 /// <summary>
 /// Shared plumbing for the client-side wind/weather map overlays (<see cref="WindArrowMapLayer"/>,
 /// <see cref="DopplerRadarMapLayer"/>, <see cref="FrontMapLayer"/>): the resample-cache timer, the
-/// world→screen projection helper, the standard shader-setup boilerplate, the world-map-only
+/// world-to-screen projection helper, the standard shader-setup boilerplate, the world-map-only
 /// (not-minimap) guard, an RGBA lerp helper, and per-layer legend-toggle persistence.
 /// </summary>
 public abstract class DynamicWindWorldMapLayerBase : MapLayer
@@ -93,7 +93,7 @@ public abstract class DynamicWindWorldMapLayerBase : MapLayer
         return shader;
     }
 
-    /// <summary>World (x,z) → screen px within the map element; false if outside the visible bounds.</summary>
+    /// <summary>World (x,z) -> screen px within the map element; false if outside the visible bounds.</summary>
     protected static bool ToScreen(ElementBounds b, Cuboidd vb, double wx, double wz, out float sx, out float sy)
     {
         double fx = (wx - vb.X1) / (vb.X2 - vb.X1);

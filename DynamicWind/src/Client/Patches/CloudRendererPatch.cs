@@ -29,7 +29,7 @@ namespace DynamicWind.Client.Patches;
 /// </summary>
 internal static class CloudRendererPatch
 {
-    // Cloud-speed units per unit of wind-field magnitude. The base jetstream (|w|≈1) gives a moderate
+    // Cloud-speed units per unit of wind-field magnitude. The base jetstream (|w|~1) gives a moderate
     // drift comparable to vanilla's average; strong flow near a low drifts faster.
     private const float CloudSpeedScale = 3.0f;
 
@@ -82,7 +82,7 @@ internal static class CloudRendererPatch
         Vec2d w = field.WindAt(plr.Pos.X, plr.Pos.Z, world.Calendar.TotalHours);
         if (w.Length() < 1e-6) return;
 
-        // Drive the cloud speed straight from the wind vector (magnitude ∝ wind strength). Set the live
+        // Drive the cloud speed straight from the wind vector (magnitude proportional to wind strength). Set the live
         // speed for this frame AND the easing targets, so vanilla's per-tick easing converges toward our
         // direction rather than constantly pulling the clouds back east. This lets clouds turn and even
         // reverse as a pressure system's circulation overrides the base jetstream.
