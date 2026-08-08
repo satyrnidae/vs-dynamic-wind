@@ -56,15 +56,22 @@ systems, and couples the rest of the world to it:
   `GetWindSpeedAt`, through shared math in `WindSystem/VaneWind.cs` (target yaw, speed, and the same
   occlusion gate the windmill patch uses - sun light < 5 and world-config `undergroundWindmills` off holds
   them still) and `WindSystem/WindCompass.cs` (8-point cardinal naming, also used by `HudClockWindPatch`).
-  No interaction beyond placement/tooltip (`GetBlockInfo`: heading, plus speed% for the rotorvane).
-  Rotorvane additionally free-spins a 12-bladed hub about its own axis - rate/direction from wind speed x
-  `cos(angle to wind)` (head-on = full, perpendicular = zero, from-behind = reversed, same curve as the
-  windmill patch), plus a continuous whirring sound eased (not snapped) every 150ms to avoid gust-to-gust
-  warble. Both vanes' own turn RATE also eases faster in stronger wind (`VaneTurnRate`, 0.6–3.0 rad/s by
-  wind fraction of the calm-baseline `RefSpeed`), and an edge-triggered creak (`TurnSqueakSound`) fires
-  once per aligned→turning transition, volume scaled by the swing size. Client-only rendering/sound; server
-  only tracks placement/support (self-drops like a torch if its support block disappears). No config knobs
-  - `RotorvaneSpeedMult` etc. are hardcoded constants, formerly configurable (see Conventions).
+  The two block entities and the two renderers each extend a shared base (`Blocks/BlockEntityVaneBase`,
+  `Client/Render/VaneRendererBase`) that owns the mesh/renderer setup, wind query, and yaw easing common
+  to both vanes - subclasses supply only their shape asset and whatever extra meshes they tessellate (e.g.
+  the rotorvane's spinner hub). No interaction beyond placement/tooltip (`GetBlockInfo`: heading, plus
+  speed% for the rotorvane). Rotorvane additionally free-spins a 12-bladed hub about its own axis -
+  rate/direction from wind speed x `cos(angle to wind)` (head-on = full, perpendicular = zero, from-behind
+  = reversed, same curve as the windmill patch), plus a continuous whirring sound eased (not snapped) every
+  150ms to avoid gust-to-gust warble. Both vanes' own turn RATE also eases faster in stronger wind
+  (`VaneTurnRate`, 0.6–3.0 rad/s by wind fraction of the calm-baseline `RefSpeed`), and an edge-triggered
+  creak (`TurnSqueakSound`) fires once per aligned→turning transition, volume scaled by the swing size.
+  Both sounds (rotorvane whirring and the turn-squeak) listen to the engine's `PauseResume` event to stop
+  themselves while the game is paused, rather than relying on the tick listener - which itself stops firing
+  during pause, so a sound started just before a pause would otherwise keep looping through it. Client-only
+  rendering/sound; server only tracks placement/support (self-drops like a torch if its support block
+  disappears). No config knobs - `RotorvaneSpeedMult` etc. are hardcoded constants, formerly configurable
+  (see Conventions).
 - **Sailboats** - the sail is **trimmable**, and thrust comes from how the wind meets the SAIL rather than
   merely the hull. `EntityBehaviorSailTrim` (`src/Entities/`, both sides, attached to the vanilla boat by
   `patches/boat-sailed-sailtrim.json`) swings the rig through ±`SailboatMaxTrimAngleDeg` (90° = fully
@@ -558,6 +565,14 @@ systems, and couples the rest of the world to it:
 - The terrain-temperature and terrain-height lookups are wrapped in `ThermalCache` (coarse tile + time bucket,
   thread-safe) because `WindAt` samples them several times per call on a hot path; this also keeps the
   weather-coupling re-entry rare.
+- **Map layers share a base class** - `WindArrowMapLayer`, `DopplerRadarMapLayer`, and `FrontMapLayer` (the
+  latter also drawing isobars) all extend `Client/MapLayers/DynamicWindWorldMapLayerBase`, which owns the
+  resample-cache timer, the world-to-screen projection helper (`ToScreen`), the standard flat-quad shader
+  setup, the world-map-only (not-minimap) guard (`IsMinimap`, via the same `GuiElementMap.snapToPlayer`
+  reflection each layer used to duplicate), an RGBA lerp helper, the coarsen-on-zoom grid step helper
+  shared by Doppler radar and isobars, and per-layer legend-toggle persistence (`RestoreActiveState`/
+  `OnMapClosedClient` round-trip a client setting, since the base `MapLayer.Active` the legend checkbox
+  writes to has no persistence of its own).
 - **Wind overlay** (`WindArrowMapLayer`) - a fixed 24x24 grid of arrows on the **full world map only**
   (skips the minimap HUD via the `GuiElementMap.snapToPlayer` flag). Arrow length scales **logarithmically**
   with wind speed so low speeds stay legible.
@@ -691,7 +706,8 @@ Cell positions are advected from a single anchor time, so one snapshot stays cor
 
 ## Repo / workflow
 
-Local git repo (iterating locally; not pushed anywhere yet). Conventions:
+Hosted at `github.com/satyrnidae/vs-dynamic-wind` (`origin`); work happens on feature branches merged via PR.
+Conventions:
 - The vendored `libs/` DLLs are **git-ignored, not committed** (third-party binaries). A fresh clone must
   repopulate them before building - they are compile-time only (`<Private>False</Private>`) and never shipped:
   ```bash
