@@ -26,6 +26,10 @@ namespace DynamicWind.Client.Gui;
 /// wind and trim flat - read as "combined is broken" when it was just tracking furl state (and doubly
 /// penalized a half-raised sail: vanilla's halving plus this mod's).
 ///
+/// The cyan "trim" line plots <see cref="SailboatWind.SailState.TrimMult"/>, which already reflects
+/// <see cref="SailboatWind.CrosswindBlendedAngleBoost"/> - so it can flatten toward
+/// <c>SailCrosswindEfficiency</c> as trim passes 45 deg, instead of swinging to a raw cosGamma extreme.
+///
 /// HUD dialog type (like the built-in tick profiler): never grabs input focus, so it stays open while
 /// actively steering/trimming with the mouse ungrabbed. Toggled only via <c>.dwind sailgraph</c> (no
 /// keybind), redrawn every frame while open (<see cref="OnRenderGUI"/>) since the point is watching it

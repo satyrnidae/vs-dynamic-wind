@@ -147,7 +147,16 @@ systems, and couples the rest of the world to it:
   alignment between the wind and the sail's own normal (`SailNormal`, hull-forward rotated by
   `EntityBehaviorSailTrim.CurrentAngleDeg`) - independent of where the boat is actually heading: +25% at
   pure tailwind, -25% at pure headwind, 0% at pure crosswind, with the headwind→crosswind half overshooting
-  to a "tacking" bonus peaking near +15% via a parabola that vanishes at both ends by construction. Vanilla
+  to a "tacking" bonus peaking near +15% via a parabola that vanishes at both ends by construction. Beyond
+  that tacking peak (`SailboatWind.SailboatTackBoostAngleDeg`, 45deg trim), `angleBoost` is further blended
+  toward `SailCrosswindEfficiency` (default 0%) as `|CurrentAngleDeg|` approaches full feather (90deg, the
+  geometric trim maximum) - `SailboatWind.CrosswindBlendedAngleBoost`, via a square-root ramp so it departs
+  the raw curve quickly past 45deg and flattens in near 90deg. This exists because `cosGamma` reduces to
+  `cos(psi - theta)` where `psi` is the wind's angle relative to ship yaw and `theta` is the trim angle: at
+  `theta` near 90deg and `psi` near +-90deg (a genuine crosswind on the hull), `cosGamma` swings to a false
+  +-1 reading (misread as a strong tailwind or headwind) purely from geometry, even though a nearly
+  feathered sail catches almost no wind either way. `SailCrosswindEfficiency` is the single knob for
+  retuning that behavior (e.g. a mild `-25%` headwind-like penalty instead of neutral `0%`). Vanilla
   zeroes `paddleForce` whenever sails are up, so with `sailPosition > 0` the whole of `__result.X` IS the
   sail term and scaling it is a complete substitution. `SailboatSailAngleEnabled = false` restores the old
   heading-vs-wind curve (tailwind +50% / headwind -10%, `LegacyFactor`) for existing worlds. Trim works in

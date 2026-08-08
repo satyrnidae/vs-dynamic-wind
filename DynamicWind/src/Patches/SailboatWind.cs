@@ -16,8 +16,9 @@ namespace DynamicWind.Patches;
 /// SeatsToMotion adds a constant sail force regardless of wind; our postfix multiplies that vanilla
 /// baseline by <c>1 + windBoost + angleBoost</c> - windBoost from local wind speed alone, angleBoost from
 /// how the trimmed SAIL (see <see cref="EntityBehaviorSailTrim"/>) sits relative to the wind alone (not
-/// boat travel direction) - falling back to the older hull-heading-vs-wind curve when
-/// <c>SailboatSailAngleEnabled</c> is off.
+/// boat travel direction), further blended toward <see cref="SailCrosswindEfficiency"/> near full-feather
+/// trim (see <see cref="CrosswindBlendedAngleBoost"/>) - falling back to the older hull-heading-vs-wind
+/// curve when <c>SailboatSailAngleEnabled</c> is off.
 ///
 /// Patched on the base type (subclasses inherit); also patches an overriding EntityShipwrightBoat if that
 /// mod is present. Applied on BOTH sides - EntityBoat runs SeatsToMotion from OnRenderFrame client-side
@@ -42,6 +43,9 @@ internal static class SailboatWind
     // the boost settles back to 0 at crosswind, matching how a helmsman actually recovers ground upwind.
     private const float SailboatAngleBoostMax = 0.25f;
     private const float SailboatTackBonusCoefficient = 1.05f;
+
+    private const float SailCrosswindEfficiency = 0f;
+    private const float SailboatTackBoostAngleDeg = 45f; // where the crosswind falloff begins
 
     #endregion
 
@@ -179,12 +183,16 @@ internal static class SailboatWind
     /// half's own endpoints - before settling back down to 0% at crosswind, via a parabola
     /// (<c>K*s*(1-s)</c>) that vanishes at both ends by construction regardless of <c>K</c>, so the -25%
     /// headwind floor and the 0% crosswind point are exact regardless of how the peak is tuned.
+    ///
+    /// Beyond <see cref="SailboatTackBoostAngleDeg"/> trim, the angle term itself is further blended toward
+    /// <see cref="SailCrosswindEfficiency"/> - see <see cref="CrosswindBlendedAngleBoost"/>.
     /// </summary>
     private static double TrimmedFactor(EntityBoat boat, double tx, double tz, double wx, double wz, double windSpeed)
     {
-        (double nx, double nz) = SailNormal(boat, tx, tz);
+        double trimAngleDeg = boat.GetBehavior<EntityBehaviorSailTrim>()?.CurrentAngleDeg ?? 0f;
+        (double nx, double nz) = SailNormal(tx, tz, trimAngleDeg);
         double cosGamma = GameMath.Clamp(wx * nx + wz * nz, -1.0, 1.0);
-        return FactorForCosGamma(cosGamma, windSpeed);
+        return FactorForCosGamma(cosGamma, windSpeed, trimAngleDeg);
     }
 
     /// <summary>
@@ -204,9 +212,12 @@ internal static class SailboatWind
     /// uniformly, regardless of sail position. <c>sailPosition == 0</c> (furled) is a pure on/off gate
     /// handled entirely by the caller (<see cref="Postfix"/> returns before reaching here at all) - not a
     /// scaling case this function needs to represent.
+    ///
+    /// Takes <c>trimAngleDeg</c> so its angle term can route through <see cref="CrosswindBlendedAngleBoost"/>
+    /// rather than the raw <see cref="AngleBoost"/> curve directly.
     /// </summary>
-    internal static double FactorForCosGamma(double cosGamma, double windSpeed) =>
-        1.0 + WindBoost(windSpeed) + AngleBoost(cosGamma);
+    internal static double FactorForCosGamma(double cosGamma, double windSpeed, double trimAngleDeg) =>
+        1.0 + WindBoost(windSpeed) + CrosswindBlendedAngleBoost(cosGamma, trimAngleDeg);
 
     /// <summary>Wind-speed term alone (see <see cref="TrimmedFactor"/>'s remarks) - independent of
     /// <c>cosGamma</c>, so on the diagnostics graph this plots as a flat line that only moves up/down as
@@ -225,6 +236,20 @@ internal static class SailboatWind
         return -SailboatAngleBoostMax * s + SailboatTackBonusCoefficient * s * (1.0 - s);
     }
 
+    /// <summary>The angle term actually used for thrust - <see cref="AngleBoost"/>'s raw cosGamma curve,
+    /// blended toward <see cref="SailCrosswindEfficiency"/> as |trimAngleDeg| moves from
+    /// <see cref="SailboatTackBoostAngleDeg"/> out to full feather (90 deg, the geometric trim maximum).
+    /// Below <see cref="SailboatTackBoostAngleDeg"/> this returns AngleBoost unmodified; square-root blend
+    /// above it.</summary>
+    internal static double CrosswindBlendedAngleBoost(double cosGamma, double trimAngleDeg)
+    {
+        double raw = AngleBoost(cosGamma);
+        double mag = Math.Abs(trimAngleDeg);
+        if (mag <= SailboatTackBoostAngleDeg) return raw;
+        double t = Math.Sqrt((mag - SailboatTackBoostAngleDeg) / (90.0 - SailboatTackBoostAngleDeg));
+        return raw + t * (SailCrosswindEfficiency - raw);
+    }
+
     #endregion
 
     #region Diagnostics Snapshot (Evaluate)
@@ -235,7 +260,7 @@ internal static class SailboatWind
     /// this sail currently catching the wind." Mirrors <see cref="Postfix"/>'s own geometry (wind fetch,
     /// travel direction) exactly so callers can never disagree with what's actually driving the boat.
     /// <c>WindMult</c>/<c>TrimMult</c> are the two RAW terms (see <see cref="WindBoost"/>/
-    /// <see cref="AngleBoost"/>), without the <c>1.0 +</c> baseline <see cref="FactorForCosGamma"/> applies
+    /// <see cref="CrosswindBlendedAngleBoost"/>), without the <c>1.0 +</c> baseline <see cref="FactorForCosGamma"/> applies
     /// for actual thrust - the raw bonus a system adds/subtracts. Note this is unaffected by
     /// <c>sailPosition</c> either way: <c>FactorForCosGamma</c> itself no longer scales by it, since
     /// vanilla's own base sail-force term already differs by sail position before this factor ever runs
@@ -288,22 +313,24 @@ internal static class SailboatWind
             return new SailState(true, len, tx * wx + tz * wz, 0, 0, sailPosition, false);
         }
 
-        (double nx, double nz) = SailNormal(boat, tx, tz);
+        double trimAngleDeg = boat.GetBehavior<EntityBehaviorSailTrim>()?.CurrentAngleDeg ?? 0f;
+        (double nx, double nz) = SailNormal(tx, tz, trimAngleDeg);
         double cosGamma = GameMath.Clamp(wx * nx + wz * nz, -1.0, 1.0);
-        return new SailState(true, len, cosGamma, WindBoost(len), AngleBoost(cosGamma), sailPosition, true);
+        return new SailState(true, len, cosGamma, WindBoost(len), CrosswindBlendedAngleBoost(cosGamma, trimAngleDeg), sailPosition, true);
     }
 
     #endregion
 
     #region Shared Helpers
 
-    /// <summary>Sail normal = hull forward axis rotated by the current trim angle about Y. Zero trim points
+    /// <summary>Sail normal = hull forward axis rotated by the given trim angle about Y. Zero trim points
     /// the sail dead ahead; the sign convention matches <see cref="EntityBehaviorSailTrim.CurrentAngleDeg"/>
-    /// (+ = trimmed to starboard).</summary>
-    private static (double nx, double nz) SailNormal(EntityBoat boat, double tx, double tz)
+    /// (+ = trimmed to starboard). Callers fetch <c>CurrentAngleDeg</c> themselves (falling back to 0 for an
+    /// unpatched or third-party boat whose sail cannot swing) since they also need the raw angle for
+    /// <see cref="CrosswindBlendedAngleBoost"/>.</summary>
+    private static (double nx, double nz) SailNormal(double tx, double tz, double trimAngleDeg)
     {
-        // No behaviour -> an unpatched or third-party boat whose sail cannot swing; treat it as square.
-        double angle = (boat.GetBehavior<EntityBehaviorSailTrim>()?.CurrentAngleDeg ?? 0f) * GameMath.DEG2RAD;
+        double angle = trimAngleDeg * GameMath.DEG2RAD;
         double cos = Math.Cos(angle);
         double sin = Math.Sin(angle);
         return (tx * cos - tz * sin, tx * sin + tz * cos);
