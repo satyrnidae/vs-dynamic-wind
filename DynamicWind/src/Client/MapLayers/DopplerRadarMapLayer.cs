@@ -116,7 +116,7 @@ public class DopplerRadarMapLayer : DynamicWindWorldMapLayerBase
         cfg = DynamicWindRuntime.ClientConfig;
         capi = (ICoreClientAPI)api;
         quad = capi.Render.UploadMesh(QuadMeshUtil.GetQuad());
-        whiteTexId = capi.Render.GetOrLoadTexture(new AssetLocation("dynamicwind", "textures/icons/doppler-cell.png"));
+        whiteTexId = LoadIconTexture(capi, "doppler-cell");
         weather = capi.ModLoader.GetModSystem<WeatherSystemClient>();
         RestoreActiveState(cfg?.DopplerRadarMapLayerVisibleByDefault ?? false);
         BuildLegendTexture();
@@ -280,12 +280,10 @@ public class DopplerRadarMapLayer : DynamicWindWorldMapLayerBase
         if (maxX <= minX || maxZ <= minZ) return;
 
         // Fixed world step, coarsened only if the area would exceed the cell budget (far zoom-out).
-        double step = WorldStep;
-        while ((maxX - minX) / step * ((maxZ - minZ) / step) > MaxCells) step *= 2;
-        cellStep = step;
+        cellStep = CoarsenStep(WorldStep, maxX - minX, maxZ - minZ, MaxCells);
 
-        double startX = Math.Floor(minX / step) * step;
-        double startZ = Math.Floor(minZ / step) * step;
+        double startX = Math.Floor(minX / cellStep) * cellStep;
+        double startZ = Math.Floor(minZ / cellStep) * cellStep;
         double th = capi.World.Calendar.TotalDays;
 
         // Precipitation is gated by the pressure field at its source - the WeatherCoupling patch on
@@ -293,12 +291,12 @@ public class DopplerRadarMapLayer : DynamicWindWorldMapLayerBase
         // straight, with no extra drift or gate: that guarantees the radar matches the clouds and the
         // actual rain (which read the same gated value), and the pattern still moves because the gating
         // pressure cells advect with the wind.
-        for (double wx = startX; wx < maxX; wx += step)
+        for (double wx = startX; wx < maxX; wx += cellStep)
         {
-            double cx = wx + step * 0.5;
-            for (double wz = startZ; wz < maxZ; wz += step)
+            double cx = wx + cellStep * 0.5;
+            for (double wz = startZ; wz < maxZ; wz += cellStep)
             {
-                double cz = wz + step * 0.5;
+                double cz = wz + cellStep * 0.5;
                 float precip = weather!.GetPrecipitation(cx, playerY, cz, th);
                 if (precip < MinPrecip) continue;
 

@@ -24,6 +24,8 @@ public class DynamicWindModClient : DynamicWindModCommon
     private Harmony? harmony;
     private SailTrimInput? sailTrimInput;
 
+    #region Setup
+
     public override bool ShouldLoad(EnumAppSide side) => side == EnumAppSide.Client;
 
     public override void StartClientSide(ICoreClientAPI api)
@@ -112,6 +114,10 @@ public class DynamicWindModClient : DynamicWindModCommon
         }
     }
 
+    #endregion
+
+    #region Tick and Sync
+
     private void OnConfigReceived(DynamicWindConfig packet)
     {
         Config.CopyFrom(packet);
@@ -156,6 +162,10 @@ public class DynamicWindModClient : DynamicWindModCommon
         ClientChannel.SendPacket(new ConfigUpdateRequestPacket { Config = Config });
     }
 
+    #endregion
+
+    #region Lifecycle
+
     public override void Dispose()
     {
         if (capi != null)
@@ -169,4 +179,6 @@ public class DynamicWindModClient : DynamicWindModCommon
         DynamicWindRuntime.ClientConfig = null;
         DynamicWindRuntime.ClientModSystem = null;
     }
+
+    #endregion
 }

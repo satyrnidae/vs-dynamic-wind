@@ -1,7 +1,7 @@
 using System;
 using System.Text;
 using DynamicWind.Client.Render;
-using DynamicWind.WindSystem;
+using DynamicWind.Utils;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
@@ -11,16 +11,15 @@ namespace DynamicWind.Blocks;
 
 /// <summary>
 /// Rotorvane block entity: a weathervane variant whose "rotating" assembly carries a 12-bladed fan
-/// (<c>spinner</c>) in addition to the usual arrow. The static post + compass letters (<c>stationary</c>)
-/// are baked into the block model as usual. The arrow + mast (<c>rotating</c> minus <c>spinner</c>) turn
-/// to face the wind exactly like <see cref="BlockEntityWeathervane"/>; the <c>spinner</c> is tesselated
-/// separately so <see cref="RotorvaneRenderer"/> can additionally spin it about its own hub axis at a rate
-/// driven by wind speed, independent of the yaw that points the assembly downwind.
+/// (<c>spinner</c>) in lieu of the usual arrow. The static post + compass letters (<c>stationary</c>)
+/// are baked into the block model as usual (handled by <see cref="BlockEntityVaneBase"/>). The spinner +
+/// mast (<c>rotating</c> minus <c>spinner</c>) turn to face the wind exactly like
+/// <see cref="BlockEntityWeathervane"/>, and the <c>spinner</c> is tesselated separately so
+/// <see cref="RotorvaneRenderer"/> can additionally spin it about its own hub axis at a rate driven by
+/// wind speed, independent of the yaw that points the assembly downwind.
 /// </summary>
-public class BlockEntityRotorvane : BlockEntity
+public class BlockEntityRotorvane : BlockEntityVaneBase
 {
-    // See BlockEntityWeathervane for the "name/*" vs exact-name selective-tesselation semantics.
-    private static readonly string[] BaseElements = { "stationary/*" };
     // Rotating assembly minus the spinner (tesselated and spun separately).
     private static readonly string[] AssemblyElements = { "rotating/topper", "rotating/rod", "rotating/arrow/*" };
     private static readonly string[] SpinnerElements = { "rotating/spinner/*" };
@@ -32,10 +31,6 @@ public class BlockEntityRotorvane : BlockEntity
     // spinner's own un-accumulated origin would spin the fan about a point near the block's corner.
     private static readonly Vec3f SpinnerPivot = new(13.375f / 16f, 12.15f / 16f, 8f / 16f);
 
-    // "100% wind speed" reference for the sound's volume/pitch curve, matching WindArrowMapLayer's own
-    // RefSpeed convention (field magnitude at calm baseline jetstream flow), so the sound hits full
-    // intended loudness/pitch at the same wind strength the map overlay calls "100%".
-    private const double RefSpeed = 1.0;
     private const float MaxVolume = 0.25f; // sound asset is authored for 100% wind speed at full volume
     private const float MinPitch = 0.6f;
     private const float MaxPitch = 1.4f;
@@ -49,12 +44,14 @@ public class BlockEntityRotorvane : BlockEntity
     private const float PitchEaseRatePerSecond = 2f;
     private const float VolumeEaseRatePerSecond = 2f;
 
-    private MeshData? baseMesh;
-    private RotorvaneRenderer? renderer;
     private ILoadedSound? sound;
     private ICoreClientAPI? capi;
     private float currentPitch = MinPitch;
     private float currentVolume;
+
+    protected override AssetLocation ShapeLocation => new("dynamicwind", "shapes/block/rotorvane.json");
+    protected override string BaseMeshDebugName => "rotorvane-base";
+    protected override string RendererRegistrationName => "dynamicwind-rotorvane";
 
     public override void Initialize(ICoreAPI api)
     {
@@ -62,9 +59,9 @@ public class BlockEntityRotorvane : BlockEntity
         if (api is ICoreClientAPI capi)
         {
             this.capi = capi;
-            BuildMeshesAndRenderer(capi);
             StartSound(capi);
             RegisterGameTickListener(UpdateSound, SoundUpdateMs);
+            capi.Event.PauseResume += OnPauseResume;
         }
     }
 
@@ -89,15 +86,9 @@ public class BlockEntityRotorvane : BlockEntity
     private void UpdateSound(float dt)
     {
         if (sound == null || sound.IsDisposed) return;
+        if (capi != null && capi.IsGamePaused) return;
 
-        if (capi != null && capi.IsGamePaused)
-        {
-            if (!sound.IsPaused) sound.Pause();
-            return;
-        }
-        if (sound.IsPaused) sound.Start(); // resume
-
-        double frac = GetWindSpeed() / RefSpeed;
+        double frac = GetWindSpeed() / WindReference.Speed;
         if (frac > 1) frac = 1;
 
         float dtSeconds = SoundUpdateMs / 1000f;
@@ -111,8 +102,21 @@ public class BlockEntityRotorvane : BlockEntity
         sound.SetPitch(currentPitch);
     }
 
+    /// <summary>The tick listener driving <see cref="UpdateSound"/> stops firing while the game is paused
+    /// (single-player pause suspends the client's own game tick along with the internal server it's
+    /// stepping), so relying on that listener to notice <c>IsGamePaused</c> and pause the loop never runs -
+    /// the sound keeps looping into the frozen background. The engine's own pause/resume event fires
+    /// directly from <c>ClientMain.PauseGame</c>, independent of the tick loop, so it still reaches us.</summary>
+    private void OnPauseResume(bool isPaused)
+    {
+        if (sound == null || sound.IsDisposed) return;
+        if (isPaused) sound.Pause();
+        else sound.Start();
+    }
+
     private void StopSound()
     {
+        if (capi != null) capi.Event.PauseResume -= OnPauseResume;
         if (sound == null) return;
         sound.Stop();
         sound.Dispose();
@@ -123,44 +127,19 @@ public class BlockEntityRotorvane : BlockEntity
 
     #region Mesh and renderer setup
 
-    private void BuildMeshesAndRenderer(ICoreClientAPI capi)
+    protected override IRenderer CreateRenderer(ICoreClientAPI capi, Shape shape, ITexPositionSource tex)
     {
-        IAsset asset = capi.Assets.TryGet(new AssetLocation("dynamicwind", "shapes/block/rotorvane.json"));
-        if (asset == null) return;
-        Shape shape = asset.ToObject<Shape>();
-        ITexPositionSource tex = capi.Tesselator.GetTextureSource(Block);
-
-        capi.Tesselator.TesselateShape("rotorvane-base", shape, out baseMesh, tex, null, 0, 0, 0, null, BaseElements);
         capi.Tesselator.TesselateShape("rotorvane-assembly", shape, out MeshData assemblyMesh, tex, null, 0, 0, 0, null, AssemblyElements);
         capi.Tesselator.TesselateShape("rotorvane-spinner", shape, out MeshData spinnerMesh, tex, null, 0, 0, 0, null, SpinnerElements);
 
-        renderer = new RotorvaneRenderer(capi, this, SpinnerPivot);
+        RotorvaneRenderer renderer = new(capi, this, SpinnerPivot);
         renderer.SetMeshes(capi.Render.UploadMesh(assemblyMesh), capi.Render.UploadMesh(spinnerMesh));
-        capi.Event.RegisterRenderer(renderer, EnumRenderStage.Opaque, "dynamicwind-rotorvane");
-
-        MarkDirty(true); // re-tesselate now that baseMesh is ready (so the assembly/spinner aren't baked statically)
-    }
-
-    public override bool OnTesselation(ITerrainMeshPool mesher, ITesselatorAPI tessThreadTesselator)
-    {
-        if (baseMesh == null) return false; // not ready yet -> let the full shape bake once
-        mesher.AddMeshData(baseMesh);
-        return true; // skip default (excludes the rotating assembly + spinner from the static mesh)
+        return renderer;
     }
 
     #endregion
 
     #region Wind query API
-
-    /// <summary>Yaw (radians) for the assembly to point downwind; NaN when calm/occluded (hold position).</summary>
-    public float GetTargetYaw()
-    {
-        if (Api == null) return float.NaN;
-        if (IsOccluded()) return float.NaN;
-
-        Vec3d w = Api.World.BlockAccessor.GetWindSpeedAt(Pos.ToVec3d());
-        return VaneWind.TargetYawFor(w);
-    }
 
     /// <summary>Angular speed (radians/s) the spinner should turn at: wind strength scaled by how well the
     /// assembly's current facing catches the wind (see <see cref="GetDirectionalMod"/>) - head-on toward
@@ -179,50 +158,21 @@ public class BlockEntityRotorvane : BlockEntity
     /// windmill rotor patch uses. 1 (no modulation) when calm/occluded, since speed is already 0 then.</summary>
     private float GetDirectionalMod()
     {
-        if (renderer == null) return 1f;
+        if (renderer is not RotorvaneRenderer rotorRenderer) return 1f;
         float target = GetTargetYaw();
         if (float.IsNaN(target)) return 1f;
-        return GameMath.Cos(GameMath.AngleRadDistance(renderer.CurrentYaw, target));
+        return GameMath.Cos(GameMath.AngleRadDistance(rotorRenderer.CurrentYaw, target));
     }
-
-    /// <summary>True directional wind magnitude at this block (0 when calm or occluded); shared by the
-    /// spinner's angular speed, the sound's volume/pitch curve, and <see cref="RotorvaneRenderer"/>'s
-    /// yaw-easing rate (<see cref="Client.Render.VaneTurnRate"/>).</summary>
-    public double GetWindSpeed()
-    {
-        if (Api == null || IsOccluded()) return 0.0;
-        Vec3d w = Api.World.BlockAccessor.GetWindSpeedAt(Pos.ToVec3d());
-        return VaneWind.SpeedOf(w);
-    }
-
-    /// <summary>Same cave/undergroundWindmills gate windmill rotors and the plain weathervane arrow use.</summary>
-    private bool IsOccluded() => VaneWind.IsOccluded(Api!, Pos);
 
     public override void GetBlockInfo(IPlayer forPlayer, StringBuilder dsc)
     {
         base.GetBlockInfo(forPlayer, dsc);
         if (Api == null) return;
 
-        Vec3d w = Api.World.BlockAccessor.GetWindSpeedAt(Pos.ToVec3d());
-        dsc.AppendLine(Lang.Get("dynamicwind:blockinfo-windheading", WindCompass.GetName(w.X, w.Z)));
-        dsc.AppendLine(Lang.Get("dynamicwind:blockinfo-windspeed", (int)Math.Round(GetWindSpeed() / RefSpeed * 100)));
+        dsc.AppendLine(Lang.Get("dynamicwind:blockinfo-windspeed", (int)Math.Round(GetWindSpeed() / WindReference.Speed * 100)));
     }
 
     #endregion
 
-    public override void OnBlockRemoved()
-    {
-        base.OnBlockRemoved();
-        renderer?.Dispose();
-        renderer = null;
-        StopSound();
-    }
-
-    public override void OnBlockUnloaded()
-    {
-        base.OnBlockUnloaded();
-        renderer?.Dispose();
-        renderer = null;
-        StopSound();
-    }
+    protected override void OnDisposeExtras() => StopSound();
 }

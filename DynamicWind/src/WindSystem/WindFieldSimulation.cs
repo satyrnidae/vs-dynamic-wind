@@ -516,9 +516,17 @@ public class WindFieldSimulation
 
     #region Occlusion / fronts
 
+    /// <summary>Reach-growth multiplier against whichever cell sits on a side (see DeltaTSlowdownScale
+    /// above): a similar air mass (<paramref name="targetIndex"/>'s <see cref="PressureCell.AirMassTemp"/>
+    /// close to <paramref name="c"/>'s own) offers little resistance and the base rate applies almost
+    /// unmodified; a starkly different one slows it. No cell on that side means unmodified base rate.</summary>
+    private double ReachGrowthMult(PressureCell c, int targetIndex) => targetIndex >= 0
+        ? 1.0 / (1.0 + DeltaTSlowdownScale * Math.Abs(c.AirMassTemp - field.Cells[targetIndex].AirMassTemp))
+        : 1.0;
+
     /// <summary>
     /// Grows each low's <see cref="PressureCell.ColdFrontReach"/>/<see cref="PressureCell.WarmFrontReach"/>
-    /// every hour (rate modulated by <see cref="DeltaTSlowdownScale"/> against whatever cell sits on that
+    /// every hour (rate modulated by <see cref="ReachGrowthMult"/> against whatever cell sits on that
     /// side), then checks whether the low's advancing cold front has physically CAUGHT another pressure
     /// cell (low or high) on its equatorward side - real occlusion is a cyclone's cold front overtaking
     /// the boundary ahead of it, a genuine two-cell event, not a fixed ratio against its own warm front or
@@ -529,14 +537,6 @@ public class WindFieldSimulation
     /// front (kind = warm) - matching real synoptic classification. Storm likelihood then drops hard and
     /// remaining lifetime is cut short, same as before.
     /// </summary>
-    /// <summary>Reach-growth multiplier against whichever cell sits on a side (see DeltaTSlowdownScale
-    /// above): a similar air mass (<paramref name="targetIndex"/>'s <see cref="PressureCell.AirMassTemp"/>
-    /// close to <paramref name="c"/>'s own) offers little resistance and the base rate applies almost
-    /// unmodified; a starkly different one slows it. No cell on that side means unmodified base rate.</summary>
-    private double ReachGrowthMult(PressureCell c, int targetIndex) => targetIndex >= 0
-        ? 1.0 / (1.0 + DeltaTSlowdownScale * Math.Abs(c.AirMassTemp - field.Cells[targetIndex].AirMassTemp))
-        : 1.0;
-
     private void ApplyOcclusion(double now, double dGameHours)
     {
         if (dGameHours <= 0) return;
@@ -566,7 +566,9 @@ public class WindFieldSimulation
                 double catchDist = OcclusionCatchRadiusFactor * c.ColdFrontReach * c.Radius + OcclusionCatchTargetRadiusFactor * target.Radius;
                 if (dist > catchDist) continue; // not caught yet
 
-                c.OcclusionKind = c.AirMassTemp <= target.AirMassTemp ? (byte)1 : (byte)2; // 1 = cold, 2 = warm
+                c.OcclusionKind = c.AirMassTemp <= target.AirMassTemp
+                    ? PressureCell.OcclusionKindCold
+                    : PressureCell.OcclusionKindWarm;
                 c.StormLikelihood = OcclusionAftermathStormLikelihood; // storm winds down once occluded
                 c.OccludedUntilTotalHours = now + OccludedVisualHours;
 

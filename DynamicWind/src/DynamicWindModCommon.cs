@@ -236,10 +236,8 @@ public abstract class DynamicWindModCommon : ModSystem
     /// enclosed, <see cref="OcclusionLightThreshold"/>+ = fully open); <see cref="OcclusionSharpness"/>
     /// &gt; 1 keeps near-open spots near full speed and only cuts hard once mostly enclosed.
     ///
-    /// Both the room BFS and the light lookup touch chunk data, so skip both outside loaded terrain
-    /// (treat as fully open) - otherwise the world-map wind overlay pays this cost per sampled cell at
-    /// high zoom-out, mostly landing in unloaded chunks it can't usefully occlude anyway
-    /// (<see cref="DynamicWind.Client.MapLayers.WindArrowMapLayer"/> samples everywhere via <c>RequireChunkLoaded = false</c>).
+    /// Skips both lookups (treats as fully open) outside loaded terrain, since both touch chunk data and
+    /// the world-map wind overlay samples everywhere, mostly over unloaded chunks it can't occlude anyway.
     /// </summary>
     private double OcclusionFactor(Vec3d pos)
     {
@@ -294,7 +292,7 @@ public abstract class DynamicWindModCommon : ModSystem
 
             // Front term: blended air-mass character in [-1, 1] (independent of pressure sign).
             double t = Field.CellTemperatureAt(pos.X, pos.Z, totalHours);
-            double frontDelta = FrontTemperatureMax * Clamp1(t);
+            double frontDelta = FrontTemperatureMax * GameMath.Clamp(t, -1, 1);
 
             // Terrain thermal term: + warm land / - cool water. TerrainThermal is already denominated in
             // deg C, so this only normalises its nominal amplitude to the configured maximum shift.
@@ -302,7 +300,7 @@ public abstract class DynamicWindModCommon : ModSystem
             if (Field.TerrainTempFunc != null)
             {
                 double anomaly = Field.TerrainTempFunc(pos.X, pos.Z, totalHours);
-                thermalDelta = ThermalTemperatureMax * Clamp1(anomaly / TerrainThermal.Amplitude);
+                thermalDelta = ThermalTemperatureMax * GameMath.Clamp(anomaly / TerrainThermal.Amplitude, -1, 1);
             }
 
             climate.Temperature += (float)(frontDelta + thermalDelta);
@@ -322,8 +320,6 @@ public abstract class DynamicWindModCommon : ModSystem
             inClimateHandler = false;
         }
     }
-
-    private static double Clamp1(double v) => v < -1 ? -1 : (v > 1 ? 1 : v);
 
     #endregion
 }

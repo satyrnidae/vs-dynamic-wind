@@ -90,7 +90,7 @@ internal static class TerrainThermal
     /// purposes (birth air-mass temperature, heat/cold-wave season pick): +1 at that hemisphere's midsummer,
     /// -1 at midwinter. Mutates <paramref name="pos"/>'s Y transiently (GetSeasonRel only needs X/Z, but the
     /// convention elsewhere in this mod is to pass Y = sea level) and restores it before returning, since
-    /// callers in <see cref="PressureAt"/> still need the original object afterward.</summary>
+    /// callers pass in their own shared <see cref="BlockPos"/> and still need it unchanged afterward.</summary>
     private static double SeasonWarmthAt(IWorldAccessor world, BlockPos pos)
     {
         try

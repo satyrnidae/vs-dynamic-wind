@@ -9,14 +9,9 @@ using Vintagestory.API.Config;
 
 namespace DynamicWind.Client;
 
-/// <summary>
-/// Client-side sail trim diagnostics (<c>.dwind sail</c>). Trim input itself now comes from
-/// <c>SailboatWind.HandleCtrlTrim</c> (Ctrl+A/D repurposing the tiller's own turn keys, read directly off
-/// synced <c>EntityControls</c> in the SeatsToMotion postfix) - the earlier hold-to-swing bracket-key
-/// hotkeys and their packet path were removed once that alternate control was confirmed working, since
-/// having two independent input paths write the same server-side trim state was only useful during that
-/// verification window.
-/// </summary>
+/// <summary>Client-side sail trim diagnostics (<c>.dwind sail</c>, <c>.dwind sailgraph</c>). Trim input
+/// itself is <c>SailboatWind.HandleCtrlTrim</c> (Ctrl+A/D repurposing the tiller's own turn keys) - not
+/// handled here.</summary>
 internal sealed class SailTrimInput
 {
     private readonly ICoreClientAPI capi;

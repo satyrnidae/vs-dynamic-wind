@@ -2,6 +2,7 @@ using System;
 using System.Reflection;
 using DynamicWind.Config;
 using DynamicWind.Entities;
+using DynamicWind.Utils;
 using DynamicWind.WindSystem;
 using HarmonyLib;
 using Vintagestory.API.Common;
@@ -29,9 +30,8 @@ internal static class SailboatWind
     // Former DynamicWindConfig tunables, now fixed constants (see DynamicWindConfig's class remarks).
     private const float SailboatTailwindMaxBoost = 0.5f;
     private const float SailboatHeadwindMaxPenalty = 0.1f;
-    private const float SailboatReferenceWindSpeed = 1.0f;
 
-    // Wind-speed term: windBoost = f*Slope - Base, f = windSpeed/SailboatReferenceWindSpeed (unclamped
+    // Wind-speed term: windBoost = f*Slope - Base, f = windSpeed/WindReference.Speed (unclamped
     // above 1 - a storm keeps extrapolating the boost upward, only floored at f=0).
     private const float SailboatWindBoostSlope = 0.4f;
     private const float SailboatWindBoostBase = 0.15f;
@@ -314,7 +314,7 @@ internal static class SailboatWind
     /// speed. Floored at 0 (wind speed can't be negative).</summary>
     internal static double WindSpeedFraction(double windSpeed)
     {
-        return Math.Max(0.0, windSpeed / SailboatReferenceWindSpeed);
+        return Math.Max(0.0, windSpeed / WindReference.Speed);
     }
 
     /// <summary>Pre-trim behaviour: thrust from hull heading vs wind alone. Kept for

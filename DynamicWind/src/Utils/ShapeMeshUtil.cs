@@ -3,16 +3,10 @@ using Vintagestory.API.Client;
 
 namespace DynamicWind.Utils;
 
-/// <summary>
-/// Reusable unit meshes for procedural front-line decorations, built the same way as the VS API's
-/// <see cref="QuadMeshUtil.GetQuad"/> (plain <see cref="MeshData"/>, no RGBA - color comes from the
-/// shader's <c>rgbaIn</c> uniform against a solid white texture, see <see cref="DynamicWind.Client.MapLayers.FrontMapLayer"/>).
-/// Both shapes share one convention: the "hinge" edge sits at local X=0 (spanning Y in [-1, 1]) - the point
-/// on the front curve the decoration is anchored to - and the shape poke out to local X=+1, so after
-/// <c>Translate(sx,sy,z).RotateZ(angle).Scale(pokeLen, halfWidth, 0)</c> the decoration protrudes from the
-/// sample point in whichever direction <c>angle</c> (the front's local facing direction) points, matching
-/// how a real synoptic front symbol pips/bumps away from its own line.
-/// </summary>
+/// <summary>Reusable unit meshes for procedural front-line decorations (cold/warm front pips/bumps, see
+/// <see cref="DynamicWind.Client.MapLayers.FrontMapLayer"/>). Both shapes hinge at local X=0 (Y in [-1, 1])
+/// and poke out to X=+1, so <c>Translate(sx,sy,z).RotateZ(angle).Scale(pokeLen, halfWidth, 0)</c> protrudes
+/// the decoration from its anchor point in the front's local facing direction.</summary>
 public static class ShapeMeshUtil
 {
     /// <summary>An isoceles triangle: hinge edge at x=0 (y=-1..1), apex poking out to x=1 - the cold-front pip.</summary>

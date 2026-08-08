@@ -30,7 +30,6 @@ public class WindArrowMapLayer : DynamicWindWorldMapLayerBase
     #region Grid Setup
 
     public const int Grid = 24;
-    private const double RefSpeed = 1.0;       // wind speed treated as "100%"
 
     private DynamicWindConfig? cfg;
     private ICoreClientAPI? capi;
@@ -68,7 +67,7 @@ public class WindArrowMapLayer : DynamicWindWorldMapLayerBase
         capi = (ICoreClientAPI)api;
         weather = capi.ModLoader.GetModSystem<WeatherSystemClient>();
         quadModel = capi.Render.UploadMesh(QuadMeshUtil.GetQuad());
-        arrowTexId = capi.Render.GetOrLoadTexture(new AssetLocation("dynamicwind", "textures/icons/wind-direction.png"));
+        arrowTexId = LoadIconTexture(capi, "wind-direction");
         RestoreActiveState(cfg?.WindDirectionMapLayerVisibleByDefault ?? false); // hidden by default; the map legend can still toggle it
     }
 
@@ -125,7 +124,7 @@ public class WindArrowMapLayer : DynamicWindWorldMapLayerBase
 
     #endregion
 
-    #region Sampling and Caching
+    #region Sampling
 
     /// <summary>Fixed screen slot (row,col) -> nearest cell index in the world grid cached at the last
     /// Resample. If the cached bounds are degenerate (first frame), falls back to the same slot.</summary>
@@ -174,7 +173,7 @@ public class WindArrowMapLayer : DynamicWindWorldMapLayerBase
                 double speed = Math.Sqrt(w.X * w.X + w.Z * w.Z);
                 if (speed < 0.005) { cVisible[idx] = false; continue; }
 
-                double f = speed / RefSpeed;
+                double f = speed / WindReference.Speed;
                 if (f > 1) f = 1;
                 // Logarithmic length so low wind speeds stay legible (linear made them too small <50%).
                 double g = Math.Log(1 + 9 * f) / Math.Log(10); // 0..1, boosts the low end

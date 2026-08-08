@@ -510,8 +510,8 @@ public class WindField
         double origSpd = Math.Sqrt(wx * wx + wz * wz);
         if (origSpd < 1e-4) return;
         double spd = origSpd;
-        double dirx = wx / spd;
-        double dirz = wz / spd;
+        double dirx = wx, dirz = wz;
+        Vec2Math.TryNormalize(ref dirx, ref dirz);
 
         Func<double, double, double> H = TerrainHeightFunc!;
         double d = OroGradDist;

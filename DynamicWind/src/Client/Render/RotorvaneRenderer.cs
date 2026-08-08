@@ -13,19 +13,13 @@ namespace DynamicWind.Client.Render;
 /// placed via <c>rotationX</c>), so spinning it is a second RotateX applied about the hub pivot BEFORE the
 /// shared yaw, rather than composed with it.
 /// </summary>
-public class RotorvaneRenderer : IRenderer
+public class RotorvaneRenderer : VaneRendererBase
 {
-    // Real fan blades have rotational inertia - easing the spinner's angular speed toward its raw target
-    // instead of snapping to it every frame keeps gusty/noisy wind readings (and GetDirectionalMod, which
-    // depends on the assembly's still-swinging yaw) from making it visibly jerk speed up/down or flicker
-    // direction.
+    // Eased, not snapped, so gusty wind readings don't make the spinner visibly jerk speed up/down.
     private const float SpinSpeedEaseRatePerSecond = 2f;
 
-    private readonly ICoreClientAPI capi;
     private readonly BlockEntityRotorvane be;
-    private readonly Vec3d pos;
     private readonly Vec3f spinnerPivot;
-    private readonly Matrixf modelMat = new();
     private MeshRef? assemblyMeshref;
     private MeshRef? spinnerMeshref;
     private float currentYaw;
@@ -33,19 +27,14 @@ public class RotorvaneRenderer : IRenderer
     private float currentSpinSpeed;
     private readonly TurnSqueakSound turnSqueak;
 
-    public double RenderOrder => 0.5;
-    public int RenderRange => 48;
-
     /// <summary>The assembly's current eased yaw (radians); read by <see cref="BlockEntityRotorvane"/> to
     /// derive the facing-direction spin/pitch modulator from how far it still lags the true wind bearing.</summary>
     public float CurrentYaw => currentYaw;
 
-    public RotorvaneRenderer(ICoreClientAPI capi, BlockEntityRotorvane be, Vec3f spinnerPivot)
+    public RotorvaneRenderer(ICoreClientAPI capi, BlockEntityRotorvane be, Vec3f spinnerPivot) : base(capi, be.Pos.ToVec3d())
     {
-        this.capi = capi;
         this.be = be;
         this.spinnerPivot = spinnerPivot;
-        pos = be.Pos.ToVec3d();
         turnSqueak = new TurnSqueakSound(capi, pos);
     }
 
@@ -55,21 +44,14 @@ public class RotorvaneRenderer : IRenderer
         spinnerMeshref = spinnerMesh;
     }
 
-    public void OnRenderFrame(float dt, EnumRenderStage stage)
+    public override void OnRenderFrame(float dt, EnumRenderStage stage)
     {
         if (assemblyMeshref == null || assemblyMeshref.Disposed) return;
         if (spinnerMeshref == null || spinnerMeshref.Disposed) return;
 
         if (!capi.IsGamePaused)
         {
-            float target = be.GetTargetYaw();
-            if (!float.IsNaN(target))
-            {
-                float delta = GameMath.AngleRadDistance(currentYaw, target);
-                float rate = VaneTurnRate.Compute(be.GetWindSpeed());
-                currentYaw += delta * Math.Min(1f, dt * rate); // smooth swing, faster in stronger wind
-            }
-            turnSqueak.Update(currentYaw, target);
+            currentYaw = VaneTurnRate.EaseYaw(currentYaw, be.GetTargetYaw(), be.GetWindSpeed(), dt, turnSqueak);
 
             float targetSpinSpeed = be.GetSpinSpeed();
             currentSpinSpeed += (targetSpinSpeed - currentSpinSpeed) * Math.Min(1f, dt * SpinSpeedEaseRatePerSecond);
@@ -77,41 +59,25 @@ public class RotorvaneRenderer : IRenderer
             spinAngle = GameMath.Mod(spinAngle, GameMath.TWOPI);
         }
 
-        IRenderAPI rpi = capi.Render;
         Vec3d cam = capi.World.Player.Entity.CameraPos;
-        rpi.GlDisableCullFace();
-        rpi.GlToggleBlend(true);
+        IStandardShaderProgram prog = BeginRender();
 
-        IStandardShaderProgram prog = rpi.PreparedStandardShader((int)pos.X, (int)pos.Y, (int)pos.Z);
-        prog.Tex2D = capi.BlockTextureAtlas.AtlasTextures[0].TextureId;
-        prog.ViewMatrix = rpi.CameraMatrixOriginf;
-        prog.ProjectionMatrix = rpi.CurrentProjectionMatrix;
+        prog.ModelMatrix = BuildYawMatrix(cam, currentYaw).Values;
+        capi.Render.RenderMesh(assemblyMeshref);
 
-        prog.ModelMatrix = modelMat
-            .Identity()
-            .Translate(pos.X - cam.X + 0.5, pos.Y - cam.Y, pos.Z - cam.Z + 0.5)
-            .RotateY(currentYaw)
-            .Translate(-0.5, 0, -0.5)
-            .Values;
-        rpi.RenderMesh(assemblyMeshref);
-
-        prog.ModelMatrix = modelMat
-            .Identity()
-            .Translate(pos.X - cam.X + 0.5, pos.Y - cam.Y, pos.Z - cam.Z + 0.5)
-            .RotateY(currentYaw)
-            .Translate(-0.5, 0, -0.5)
+        prog.ModelMatrix = BuildYawMatrix(cam, currentYaw)
             .Translate(spinnerPivot.X, spinnerPivot.Y, spinnerPivot.Z)
             .RotateX(spinAngle)
             .Translate(-spinnerPivot.X, -spinnerPivot.Y, -spinnerPivot.Z)
             .Values;
-        rpi.RenderMesh(spinnerMeshref);
+        capi.Render.RenderMesh(spinnerMeshref);
 
-        prog.Stop();
+        EndRender(prog);
     }
 
-    public void Dispose()
+    public override void Dispose()
     {
-        capi.Event.UnregisterRenderer(this, EnumRenderStage.Opaque);
+        base.Dispose();
         assemblyMeshref?.Dispose();
         assemblyMeshref = null;
         spinnerMeshref?.Dispose();

@@ -84,7 +84,9 @@ public class EntityBehaviorSailTrim : EntityBehavior
     /// <see cref="UpdateBillow"/> reads it, and so does the <c>.dwind sailgraph</c> HUD when open, rather
     /// than each independently re-running <c>SailboatWind.Evaluate</c>'s full <c>GetWindSpeedAt</c> call
     /// (the whole <c>OnGetWindSpeed</c> hook chain - front excess, orographic, occlusion - not a cheap
-    /// read) on their own schedule. Default/invalid until the first gated tick below runs.</summary>
+    /// read) on their own schedule. Default/invalid until the first gated tick below runs. Its
+    /// <c>WindMult</c>/<c>TrimMult</c> fields are <c>SailboatWind</c>'s own names for what CLAUDE.md calls
+    /// "windBoost"/"angleBoost" - same two terms, named per-file.</summary>
     internal SailboatWind.SailState LastState { get; private set; }
 
     public float TargetAngleDeg
@@ -109,19 +111,19 @@ public class EntityBehaviorSailTrim : EntityBehavior
         base.Initialize(properties, attributes);
         // Start already trimmed rather than swinging up from square on every load/chunk-reload.
         CurrentAngleDeg = TargetAngleDeg;
-
-        // EntityBoat.OnTesselation clones the shape and prunes the two inactive sail branches
-        // (RemoveElementByName) itself, entirely outside the engine's `shapeIsCloned` out-param that
-        // Entity.OnTesselation uses to decide whether to rebuild the animator fresh (AnimationManager.
-        // LoadAnimator) or reuse a cached one (AnimationCache.LoadAnimatorCached, keyed only by
-        // `entity.Code + shape base path` - NOT by sailPosition). Since EntityBoat's own clone never flips
-        // that flag, every re-tessellation after the FIRST ever hits the cache and reuses whichever sail
-        // branch's RootPoses/RootElems got cached first - elements unique to any other branch (our
-        // per-branch clew ropes, billow's panel elements) then never receive a pose at all and render at
-        // raw rest geometry. Force-clearing the cache on every sailPosition change makes the next
-        // tessellation take the LoadAnimator (non-cached, correct) path instead.
         entity.WatchedAttributes.RegisterModifiedListener("sailPosition", OnSailPositionChanged);
     }
+
+    // EntityBoat.OnTesselation clones the shape and prunes the two inactive sail branches
+    // (RemoveElementByName) itself, entirely outside the engine's `shapeIsCloned` out-param that
+    // Entity.OnTesselation uses to decide whether to rebuild the animator fresh (AnimationManager.
+    // LoadAnimator) or reuse a cached one (AnimationCache.LoadAnimatorCached, keyed only by
+    // `entity.Code + shape base path` - NOT by sailPosition). Since EntityBoat's own clone never flips
+    // that flag, every re-tessellation after the FIRST ever hits the cache and reuses whichever sail
+    // branch's RootPoses/RootElems got cached first - elements unique to any other branch (our
+    // per-branch clew ropes, billow's panel elements) then never receive a pose at all and render at raw
+    // rest geometry. Force-clearing the cache on every sailPosition change makes the next tessellation
+    // take the LoadAnimator (non-cached, correct) path instead.
 
     private void OnSailPositionChanged()
     {

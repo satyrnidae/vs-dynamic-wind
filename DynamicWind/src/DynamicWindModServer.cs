@@ -28,6 +28,8 @@ public class DynamicWindModServer : DynamicWindModCommon
     private long tickListenerId;
     private double lastBroadcastHours;
 
+    #region Setup
+
     public override bool ShouldLoad(EnumAppSide side) => side == EnumAppSide.Server;
 
     public override void StartServerSide(ICoreServerAPI api)
@@ -90,6 +92,10 @@ public class DynamicWindModServer : DynamicWindModCommon
         Mod.Logger.Notification("[dynamicwind] Server started.");
     }
 
+    #endregion
+
+    #region Tick and Sync
+
     // The actual simulation now runs on its own dedicated thread (see WindFieldSimulation.Start); this
     // main-thread tick only refreshes the player-position snapshot the sim thread reads (main-thread-only
     // safe, since AllOnlinePlayers can mutate concurrently with player join/leave) and broadcasts the
@@ -139,6 +145,10 @@ public class DynamicWindModServer : DynamicWindModCommon
         Mod.Logger.Notification("[dynamicwind] Config updated by {0} and broadcast to all clients.", fromPlayer.PlayerName);
     }
 
+    #endregion
+
+    #region Lifecycle
+
     public override void Dispose()
     {
         sim?.Stop();
@@ -153,4 +163,6 @@ public class DynamicWindModServer : DynamicWindModCommon
         DynamicWindRuntime.ServerField = null;
         DynamicWindRuntime.ServerConfig = null;
     }
+
+    #endregion
 }

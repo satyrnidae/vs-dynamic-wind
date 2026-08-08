@@ -1,4 +1,3 @@
-using System;
 using DynamicWind.Blocks;
 using Vintagestory.API.Client;
 using Vintagestory.API.MathTools;
@@ -11,67 +10,40 @@ namespace DynamicWind.Client.Render;
 /// letters are baked into the block model; only the arrow is drawn here, rotated about the block's
 /// vertical centre axis.
 /// </summary>
-public class WeathervaneRenderer : IRenderer
+public class WeathervaneRenderer : VaneRendererBase
 {
-    private readonly ICoreClientAPI capi;
     private readonly BlockEntityWeathervane be;
-    private readonly Vec3d pos;
-    private readonly Matrixf modelMat = new();
     private MeshRef? meshref;
     private float currentYaw;
     private readonly TurnSqueakSound turnSqueak;
 
-    public double RenderOrder => 0.5;
-    public int RenderRange => 48;
-
-    public WeathervaneRenderer(ICoreClientAPI capi, BlockEntityWeathervane be)
+    public WeathervaneRenderer(ICoreClientAPI capi, BlockEntityWeathervane be) : base(capi, be.Pos.ToVec3d())
     {
-        this.capi = capi;
         this.be = be;
-        pos = be.Pos.ToVec3d();
         turnSqueak = new TurnSqueakSound(capi, pos);
     }
 
     public void SetMesh(MeshRef mesh) => meshref = mesh;
 
-    public void OnRenderFrame(float dt, EnumRenderStage stage)
+    public override void OnRenderFrame(float dt, EnumRenderStage stage)
     {
         if (meshref == null || meshref.Disposed) return;
 
         if (!capi.IsGamePaused)
         {
-            float target = be.GetTargetYaw();
-            if (!float.IsNaN(target))
-            {
-                float delta = GameMath.AngleRadDistance(currentYaw, target);
-                float rate = VaneTurnRate.Compute(be.GetWindSpeed());
-                currentYaw += delta * Math.Min(1f, dt * rate); // smooth swing, faster in stronger wind
-            }
-            turnSqueak.Update(currentYaw, target);
+            currentYaw = VaneTurnRate.EaseYaw(currentYaw, be.GetTargetYaw(), be.GetWindSpeed(), dt, turnSqueak);
         }
 
-        IRenderAPI rpi = capi.Render;
         Vec3d cam = capi.World.Player.Entity.CameraPos;
-        rpi.GlDisableCullFace();
-        rpi.GlToggleBlend(true);
-
-        IStandardShaderProgram prog = rpi.PreparedStandardShader((int)pos.X, (int)pos.Y, (int)pos.Z);
-        prog.Tex2D = capi.BlockTextureAtlas.AtlasTextures[0].TextureId;
-        prog.ModelMatrix = modelMat
-            .Identity()
-            .Translate(pos.X - cam.X + 0.5, pos.Y - cam.Y, pos.Z - cam.Z + 0.5)
-            .RotateY(currentYaw)
-            .Translate(-0.5, 0, -0.5)
-            .Values;
-        prog.ViewMatrix = rpi.CameraMatrixOriginf;
-        prog.ProjectionMatrix = rpi.CurrentProjectionMatrix;
-        rpi.RenderMesh(meshref);
-        prog.Stop();
+        IStandardShaderProgram prog = BeginRender();
+        prog.ModelMatrix = BuildYawMatrix(cam, currentYaw).Values;
+        capi.Render.RenderMesh(meshref);
+        EndRender(prog);
     }
 
-    public void Dispose()
+    public override void Dispose()
     {
-        capi.Event.UnregisterRenderer(this, EnumRenderStage.Opaque);
+        base.Dispose();
         meshref?.Dispose();
         meshref = null;
     }

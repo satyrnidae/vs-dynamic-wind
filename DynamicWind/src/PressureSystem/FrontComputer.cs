@@ -169,12 +169,12 @@ public static class FrontComputer
                 {
                     // OCCLUDED: the cold front physically caught another pressure cell on the equatorward
                     // side (see WindFieldSimulation.ApplyOcclusion) - renders a single open curve toward
-                    // that side, using the cold/warm symbol per PressureCell.OcclusionKind (0/unset falls
+                    // that side, using the cold/warm symbol per PressureCell.OcclusionKind (Unset falls
                     // back to the generic occluded symbol, e.g. saves migrated from before it existed).
                     FrontType occType = c.OcclusionKind switch
                     {
-                        1 => FrontType.ColdOcclusion,
-                        2 => FrontType.WarmOcclusion,
+                        PressureCell.OcclusionKindCold => FrontType.ColdOcclusion,
+                        PressureCell.OcclusionKindWarm => FrontType.WarmOcclusion,
                         _ => FrontType.Occluded
                     };
 
@@ -268,16 +268,21 @@ public static class FrontComputer
         RefZ = refZ
     };
 
+    /// <summary>Euclidean distance between two curve points - shared by every polyline-length accumulator
+    /// below so the same formula isn't hand-rolled at each call site.</summary>
+    private static double SegmentLength(Vec2d a, Vec2d b)
+    {
+        double dx = b.X - a.X, dz = b.Y - a.Y;
+        return Math.Sqrt(dx * dx + dz * dz);
+    }
+
     /// <summary>Precomputes cumulative arc-length along an open curve's points, for O(1) reuse by
     /// <see cref="SampleAt"/> instead of rebuilding it on every sample.</summary>
     private static double[] BuildCumulative(Vec2d[] pts)
     {
         var cumLen = new double[pts.Length];
         for (int i = 1; i < pts.Length; i++)
-        {
-            double dx = pts[i].X - pts[i - 1].X, dz = pts[i].Y - pts[i - 1].Y;
-            cumLen[i] = cumLen[i - 1] + Math.Sqrt(dx * dx + dz * dz);
-        }
+            cumLen[i] = cumLen[i - 1] + SegmentLength(pts[i - 1], pts[i]);
         return cumLen;
     }
 
@@ -409,7 +414,8 @@ public static class FrontComputer
             double ox = o.X + o.VelX * elapsed, oz = o.Z + o.VelZ * elapsed;
             double oRadius = Math.Max(o.Radius, o.RadiusMinor);
             double dx = ox - cx, dz = oz - cz;
-            if (dx * dx + dz * dz >= (ownRadius + oRadius) * OverlapDistanceFactor * (ownRadius + oRadius) * OverlapDistanceFactor) continue;
+            double maxOverlapDist = (ownRadius + oRadius) * OverlapDistanceFactor;
+            if (dx * dx + dz * dz >= maxOverlapDist * maxOverlapDist) continue;
             minX = Math.Min(minX, ox - oRadius); maxX = Math.Max(maxX, ox + oRadius);
             minZ = Math.Min(minZ, oz - oRadius); maxZ = Math.Max(maxZ, oz + oRadius);
         }
@@ -436,7 +442,7 @@ public static class FrontComputer
             double dx = mx - cx, dz = mz - cz;
             if (dx * dx + dz * dz > maxDist * maxDist) continue;
             double angle = Math.Atan2(dz, dx);
-            double diff = Math.Atan2(Math.Sin(angle - biasAngle), Math.Cos(angle - biasAngle));
+            double diff = AngleMath.AngleDiff(biasAngle, angle);
             if (Math.Abs(diff) > ArcHalfAngle) continue;
             filtered.Add(seg);
         }

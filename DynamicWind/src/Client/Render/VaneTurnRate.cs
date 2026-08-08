@@ -1,3 +1,7 @@
+using System;
+using DynamicWind.Utils;
+using Vintagestory.API.MathTools;
+
 namespace DynamicWind.Client.Render;
 
 /// <summary>
@@ -11,15 +15,25 @@ internal static class VaneTurnRate
     private const float MinRate = 0.6f; // rad/s coefficient at near-calm wind
     private const float MaxRate = 3f; // rad/s coefficient at full (100%) wind speed, the old fixed rate
 
-    // Matches WindArrowMapLayer/BlockEntityRotorvane's "100% wind speed" convention (the field's
-    // magnitude at calm baseline jetstream flow), so vanes reach full responsiveness at roughly the same
-    // strength the map overlay and rotorvane sound would call "100%".
-    private const double RefSpeed = 1.0;
-
     public static float Compute(double windSpeed)
     {
-        double frac = windSpeed / RefSpeed;
+        double frac = windSpeed / WindReference.Speed;
         if (frac < 0) frac = 0; else if (frac > 1) frac = 1;
         return MinRate + (MaxRate - MinRate) * (float)frac;
+    }
+
+    /// <summary>Eases <paramref name="currentYaw"/> toward <paramref name="targetYaw"/> (may be NaN, meaning
+    /// "no target yet") at a rate scaled by <paramref name="windSpeed"/>, then updates the shared turn-squeak
+    /// sound. Returns the new eased yaw.</summary>
+    public static float EaseYaw(float currentYaw, float targetYaw, double windSpeed, float dt, TurnSqueakSound squeak)
+    {
+        if (!float.IsNaN(targetYaw))
+        {
+            float delta = GameMath.AngleRadDistance(currentYaw, targetYaw);
+            float rate = Compute(windSpeed);
+            currentYaw += delta * Math.Min(1f, dt * rate); // smooth swing, faster in stronger wind
+        }
+        squeak.Update(currentYaw, targetYaw);
+        return currentYaw;
     }
 }

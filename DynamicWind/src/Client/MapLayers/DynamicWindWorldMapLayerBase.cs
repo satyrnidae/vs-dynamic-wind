@@ -105,4 +105,19 @@ public abstract class DynamicWindWorldMapLayerBase : MapLayer
 
     protected static Vec4f Lerp(Vec4f a, Vec4f b, float t)
         => new(a.R + (b.R - a.R) * t, a.G + (b.G - a.G) * t, a.B + (b.B - a.B) * t, 1f);
+
+    /// <summary>Loads a texture from <c>textures/icons/&lt;name&gt;.png</c> in this mod's own assets.</summary>
+    protected static int LoadIconTexture(ICoreClientAPI capi, string name)
+        => capi.Render.GetOrLoadTexture(new AssetLocation("dynamicwind", "textures/icons/" + name + ".png"));
+
+    /// <summary>Doubles <paramref name="step"/> from <paramref name="baseStep"/> until the visible
+    /// <paramref name="spanX"/> x <paramref name="spanZ"/> world area, sampled at that step, would cost no
+    /// more than <paramref name="maxCells"/> grid cells - so resolution scales down automatically as the
+    /// player zooms out instead of the sample cost growing unbounded.</summary>
+    protected static double CoarsenStep(double baseStep, double spanX, double spanZ, int maxCells)
+    {
+        double step = baseStep;
+        while (spanX / step * (spanZ / step) > maxCells) step *= 2;
+        return step;
+    }
 }

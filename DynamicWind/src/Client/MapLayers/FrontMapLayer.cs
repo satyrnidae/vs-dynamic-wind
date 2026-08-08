@@ -126,7 +126,17 @@ public class FrontMapLayer : DynamicWindWorldMapLayerBase
         RestoreActiveState(cfg?.FrontMapLayerVisibleByDefault ?? false); // off by default; toggle in the map legend
     }
 
-    private int Tex(string name) => capi!.Render.GetOrLoadTexture(new AssetLocation("dynamicwind", "textures/icons/" + name + ".png"));
+    private int Tex(string name) => LoadIconTexture(capi!, name);
+
+    public override void Dispose()
+    {
+        quad?.Dispose();
+        quad = null;
+        triMesh?.Dispose();
+        triMesh = null;
+        semiMesh?.Dispose();
+        semiMesh = null;
+    }
 
     #endregion
 
@@ -422,8 +432,7 @@ public class FrontMapLayer : DynamicWindWorldMapLayerBase
         }
         if (strengthSum < IsobarStep) return; // nothing significant enough to contour at all
 
-        double step = IsobarGridBaseStep;
-        while ((spanX / step) * (spanZ / step) > IsobarGridMaxCells) step *= 2;
+        double step = CoarsenStep(IsobarGridBaseStep, spanX, spanZ, IsobarGridMaxCells);
 
         double originX = vb.X1, originZ = vb.Z1;
         int nx = (int)Math.Ceiling(spanX / step) + 2;
@@ -456,20 +465,6 @@ public class FrontMapLayer : DynamicWindWorldMapLayerBase
             List<MarchingSquares.Segment> highSegs = MarchingSquares.Trace(values, nx, nz, originX, originZ, step, -levelMag);
             foreach (MarchingSquares.Segment s in highSegs) isobarSegments.Add(new IsobarSegment(s.A, s.B, false, ringIndex));
         }
-    }
-
-    #endregion
-
-    #region Lifecycle
-
-    public override void Dispose()
-    {
-        quad?.Dispose();
-        quad = null;
-        triMesh?.Dispose();
-        triMesh = null;
-        semiMesh?.Dispose();
-        semiMesh = null;
     }
 
     #endregion

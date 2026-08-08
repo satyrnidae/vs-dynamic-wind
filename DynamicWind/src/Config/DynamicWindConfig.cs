@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Reflection;
 using ProtoBuf;
+using Vintagestory.API.MathTools;
 
 namespace DynamicWind.Config;
 
@@ -28,11 +29,11 @@ namespace DynamicWind.Config;
 [ProtoContract(ImplicitFields = ImplicitFields.AllPublic)]
 public class DynamicWindConfig
 {
-    //  Jetstream (base flow)
+    // Jetstream (base flow)
     [Description("description-SeasonalBias")]
     public bool SeasonalBias { get; set; } = true;
 
-    //  Pressure systems
+    // Pressure systems
     // Range covers the pre-retune default (9) even though the synoptic retune lowered the DEFAULT to 2:
     // Validate() clamps every int to its [Range], so narrowing below the old default would silently
     // rewrite (and re-persist) an existing user's saved value with no migration or log line.
@@ -40,7 +41,7 @@ public class DynamicWindConfig
     [Description("description-MaxActiveCells")]
     public int MaxActiveCells { get; set; } = 2;
 
-    //  Humidity
+    // Humidity
     [Description("description-HumidityEnabled")]
     public bool HumidityEnabled { get; set; } = true;
 
@@ -52,32 +53,32 @@ public class DynamicWindConfig
     [Description("description-HumidityHudClockLineEnabled")]
     public bool HumidityHudClockLineEnabled { get; set; } = true;
 
-    //  Clouds
+    // Clouds
     [ProtoIgnore]
     [Category("clientside")]
     [Description("description-CloudsFollowWind")]
     public bool CloudsFollowWind { get; set; } = true;
 
-    //  Pressure dynamics
+    // Pressure dynamics
     [Description("description-AdvectWithWind")]
     public bool AdvectWithWind { get; set; } = true;
 
-    //  Orographic (terrain)
+    // Orographic (terrain)
     [Description("description-OrographicEnabled")]
     public bool OrographicEnabled { get; set; } = true;
 
-    //  Occlusion (indoor/underground shielding)
+    // Occlusion (indoor/underground shielding)
     [Description("description-OcclusionEnabled")]
     public bool OcclusionEnabled { get; set; } = true;
 
     [Description("description-OcclusionRoomsZeroWind")]
     public bool OcclusionRoomsZeroWind { get; set; } = true;
 
-    //  Windmill
+    // Windmill
     [Description("description-WindmillDirectionality")]
     public bool WindmillDirectionality { get; set; } = true;
 
-    //  Sailboat
+    // Sailboat
     [Description("description-SailboatEnabled")]
     public bool SailboatEnabled { get; set; } = true;
 
@@ -121,19 +122,16 @@ public class DynamicWindConfig
             {
                 float min = Convert.ToSingle(range.Minimum);
                 float max = Convert.ToSingle(range.Maximum);
-                prop.SetValue(this, Clamp((float)prop.GetValue(this)!, min, max));
+                prop.SetValue(this, GameMath.Clamp((float)prop.GetValue(this)!, min, max));
             }
             else if (prop.PropertyType == typeof(int))
             {
                 int min = Convert.ToInt32(range.Minimum);
                 int max = Convert.ToInt32(range.Maximum);
-                int v = (int)prop.GetValue(this)!;
-                prop.SetValue(this, v < min ? min : (v > max ? max : v));
+                prop.SetValue(this, GameMath.Clamp((int)prop.GetValue(this)!, min, max));
             }
         }
     }
-
-    internal static float Clamp(float v, float min, float max) => v < min ? min : (v > max ? max : v);
 
     /// <summary>
     /// Copy all values from another instance into this one (keeps the reference stable, which matters

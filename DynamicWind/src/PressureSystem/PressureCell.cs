@@ -10,6 +10,8 @@ namespace DynamicWind.PressureSystem;
 [ProtoContract(ImplicitFields = ImplicitFields.AllPublic)]
 public class PressureCell
 {
+    #region Core Fields
+
     public double X;
     public double Z;
     /// <summary>+ = low pressure, - = high pressure. Magnitude scales the induced wind speed.</summary>
@@ -21,9 +23,13 @@ public class PressureCell
     public double BornTotalHours;
     public double DiesTotalHours;
 
-    // Appended fields (see WindFieldSimulation/Load): ImplicitFields.AllPublic tags fields by declaration
-    // order and this struct is both network-synced and save-persisted, so new fields MUST be added at the
-    // end - inserting one earlier would shift the tag numbers of everything after it and corrupt old saves.
+    #endregion
+
+    #region Appended Fields
+
+    // ImplicitFields.AllPublic tags fields by declaration order and this struct is both network-synced and
+    // save-persisted, so new fields MUST be added at the end (see WindFieldSimulation/Load) - inserting one
+    // earlier would shift the tag numbers of everything after it and corrupt old saves.
 
     /// <summary>Influence radius along the cell's direction of travel (the along-stream/minor semi-axis),
     /// always &lt;= <see cref="Radius"/> (the cross-stream/major semi-axis). Real fronts are elongated
@@ -53,26 +59,18 @@ public class PressureCell
     public double OccludedUntilTotalHours;
 
     /// <summary>Intrinsic air-mass character in [-1, 1] this system carries (-1 = cold/polar, +1 =
-    /// warm/tropical), independent of whether it's a low or a high - a cold low and a warm high can both
-    /// exist, same as a polar low or a subtropical high in reality. Set once at spawn from the cell's birth
-    /// latitude + season + random jitter (see WindFieldSimulation.ComputeAirMassTemp) and carried for its
-    /// lifetime. Drives the real temperature shift in DynamicWindModCommon.OnGetClimate via
-    /// <see cref="DynamicWind.WindSystem.WindField.CellTemperatureAt"/>; also drives which SINGLE front
-    /// symbol a moving low draws (warm -> poleward/Warm, cold -> equatorward/Cold - see
-    /// DynamicWind.PressureSystem.FrontComputer) and biases the cell's own advection bearing toward the
-    /// pole (warm) or equator (cold) side (see WindFieldSimulation.Advect/AirMassBiasedAngle).</summary>
+    /// warm/tropical), independent of low/high - a cold low and a warm high can both exist. Set once at
+    /// spawn from birth latitude + season + jitter (WindFieldSimulation.ComputeAirMassTemp); drives the
+    /// climate temperature shift (WindField.CellTemperatureAt), which single front symbol a moving low
+    /// draws, and biases the cell's own advection bearing poleward/equatorward.</summary>
     public float AirMassTemp;
 
     /// <summary>Radial reach multiplier for this (low) cell's COLD/equatorward front contour, on top of the
-    /// base <see cref="Radius"/>/<see cref="RadiusMinor"/> ellipse - see FrontComputer. Starts at 1 and
-    /// grows FASTER than <see cref="WarmFrontReach"/> each hour (WindFieldSimulation.ApplyOcclusion) - real
-    /// cold fronts advect/extend faster than warm - so the two sides move and expand at different rates
-    /// over the cell's life; each side's growth rate is further modulated by how close this cell's
-    /// <see cref="AirMassTemp"/> is to whatever pressure cell sits on that side (similar air masses offer
-    /// little resistance and advance fastest; starkly different ones slow the advance). Once this cell's
-    /// cold-front reach physically reaches another pressure cell on its equatorward side, the cold front
-    /// has "caught" that cell and this low occludes (see WindFieldSimulation.ApplyOcclusion) - a real
-    /// two-cell event, not a fixed ratio/age timer.</summary>
+    /// base <see cref="Radius"/>/<see cref="RadiusMinor"/> ellipse. Starts at 1, grows FASTER than
+    /// <see cref="WarmFrontReach"/> (real cold fronts advect faster - WindFieldSimulation.ApplyOcclusion),
+    /// modulated by how close this cell's <see cref="AirMassTemp"/> is to whatever cell sits on that side.
+    /// Once it physically reaches another cell on its equatorward side, that cell is "caught" and this low
+    /// occludes - see WindFieldSimulation.ApplyOcclusion.</summary>
     public float ColdFrontReach = 1f;
 
     /// <summary>Radial reach multiplier for this (low) cell's WARM/poleward front contour. See
@@ -80,16 +78,30 @@ public class PressureCell
     public float WarmFrontReach = 1f;
 
     /// <summary>Classification of this low's occlusion, set once when <see cref="OccludedUntilTotalHours"/>
-    /// is first triggered (see WindFieldSimulation.ApplyOcclusion): 0 = unset (not yet occluded, or
-    /// occluded before this field existed - pre-migration saves fall back to the generic occluded
-    /// symbol), 1 = COLD occlusion (the catching cold front's air mass was colder than or equal to the
-    /// cell it caught - behaves like a cold front), 2 = WARM occlusion (the catching air was warmer -
-    /// behaves like a warm front). Matches the real synoptic distinction between cold-type and warm-type
-    /// occlusions. Meaningful only while <see cref="OccludedUntilTotalHours"/> is active.</summary>
+    /// is first triggered (see WindFieldSimulation.ApplyOcclusion) - one of <see cref="OcclusionKindUnset"/>/
+    /// <see cref="OcclusionKindCold"/>/<see cref="OcclusionKindWarm"/>. Meaningful only while
+    /// <see cref="OccludedUntilTotalHours"/> is active. Stored as a raw byte, not an enum, since this field
+    /// is protobuf-synced and save-persisted by declaration position (<c>ImplicitFields.AllPublic</c>).</summary>
     public byte OcclusionKind;
 
-    // Computed; excluded from protobuf (ImplicitFields.AllPublic would otherwise try to deserialize
-    // into this read-only property and throw).
+    /// <summary>Not yet occluded, or occluded before this field existed (pre-migration saves fall back to
+    /// the generic occluded symbol).</summary>
+    public const byte OcclusionKindUnset = 0;
+    /// <summary>The catching cold front's air mass was colder than or equal to the cell it caught -
+    /// behaves like a cold front (matches real synoptic cold-type occlusion).</summary>
+    public const byte OcclusionKindCold = 1;
+    /// <summary>The catching air was warmer than the cell it caught - behaves like a warm front (matches
+    /// real synoptic warm-type occlusion).</summary>
+    public const byte OcclusionKindWarm = 2;
+
+    #endregion
+
+    #region Computed
+
+    // Excluded from protobuf (ImplicitFields.AllPublic would otherwise try to deserialize into this
+    // read-only property and throw).
     [ProtoIgnore]
     public bool IsLow => Strength > 0f;
+
+    #endregion
 }
