@@ -77,6 +77,15 @@ Branch[] branches =
 
 float[] Sixteenths(double[]? v) => v == null ? new float[3] : new[] { (float)v[0] / 16f, (float)v[1] / 16f, (float)v[2] / 16f };
 
+// Round-trip ("R") formatting drops the decimal point for exact integer values (e.g. "0" or "1" instead
+// of "0.0"/"1.0"), which reads as an int rather than a float once spliced into the shape JSON - out of
+// step with the rest of the file's convention of always writing floats with a decimal point.
+string Fmt(float v)
+{
+    string s = v.ToString("R");
+    return s.Contains('.') || s.Contains('E') || s.Contains('e') ? s : s + ".0";
+}
+
 float Dot(float[] m, int row, float[] v) => m[row] * v[0] + m[4 + row] * v[1] + m[8 + row] * v[2];
 
 bool Normalize(float[] v)
@@ -87,12 +96,36 @@ bool Normalize(float[] v)
     return true;
 }
 
-// Recovers Rx*Ry*Rz angles in degrees from a rotation matrix.
-void ToEulerXYZ(float[] m, out float degX, out float degY, out float degZ)
+// Recovers Rx*Ry*Rz angles in degrees from a rotation matrix. This decomposition has TWO equally valid
+// solutions whenever cos(degY) != 0: the one below, and the alternate branch degY' = 180-degY,
+// degX' = degX+180, degZ' = degZ+180 (all wrapped to +-180) - both compose back to the same rotation
+// matrix. Picking a fixed branch every frame with no regard for the previous frame lets adjacent baked
+// frames land on OPPOSITE branches for a physically smooth rotation (confirmed in the old baked data:
+// ClewRopeR1 rotationX flips sign and rotationZ jumps past 90deg between frames 149 and 179), which reads
+// as a sign-flip bounce once interpolated at runtime. `prev` (the previous frame's own decomposition for
+// this same element, or null for the first frame baked in a walk) picks whichever branch stays closer to
+// it, so a continuously-varying rotation bakes to a continuously-varying Euler triple.
+void ToEulerXYZ(float[] m, (float x, float y, float z)? prev, out float degX, out float degY, out float degZ)
 {
-    degY = (float)Math.Asin(GameMath.Clamp(m[8], -1f, 1f)) * GameMath.RAD2DEG;
-    degX = (float)Math.Atan2(-m[9], m[10]) * GameMath.RAD2DEG;
-    degZ = (float)Math.Atan2(-m[4], m[0]) * GameMath.RAD2DEG;
+    float ay = (float)Math.Asin(GameMath.Clamp(m[8], -1f, 1f)) * GameMath.RAD2DEG;
+    float ax = (float)Math.Atan2(-m[9], m[10]) * GameMath.RAD2DEG;
+    float az = (float)Math.Atan2(-m[4], m[0]) * GameMath.RAD2DEG;
+
+    if (prev == null) { degX = ax; degY = ay; degZ = az; return; }
+
+    float bx = GameMath.AngleDegDistance(0f, ax + 180f);
+    float by = GameMath.AngleDegDistance(0f, 180f - ay);
+    float bz = GameMath.AngleDegDistance(0f, az + 180f);
+
+    float distA = Math.Abs(GameMath.AngleDegDistance(prev.Value.x, ax))
+        + Math.Abs(GameMath.AngleDegDistance(prev.Value.y, ay))
+        + Math.Abs(GameMath.AngleDegDistance(prev.Value.z, az));
+    float distB = Math.Abs(GameMath.AngleDegDistance(prev.Value.x, bx))
+        + Math.Abs(GameMath.AngleDegDistance(prev.Value.y, by))
+        + Math.Abs(GameMath.AngleDegDistance(prev.Value.z, bz));
+
+    if (distB < distA) { degX = bx; degY = by; degZ = bz; }
+    else { degX = ax; degY = ay; degZ = az; }
 }
 
 // Composes GetLocalTransformMatrix from `leaf` up through its parents, stopping BEFORE
@@ -202,7 +235,9 @@ Sheet Capture(ElementPose[] chain, string ropeName, string pulleyName, string an
 #region Solve
 
 // (rootRx,rootRy,rootRz,scale), or null if degenerate (should not happen across the full +/-90deg sweep).
-(float rootRx, float rootRy, float rootRz, float scale)? Solve(Sheet sheet, float[] mA)
+// `prevAbs` is the caller's running Euler state for this sheet - read for continuity branch selection,
+// then updated in place to this frame's own absolute (pre-rest-subtraction) result for the next call.
+(float rootRx, float rootRy, float rootRz, float scale)? Solve(Sheet sheet, float[] mA, ref (float x, float y, float z)? prevAbs)
 {
     float[] target = new float[4];
     Mat4f.MulWithVec4(mA, sheet.Anchor, target);
@@ -232,7 +267,8 @@ Sheet Capture(ElementPose[] chain, string ropeName, string pulleyName, string an
     float[] mC = Mat4f.Create();
     Mat4f.Mul(mC, mB, sheet.RestRotation);
 
-    ToEulerXYZ(mC, out float ex, out float ey, out float ez);
+    ToEulerXYZ(mC, prevAbs, out float ex, out float ey, out float ez);
+    prevAbs = (ex, ey, ez);
 
     return (ex - (float)sheet.RootElem.RotationX, ey - (float)sheet.RootElem.RotationY, ez - (float)sheet.RootElem.RotationZ, (float)s);
 }
@@ -241,17 +277,10 @@ Sheet Capture(ElementPose[] chain, string ropeName, string pulleyName, string an
 
 #region Frame/angle mapping
 
-// Piecewise-linear angle for a given RotateSail frame, matching that animation's own three authored
-// keyframes exactly: frame 0 = +90 (full port), frame 89 = 0 (dead ahead), frame 179 = -90 (full
-// starboard). The two halves have slightly different per-frame slopes (90/89 vs 90/90) since the range
-// isn't evenly split around frame 89.
-float AngleForFrame(int frame) => frame <= 89
-    ? 90f - frame * (90f / 89f)
-    : 89f - frame;
-
-// Inverse of AngleForFrame, rounded to the nearest integer frame - used to bake at fixed ANGLE steps
-// (e.g. every 15deg) rather than every frame, since frame spacing near 90/-90 vs. near 0 isn't uniform in
-// angle. Must stay the algebraic inverse of AngleForFrame above.
+// Frame for a given trim angle, rounded to the nearest integer frame, matching RotateSail's own three
+// authored keyframes exactly: frame 0 = +90 (full port), frame 89 = 0 (dead ahead), frame 179 = -90
+// (full starboard). The two halves have slightly different per-frame slopes (89/90 vs 90/90) since the
+// range isn't evenly split around frame 89.
 int FrameForAngle(float angleDeg) => (int)Math.Round(angleDeg >= 0f
     ? (90f - angleDeg) * (89f / 90f)
     : 89f - angleDeg, MidpointRounding.AwayFromZero);
@@ -261,13 +290,39 @@ int FrameForAngle(float angleDeg) => (int)Math.Round(angleDeg >= 0f
 #region Bake and emit keyframes
 
 const float BakeStepDeg = 15f;
-var bakeFrames = new List<int>();
-for (float angle = 90f; angle >= -90f; angle -= BakeStepDeg)
-{
-    int frame = FrameForAngle(angle);
-    if (bakeFrames.Count == 0 || bakeFrames[^1] != frame) bakeFrames.Add(frame);
-}
-Console.Error.WriteLine($"baking {bakeFrames.Count} frames every {BakeStepDeg}deg: [{string.Join(", ", bakeFrames)}]");
+// The 15deg grid is deliberately NOT tightened uniformly: each sail-state change forces the entity's
+// AnimationCache to rebuild (so the billow animation never builds against a stale cache - see
+// EntityBehaviorSailTrim/CLAUDE.md's "Sail billow intensity"), which re-processes the full keyframe set,
+// so keyframe count is a recurring cost during normal play, not a one-time load cost.
+//
+// It IS locally densified in the outermost band on each side, though: instrumenting the solve confirmed
+// the visible bounce there is real, fast-accelerating motion, not an Euler-decomposition artifact - the
+// wrong branch (see ToEulerXYZ above) is always ~500deg away and never gets picked, but even the correct
+// branch's Euler angles swing up to ~85deg of total change within a single 15deg trim step approaching
+// full feather (dirFrom/dirTo's dot product goes from 0.6 to -0.4 over the last two 15deg steps - the aim
+// solve genuinely races as the rope runs out of geometric slack on that side). The curvature ramps up
+// starting around 60deg, not just in the last 15deg before the extreme, so the band from 60 to 90deg gets
+// bisected on each side (67.5/80/85) rather than just its outermost slice - measured afterward to bring
+// the worst single-step Euler change down from ~67deg to a smooth few degrees per step.
+var extraAngles = new[] { 85f, 80f, 67.5f, -67.5f, -80f, -85f };
+var bakeAngles = new List<float>();
+for (float angle = 90f; angle >= -90f; angle -= BakeStepDeg) bakeAngles.Add(angle);
+bakeAngles.AddRange(extraAngles);
+bakeAngles = bakeAngles.Distinct().OrderByDescending(a => a).ToList();
+Console.Error.WriteLine($"baking {bakeAngles.Count} frames ({BakeStepDeg}deg grid + {extraAngles.Length} extra near +/-90deg): [{string.Join(", ", bakeAngles.Select(FrameForAngle))}]");
+
+// Processed from the known-good rest pose (angle 0) outward in both directions, NOT sequentially from
+// +90 down to -90: seeding the continuity walk at one of the extremes would leave that very first frame's
+// branch choice arbitrary, in exactly the gimbal-adjacent region most prone to the ambiguity this is
+// fixing. Splitting into a positive-angle walk and a negative-angle walk, each re-anchored at angle 0,
+// keeps both directions independently continuous from a stable reference.
+var positiveAngles = bakeAngles.Where(a => a > 0f).OrderBy(a => a).ToList();
+var negativeAngles = bakeAngles.Where(a => a < 0f).OrderByDescending(a => a).ToList();
+
+// How far (pixel units, matching From/RotationOrigin) the pulley blocks lift up their own rope toward the
+// root at maximum rope compression, to clear the deck post. Tuned in-game; the user's own estimate was a
+// magnitude of 4-8, starting at the midpoint.
+const float MaxPulleyLift = 6f;
 
 var sb = new StringBuilder();
 sb.Append("{\n");
@@ -297,11 +352,13 @@ for (int bi = 0; bi < branches.Length; bi++)
     Console.Error.WriteLine($"  port pivot=({port.Pivot[0]:R},{port.Pivot[1]:R},{port.Pivot[2]:R}) offset=({port.Offset[0]:R},{port.Offset[1]:R},{port.Offset[2]:R}) anchor=({port.Anchor[0]:R},{port.Anchor[1]:R},{port.Anchor[2]:R})");
 
     sb.Append($"  \"{b.SailRoot}\": {{\n");
-    var frameEntries = new List<string>();
-    for (int fi = 0; fi < bakeFrames.Count; fi++)
+    var frameEntries = new Dictionary<int, string>();
+    (float x, float y, float z)? prevStbd = null;
+    (float x, float y, float z)? prevPort = null;
+
+    string? BakeFrame(float angleDeg)
     {
-        int frame = bakeFrames[fi];
-        float angleDeg = AngleForFrame(frame);
+        int frame = FrameForAngle(angleDeg);
 
         // Only the sail branch root itself carries the swing (MastORIGIN/Mast1-6 stay put, matching how
         // RotateSail's own authored keyframes pose them) -- the chain still needs to walk the full
@@ -323,12 +380,12 @@ for (int bi = 0; bi < branches.Length; bi++)
         float[] mA = Mat4f.Create();
         Mat4f.Invert(mA, mC);
 
-        var rStbd = Solve(stbd, mA);
-        var rPort = Solve(port, mA);
+        var rStbd = Solve(stbd, mA, ref prevStbd);
+        var rPort = Solve(port, mA, ref prevPort);
         if (rStbd == null || rPort == null)
         {
             Console.Error.WriteLine($"  WARNING: branch {b.SailRoot} frame {frame} (angle {angleDeg}) degenerate solve, skipped");
-            continue;
+            return null;
         }
 
         // rotShortestDistance*: forces the runtime blend between adjacent baked frames to take the short
@@ -338,20 +395,53 @@ for (int bi = 0; bi < branches.Length; bi++)
         // Pulley reciprocal scale: the root's stretchY propagates multiplicatively down the whole chain
         // (plain [0,16,0] bones have no scale of their own to absorb it), so the pulley block would
         // stretch right along with the rope unless given 1/scale of its own to cancel that back out.
+        //
+        // Pulley OffsetY: a fixed [0,16,0] step down the chain has no way to absorb the rope shortening
+        // beyond its own stretch - as the rope compresses (scale < 1) the pulley's fixed chain position
+        // rides increasingly close to the deck knot/post. Ramp a negative OffsetY (up the chain, toward
+        // the root - see CLAUDE.md's Clew ropes section for the +Y-down-the-rope convention) in
+        // proportion to how compressed the rope is at this frame, so the pulley lifts clear instead of
+        // visually clipping through the post near the point where the rope is shortest. MaxPulleyLift is
+        // a tuned constant, not a closed-form geometric solve like the rest of this rig.
         float stbdPulleyScale = Math.Abs(rStbd.Value.scale) > 1e-6f ? 1f / rStbd.Value.scale : 1f;
         float portPulleyScale = Math.Abs(rPort.Value.scale) > 1e-6f ? 1f / rPort.Value.scale : 1f;
+        float stbdLift = -MaxPulleyLift * Math.Clamp(1f - rStbd.Value.scale, 0f, 1f);
+        float portLift = -MaxPulleyLift * Math.Clamp(1f - rPort.Value.scale, 0f, 1f);
 
         var lines = new List<string>
         {
-            $"      \"{b.StbdRope}\": {{ \"rotationX\": {rStbd.Value.rootRx:R}, \"rotationY\": {rStbd.Value.rootRy:R}, \"rotationZ\": {rStbd.Value.rootRz:R}, \"stretchX\": 1.0, \"stretchY\": {rStbd.Value.scale:R}, \"stretchZ\": 1.0, \"rotShortestDistanceX\": true, \"rotShortestDistanceY\": true, \"rotShortestDistanceZ\": true }}",
-            $"      \"{b.PortRope}\": {{ \"rotationX\": {rPort.Value.rootRx:R}, \"rotationY\": {rPort.Value.rootRy:R}, \"rotationZ\": {rPort.Value.rootRz:R}, \"stretchX\": 1.0, \"stretchY\": {rPort.Value.scale:R}, \"stretchZ\": 1.0, \"rotShortestDistanceX\": true, \"rotShortestDistanceY\": true, \"rotShortestDistanceZ\": true }}",
-            $"      \"{b.StbdPulley}\": {{ \"stretchX\": 1.0, \"stretchY\": {stbdPulleyScale:R}, \"stretchZ\": 1.0 }}",
-            $"      \"{b.PortPulley}\": {{ \"stretchX\": 1.0, \"stretchY\": {portPulleyScale:R}, \"stretchZ\": 1.0 }}",
+            $"      \"{b.StbdRope}\": {{ \"rotationX\": {Fmt(rStbd.Value.rootRx)}, \"rotationY\": {Fmt(rStbd.Value.rootRy)}, \"rotationZ\": {Fmt(rStbd.Value.rootRz)}, \"stretchX\": 1.0, \"stretchY\": {Fmt(rStbd.Value.scale)}, \"stretchZ\": 1.0, \"rotShortestDistanceX\": true, \"rotShortestDistanceY\": true, \"rotShortestDistanceZ\": true }}",
+            $"      \"{b.PortRope}\": {{ \"rotationX\": {Fmt(rPort.Value.rootRx)}, \"rotationY\": {Fmt(rPort.Value.rootRy)}, \"rotationZ\": {Fmt(rPort.Value.rootRz)}, \"stretchX\": 1.0, \"stretchY\": {Fmt(rPort.Value.scale)}, \"stretchZ\": 1.0, \"rotShortestDistanceX\": true, \"rotShortestDistanceY\": true, \"rotShortestDistanceZ\": true }}",
+            $"      \"{b.StbdPulley}\": {{ \"stretchX\": 1.0, \"stretchY\": {Fmt(stbdPulleyScale)}, \"stretchZ\": 1.0, \"offsetY\": {Fmt(stbdLift)} }}",
+            $"      \"{b.PortPulley}\": {{ \"stretchX\": 1.0, \"stretchY\": {Fmt(portPulleyScale)}, \"stretchZ\": 1.0, \"offsetY\": {Fmt(portLift)} }}",
         };
 
-        frameEntries.Add($"    \"{frame}\": {{\n" + string.Join(",\n", lines) + "\n    }");
+        return $"    \"{frame}\": {{\n" + string.Join(",\n", lines) + "\n    }";
     }
-    sb.Append(string.Join(",\n", frameEntries));
+
+    // angle 0 (dead-ahead, frame 89) first - a stable, non-gimbal-adjacent anchor - then walk outward in
+    // each direction independently re-seeded from that same anchor (see the comment on positiveAngles/
+    // negativeAngles above).
+    string? zeroEntry = BakeFrame(0f);
+    if (zeroEntry != null) frameEntries[FrameForAngle(0f)] = zeroEntry;
+    (float x, float y, float z)? seedStbd = prevStbd;
+    (float x, float y, float z)? seedPort = prevPort;
+
+    foreach (float angle in positiveAngles)
+    {
+        string? entry = BakeFrame(angle);
+        if (entry != null) frameEntries[FrameForAngle(angle)] = entry;
+    }
+
+    prevStbd = seedStbd;
+    prevPort = seedPort;
+    foreach (float angle in negativeAngles)
+    {
+        string? entry = BakeFrame(angle);
+        if (entry != null) frameEntries[FrameForAngle(angle)] = entry;
+    }
+
+    sb.Append(string.Join(",\n", frameEntries.OrderBy(kv => kv.Key).Select(kv => kv.Value)));
     sb.Append('\n');
     sb.Append(bi == branches.Length - 1 ? "  }\n" : "  },\n");
 }

@@ -1,0 +1,2695 @@
+[
+ {
+  "file": "game:shapes/entity/nonliving/boat/sailed.json",
+  "op": "addmerge",
+  "path": "/animations",
+  "value": [
+   {
+    "name": "BillowSail",
+    "code": "billowsail",
+    "quantityframes": 100,
+    "onActivityStopped": "EaseOut",
+    "onAnimationEnd": "EaseOut",
+    "keyframes": [
+     {
+      "frame": 0,
+      "elements": {
+       "RSailCenTop": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LSailCenTop": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LSailOut1": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LSailOut2": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LSailMid1": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LSailMid2": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LSailCen1": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LSailCen2": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "RSailMid1": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "RSailMid2": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "RSailOut1": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "RSailCen1": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "RSailOut2": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "RSailCen2": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "SailUnfurledS": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "SailUnfurledN": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Sail11": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Sail12": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Sail14": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Sail15": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Sail17": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Sail18": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Sail2": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Sail3": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Sail5": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Sail6": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Sail8": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Sail9": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       }
+      }
+     },
+     {
+      "frame": 99,
+      "elements": {
+       "RSailCenTop": {
+        "offsetX": 2.5,
+        "offsetY": -1.3,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LSailCenTop": {
+        "offsetX": 2.5,
+        "offsetY": -1.3,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LSailOut1": {
+        "offsetX": -2.0,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": -15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LSailOut2": {
+        "offsetX": -2.1,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": -15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LSailMid1": {
+        "offsetX": -2.0,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": -15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LSailMid2": {
+        "offsetX": -2.1,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": -15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LSailCen1": {
+        "offsetX": -2.0,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": -15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LSailCen2": {
+        "offsetX": -2.1,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": -15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "RSailOut1": {
+        "offsetX": -2.0,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": -15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "RSailCen1": {
+        "offsetX": -2.0,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": -15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "RSailMid1": {
+        "offsetX": -2.0,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": -15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "RSailMid2": {
+        "offsetX": -2.1,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": -15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "RSailOut2": {
+        "offsetX": -2.1,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": -15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "RSailCen2": {
+        "offsetX": -2.1,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": -15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "SailUnfurledS": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": -15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "SailUnfurledN": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": -15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Sail11": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Sail12": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Sail14": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Sail15": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Sail17": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Sail18": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Sail2": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Sail3": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Sail5": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Sail6": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Sail8": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Sail9": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 15.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       }
+      }
+     }
+    ]
+   },
+   {
+    "name": "RotateSail",
+    "code": "rotatesail",
+    "quantityframes": 180,
+    "onActivityStopped": "Stop",
+    "onAnimationEnd": "Stop",
+    "keyframes": [
+     {
+      "frame": 0,
+      "elements": {
+       "SparORIGIN": {
+        "rotationX": 0.0,
+        "rotationY": 90.0,
+        "rotationZ": 0.0
+       },
+       "SailUnfurled": {
+        "offsetX": -3.0,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 90.0,
+        "rotationZ": 0.0
+       },
+       "SailFurled": {
+        "offsetX": 2.0,
+        "offsetY": 0.0,
+        "offsetZ": -2.0,
+        "rotationX": 0.0,
+        "rotationY": 90.0,
+        "rotationZ": 0.0
+       },
+       "SailHalf": {
+        "offsetX": -4.0,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 90.0,
+        "rotationZ": 0.0
+       },
+       "ClewRopeR5": {
+        "rotationX": -36.344997,
+        "rotationY": -20.977093,
+        "rotationZ": -1.0685997,
+        "stretchX": 1.0,
+        "stretchY": 1.3725371,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL5": {
+        "rotationX": -3.3447819,
+        "rotationY": -2.7079828,
+        "rotationZ": 61.547523,
+        "stretchX": 1.0,
+        "stretchY": 0.76046026,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block11": {
+        "stretchX": 1.0,
+        "stretchY": 0.72857773,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL4": {
+        "stretchX": 1.0,
+        "stretchY": 1.3149931,
+        "stretchZ": 1.0,
+        "offsetY": -1.4372385
+       },
+       "RClew1": {
+        "rotationX": -42.045975,
+        "rotationY": -3.7593513,
+        "rotationZ": 8.526682,
+        "stretchX": 1.0,
+        "stretchY": 1.4931452,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LClew1": {
+        "rotationX": -11.519099,
+        "rotationY": -5.3475456,
+        "rotationZ": 74.788765,
+        "stretchX": 1.0,
+        "stretchY": 0.5995757,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block4": {
+        "stretchX": 1.0,
+        "stretchY": 0.6697272,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL2": {
+        "stretchX": 1.0,
+        "stretchY": 1.6678461,
+        "stretchZ": 1.0,
+        "offsetY": -2.402546
+       },
+       "ClewRopeR1": {
+        "rotationX": -46.489143,
+        "rotationY": -1.6335397,
+        "rotationZ": 4.9857235,
+        "stretchX": 1.0,
+        "stretchY": 1.6279176,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL1": {
+        "rotationX": -3.9557571,
+        "rotationY": 6.2441387,
+        "rotationZ": 115.63899,
+        "stretchX": 1.0,
+        "stretchY": 0.36158293,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block1": {
+        "stretchX": 1.0,
+        "stretchY": 0.6142817,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL": {
+        "stretchX": 1.0,
+        "stretchY": 2.7656171,
+        "stretchZ": 1.0,
+        "offsetY": -3.8305025
+       }
+      }
+     },
+     {
+      "frame": 5,
+      "elements": {
+       "ClewRopeR5": {
+        "rotationX": -34.835365,
+        "rotationY": -19.712069,
+        "rotationZ": -1.9618111,
+        "stretchX": 1.0,
+        "stretchY": 1.3644973,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL5": {
+        "rotationX": -5.0313187,
+        "rotationY": -5.3159027,
+        "rotationZ": 58.14051,
+        "stretchX": 1.0,
+        "stretchY": 0.7477355,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block11": {
+        "stretchX": 1.0,
+        "stretchY": 0.73287064,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL4": {
+        "stretchX": 1.0,
+        "stretchY": 1.3373713,
+        "stretchZ": 1.0,
+        "offsetY": -1.513587
+       },
+       "RClew1": {
+        "rotationX": -40.161736,
+        "rotationY": -3.097016,
+        "rotationZ": 7.2329397,
+        "stretchX": 1.0,
+        "stretchY": 1.4834406,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LClew1": {
+        "rotationX": -15.37948,
+        "rotationY": -7.317532,
+        "rotationZ": 69.28711,
+        "stretchX": 1.0,
+        "stretchY": 0.58384246,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block4": {
+        "stretchX": 1.0,
+        "stretchY": 0.67410856,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL2": {
+        "stretchX": 1.0,
+        "stretchY": 1.7127908,
+        "stretchZ": 1.0,
+        "offsetY": -2.4969454
+       },
+       "ClewRopeR1": {
+        "rotationX": -44.06063,
+        "rotationY": -1.2543452,
+        "rotationZ": 4.288336,
+        "stretchX": 1.0,
+        "stretchY": 1.6159662,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL1": {
+        "rotationX": -12.831964,
+        "rotationY": -4.88992,
+        "rotationZ": 107.59655,
+        "stretchX": 1.0,
+        "stretchY": 0.32476726,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block1": {
+        "stretchX": 1.0,
+        "stretchY": 0.61882484,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL": {
+        "stretchX": 1.0,
+        "stretchY": 3.079128,
+        "stretchZ": 1.0,
+        "offsetY": -4.0513964
+       }
+      }
+     },
+     {
+      "frame": 10,
+      "elements": {
+       "ClewRopeR5": {
+        "rotationX": -33.22636,
+        "rotationY": -18.46628,
+        "rotationZ": -2.7508793,
+        "stretchX": 1.0,
+        "stretchY": 1.3546182,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL5": {
+        "rotationX": -6.6850414,
+        "rotationY": -7.494469,
+        "rotationZ": 54.28195,
+        "stretchX": 1.0,
+        "stretchY": 0.7383573,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block11": {
+        "stretchX": 1.0,
+        "stretchY": 0.7382154,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL4": {
+        "stretchX": 1.0,
+        "stretchY": 1.3543578,
+        "stretchZ": 1.0,
+        "offsetY": -1.5698562
+       },
+       "RClew1": {
+        "rotationX": -38.204285,
+        "rotationY": -2.501399,
+        "rotationZ": 6.002925,
+        "stretchX": 1.0,
+        "stretchY": 1.4713202,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LClew1": {
+        "rotationX": -18.82816,
+        "rotationY": -8.481698,
+        "rotationZ": 63.105995,
+        "stretchX": 1.0,
+        "stretchY": 0.5737526,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block4": {
+        "stretchX": 1.0,
+        "stretchY": 0.67966175,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL2": {
+        "stretchX": 1.0,
+        "stretchY": 1.7429116,
+        "stretchZ": 1.0,
+        "offsetY": -2.5574846
+       },
+       "ClewRopeR1": {
+        "rotationX": -41.611893,
+        "rotationY": -0.9213303,
+        "rotationZ": 3.6210818,
+        "stretchX": 1.0,
+        "stretchY": 1.6010251,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL1": {
+        "rotationX": -22.08561,
+        "rotationY": -12.432944,
+        "rotationZ": 94.33559,
+        "stretchX": 1.0,
+        "stretchY": 0.29937017,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block1": {
+        "stretchX": 1.0,
+        "stretchY": 0.6245998,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL": {
+        "stretchX": 1.0,
+        "stretchY": 3.340346,
+        "stretchZ": 1.0,
+        "offsetY": -4.203779
+       }
+      }
+     },
+     {
+      "frame": 15,
+      "elements": {
+       "ClewRopeR5": {
+        "rotationX": -31.526062,
+        "rotationY": -17.240377,
+        "rotationZ": -3.4378262,
+        "stretchX": 1.0,
+        "stretchY": 1.3429353,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL5": {
+        "rotationX": -8.254494,
+        "rotationY": -9.199669,
+        "rotationZ": 50.065636,
+        "stretchX": 1.0,
+        "stretchY": 0.7325263,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block11": {
+        "stretchX": 1.0,
+        "stretchY": 0.7446375,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL4": {
+        "stretchX": 1.0,
+        "stretchY": 1.3651386,
+        "stretchZ": 1.0,
+        "offsetY": -1.6048422
+       },
+       "RClew1": {
+        "rotationX": -36.17861,
+        "rotationY": -1.9720273,
+        "rotationZ": 4.8397136,
+        "stretchX": 1.0,
+        "stretchY": 1.4568169,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LClew1": {
+        "rotationX": -21.66732,
+        "rotationY": -8.863993,
+        "rotationZ": 56.533966,
+        "stretchX": 1.0,
+        "stretchY": 0.5696841,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block4": {
+        "stretchX": 1.0,
+        "stretchY": 0.68642807,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL2": {
+        "stretchX": 1.0,
+        "stretchY": 1.7553588,
+        "stretchZ": 1.0,
+        "offsetY": -2.5818954
+       },
+       "ClewRopeR1": {
+        "rotationX": -39.144073,
+        "rotationY": -0.6326595,
+        "rotationZ": 2.9860692,
+        "stretchX": 1.0,
+        "stretchY": 1.583125,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL1": {
+        "rotationX": -30.158768,
+        "rotationY": -15.158247,
+        "rotationZ": 77.979225,
+        "stretchX": 1.0,
+        "stretchY": 0.28863287,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block1": {
+        "stretchX": 1.0,
+        "stretchY": 0.6316621,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL": {
+        "stretchX": 1.0,
+        "stretchY": 3.464609,
+        "stretchZ": 1.0,
+        "offsetY": -4.268203
+       }
+      }
+     },
+     {
+      "frame": 22,
+      "elements": {
+       "ClewRopeR5": {
+        "rotationX": -28.820866,
+        "rotationY": -15.438624,
+        "rotationZ": -4.2788353,
+        "stretchX": 1.0,
+        "stretchY": 1.3221246,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL5": {
+        "rotationX": -10.309641,
+        "rotationY": -10.837487,
+        "rotationZ": 43.318176,
+        "stretchX": 1.0,
+        "stretchY": 0.73069286,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block11": {
+        "stretchX": 1.0,
+        "stretchY": 0.7563584,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL4": {
+        "stretchX": 1.0,
+        "stretchY": 1.3685641,
+        "stretchZ": 1.0,
+        "offsetY": -1.6158428
+       },
+       "RClew1": {
+        "rotationX": -33.022095,
+        "rotationY": -1.3000062,
+        "rotationZ": 3.2287192,
+        "stretchX": 1.0,
+        "stretchY": 1.4306843,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LClew1": {
+        "rotationX": -24.461548,
+        "rotationY": -8.247589,
+        "rotationZ": 46.572803,
+        "stretchX": 1.0,
+        "stretchY": 0.57515365,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block4": {
+        "stretchX": 1.0,
+        "stretchY": 0.6989662,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL2": {
+        "stretchX": 1.0,
+        "stretchY": 1.7386658,
+        "stretchZ": 1.0,
+        "offsetY": -2.549078
+       },
+       "ClewRopeR1": {
+        "rotationX": -35.40859,
+        "rotationY": -0.27867162,
+        "rotationZ": 2.0993004,
+        "stretchX": 1.0,
+        "stretchY": 1.5508099,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL1": {
+        "rotationX": -36.273773,
+        "rotationY": -12.751155,
+        "rotationZ": 54.43779,
+        "stretchX": 1.0,
+        "stretchY": 0.30299705,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block1": {
+        "stretchX": 1.0,
+        "stretchY": 0.6448244,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL": {
+        "stretchX": 1.0,
+        "stretchY": 3.300362,
+        "stretchZ": 1.0,
+        "offsetY": -4.182018
+       }
+      }
+     },
+     {
+      "frame": 30,
+      "elements": {
+       "ClewRopeR5": {
+        "rotationX": -25.951118,
+        "rotationY": -13.678922,
+        "rotationZ": -4.8919144,
+        "stretchX": 1.0,
+        "stretchY": 1.2975281,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL5": {
+        "rotationX": -11.810146,
+        "rotationY": -11.427629,
+        "rotationZ": 36.422997,
+        "stretchX": 1.0,
+        "stretchY": 0.7372064,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block11": {
+        "stretchX": 1.0,
+        "stretchY": 0.77069616,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL4": {
+        "stretchX": 1.0,
+        "stretchY": 1.3564723,
+        "stretchZ": 1.0,
+        "offsetY": -1.5767616
+       },
+       "RClew1": {
+        "rotationX": -29.736214,
+        "rotationY": -0.7696777,
+        "rotationZ": 1.7928345,
+        "stretchX": 1.0,
+        "stretchY": 1.3994489,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LClew1": {
+        "rotationX": -25.362131,
+        "rotationY": -6.7597075,
+        "rotationZ": 37.16979,
+        "stretchX": 1.0,
+        "stretchY": 0.5940003,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block4": {
+        "stretchX": 1.0,
+        "stretchY": 0.714567,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL2": {
+        "stretchX": 1.0,
+        "stretchY": 1.6835009,
+        "stretchZ": 1.0,
+        "offsetY": -2.4359984
+       },
+       "ClewRopeR1": {
+        "rotationX": -31.634731,
+        "rotationY": -0.013574253,
+        "rotationZ": 1.2998041,
+        "stretchX": 1.0,
+        "stretchY": 1.5120738,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL1": {
+        "rotationX": -35.774967,
+        "rotationY": -8.335475,
+        "rotationZ": 36.707855,
+        "stretchX": 1.0,
+        "stretchY": 0.34887105,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block1": {
+        "stretchX": 1.0,
+        "stretchY": 0.6613434,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL": {
+        "stretchX": 1.0,
+        "stretchY": 2.8663886,
+        "stretchZ": 1.0,
+        "offsetY": -3.9067736
+       }
+      }
+     },
+     {
+      "frame": 45,
+      "elements": {
+       "ClewRopeR5": {
+        "rotationX": -19.808083,
+        "rotationY": -10.261747,
+        "rotationZ": -5.409979,
+        "stretchX": 1.0,
+        "stretchY": 1.2378772,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL5": {
+        "rotationX": -12.572901,
+        "rotationY": -10.176821,
+        "rotationZ": 23.5467,
+        "stretchX": 1.0,
+        "stretchY": 0.77360606,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block11": {
+        "stretchX": 1.0,
+        "stretchY": 0.80783457,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL4": {
+        "stretchX": 1.0,
+        "stretchY": 1.2926476,
+        "stretchZ": 1.0,
+        "offsetY": -1.3583636
+       },
+       "RClew1": {
+        "rotationX": -22.823776,
+        "rotationY": -0.10068299,
+        "rotationZ": -0.47021532,
+        "stretchX": 1.0,
+        "stretchY": 1.3225256,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LClew1": {
+        "rotationX": -22.47297,
+        "rotationY": -3.374668,
+        "rotationZ": 21.596981,
+        "stretchX": 1.0,
+        "stretchY": 0.66517043,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block4": {
+        "stretchX": 1.0,
+        "stretchY": 0.756129,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL2": {
+        "stretchX": 1.0,
+        "stretchY": 1.5033741,
+        "stretchZ": 1.0,
+        "offsetY": -2.0089774
+       },
+       "ClewRopeR1": {
+        "rotationX": -23.977066,
+        "rotationY": 0.27916843,
+        "rotationZ": 0.008626231,
+        "stretchX": 1.0,
+        "stretchY": 1.4161035,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL1": {
+        "rotationX": -27.51575,
+        "rotationY": -2.682706,
+        "rotationZ": 16.463152,
+        "stretchX": 1.0,
+        "stretchY": 0.49328613,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block1": {
+        "stretchX": 1.0,
+        "stretchY": 0.7061631,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL": {
+        "stretchX": 1.0,
+        "stretchY": 2.027221,
+        "stretchZ": 1.0,
+        "offsetY": -3.0402832
+       }
+      }
+     },
+     {
+      "frame": 59,
+      "elements": {
+       "ClewRopeR5": {
+        "rotationX": -13.279648,
+        "rotationY": -6.9165936,
+        "rotationZ": -4.897331,
+        "stretchX": 1.0,
+        "stretchY": 1.166218,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL5": {
+        "rotationX": -10.319406,
+        "rotationY": -7.1261086,
+        "rotationZ": 13.1104965,
+        "stretchX": 1.0,
+        "stretchY": 0.83535993,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block11": {
+        "stretchX": 1.0,
+        "stretchY": 0.8574726,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL4": {
+        "stretchX": 1.0,
+        "stretchY": 1.1970888,
+        "stretchZ": 1.0,
+        "offsetY": -0.9878404
+       },
+       "RClew1": {
+        "rotationX": -15.520927,
+        "rotationY": 0.13164902,
+        "rotationZ": -1.7394483,
+        "stretchX": 1.0,
+        "stretchY": 1.2281837,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LClew1": {
+        "rotationX": -15.965668,
+        "rotationY": -1.13941,
+        "rotationZ": 10.738518,
+        "stretchX": 1.0,
+        "stretchY": 0.76634127,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block4": {
+        "stretchX": 1.0,
+        "stretchY": 0.8142104,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL2": {
+        "stretchX": 1.0,
+        "stretchY": 1.3049017,
+        "stretchZ": 1.0,
+        "offsetY": -1.4019524
+       },
+       "ClewRopeR1": {
+        "rotationX": -16.170662,
+        "rotationY": 0.31251118,
+        "rotationZ": -0.7716449,
+        "stretchX": 1.0,
+        "stretchY": 1.2970668,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL1": {
+        "rotationX": -17.902084,
+        "rotationY": -0.59698164,
+        "rotationZ": 6.9755297,
+        "stretchX": 1.0,
+        "stretchY": 0.66323555,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block1": {
+        "stretchX": 1.0,
+        "stretchY": 0.7709703,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL": {
+        "stretchX": 1.0,
+        "stretchY": 1.5077599,
+        "stretchZ": 1.0,
+        "offsetY": -2.0205867
+       }
+      }
+     },
+     {
+      "frame": 74,
+      "elements": {
+       "ClewRopeR5": {
+        "rotationX": -6.5786705,
+        "rotationY": -3.5372736,
+        "rotationZ": -3.1813507,
+        "stretchX": 1.0,
+        "stretchY": 1.0855843,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL5": {
+        "rotationX": -5.8220043,
+        "rotationY": -3.545666,
+        "rotationZ": 5.379917,
+        "stretchX": 1.0,
+        "stretchY": 0.913664,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block11": {
+        "stretchX": 1.0,
+        "stretchY": 0.9211629,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL4": {
+        "stretchX": 1.0,
+        "stretchY": 1.0944942,
+        "stretchZ": 1.0,
+        "offsetY": -0.5180161
+       },
+       "RClew1": {
+        "rotationX": -7.889782,
+        "rotationY": 0.083752066,
+        "rotationZ": -1.720757,
+        "stretchX": 1.0,
+        "stretchY": 1.1193482,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LClew1": {
+        "rotationX": -8.123746,
+        "rotationY": -0.19000894,
+        "rotationZ": 3.8581634,
+        "stretchX": 1.0,
+        "stretchY": 0.8817304,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block4": {
+        "stretchX": 1.0,
+        "stretchY": 0.89337707,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL2": {
+        "stretchX": 1.0,
+        "stretchY": 1.1341336,
+        "stretchZ": 1.0,
+        "offsetY": -0.70961773
+       },
+       "ClewRopeR1": {
+        "rotationX": -8.194489,
+        "rotationY": 0.1752578,
+        "rotationZ": -0.8682646,
+        "stretchX": 1.0,
+        "stretchY": 1.1573576,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL1": {
+        "rotationX": -8.722935,
+        "rotationY": -0.014516072,
+        "rotationZ": 2.2632978,
+        "stretchX": 1.0,
+        "stretchY": 0.8354442,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block1": {
+        "stretchX": 1.0,
+        "stretchY": 0.8640372,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL": {
+        "stretchX": 1.0,
+        "stretchY": 1.196968,
+        "stretchZ": 1.0,
+        "offsetY": -0.9873347
+       }
+      }
+     },
+     {
+      "frame": 89,
+      "elements": {
+       "SparORIGIN": {
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0
+       },
+       "SailUnfurled": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0
+       },
+       "SailFurled": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0
+       },
+       "SailHalf": {
+        "offsetX": 0.0,
+        "offsetY": 0.0,
+        "offsetZ": 0.0,
+        "rotationX": 0.0,
+        "rotationY": 0.0,
+        "rotationZ": 0.0
+       },
+       "ClewRopeR5": {
+        "rotationX": 3.8146973e-06,
+        "rotationY": 0.0,
+        "rotationZ": -3.8146973e-06,
+        "stretchX": 1.0,
+        "stretchY": 0.99999994,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL5": {
+        "rotationX": -3.8146973e-06,
+        "rotationY": 0.0,
+        "rotationZ": -3.8146973e-06,
+        "stretchX": 1.0,
+        "stretchY": 0.99999994,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block11": {
+        "stretchX": 1.0,
+        "stretchY": 1.0000001,
+        "stretchZ": 1.0,
+        "offsetY": -3.5762787e-07
+       },
+       "BlockL4": {
+        "stretchX": 1.0,
+        "stretchY": 1.0000001,
+        "stretchZ": 1.0,
+        "offsetY": -3.5762787e-07
+       },
+       "RClew1": {
+        "rotationX": 1.9073486e-06,
+        "rotationY": 0.0,
+        "rotationZ": -1.1920929e-07,
+        "stretchX": 1.0,
+        "stretchY": 0.99999994,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LClew1": {
+        "rotationX": -1.9073486e-06,
+        "rotationY": 0.0,
+        "rotationZ": -1.1920929e-07,
+        "stretchX": 1.0,
+        "stretchY": 1.0,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block4": {
+        "stretchX": 1.0,
+        "stretchY": 1.0000001,
+        "stretchZ": 1.0,
+        "offsetY": -3.5762787e-07
+       },
+       "BlockL2": {
+        "stretchX": 1.0,
+        "stretchY": 1.0,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "ClewRopeR1": {
+        "rotationX": 1.9073486e-06,
+        "rotationY": 0.0,
+        "rotationZ": -0.0,
+        "stretchX": 1.0,
+        "stretchY": 1.0,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL1": {
+        "rotationX": -1.9073486e-06,
+        "rotationY": 0.0,
+        "rotationZ": -0.0,
+        "stretchX": 1.0,
+        "stretchY": 1.0,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block1": {
+        "stretchX": 1.0,
+        "stretchY": 1.0,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "BlockL": {
+        "stretchX": 1.0,
+        "stretchY": 1.0,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       }
+      }
+     },
+     {
+      "frame": 104,
+      "elements": {
+       "ClewRopeR5": {
+        "rotationX": 6.0010633,
+        "rotationY": 3.7876053,
+        "rotationZ": 5.0117836,
+        "stretchX": 1.0,
+        "stretchY": 0.91473967,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL5": {
+        "rotationX": 6.455076,
+        "rotationY": 3.3857777,
+        "rotationZ": -3.4835854,
+        "stretchX": 1.0,
+        "stretchY": 1.0873,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block11": {
+        "stretchX": 1.0,
+        "stretchY": 1.0932072,
+        "stretchZ": 1.0,
+        "offsetY": -0.511562
+       },
+       "BlockL4": {
+        "stretchX": 1.0,
+        "stretchY": 0.91970944,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "RClew1": {
+        "rotationX": 7.9961376,
+        "rotationY": 0.25930077,
+        "rotationZ": 4.0142665,
+        "stretchX": 1.0,
+        "stretchY": 0.8757012,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LClew1": {
+        "rotationX": 8.006916,
+        "rotationY": -0.07626244,
+        "rotationZ": -1.6115038,
+        "stretchX": 1.0,
+        "stretchY": 1.1134487,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block4": {
+        "stretchX": 1.0,
+        "stretchY": 1.141942,
+        "stretchZ": 1.0,
+        "offsetY": -0.74579287
+       },
+       "BlockL2": {
+        "stretchX": 1.0,
+        "stretchY": 0.8981105,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "ClewRopeR1": {
+        "rotationX": 8.496176,
+        "rotationY": 0.017363727,
+        "rotationZ": 2.3451345,
+        "stretchX": 1.0,
+        "stretchY": 0.8289075,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL1": {
+        "rotationX": 8.391926,
+        "rotationY": -0.14031921,
+        "rotationZ": -0.8126008,
+        "stretchX": 1.0,
+        "stretchY": 1.1512591,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block1": {
+        "stretchX": 1.0,
+        "stretchY": 1.2064072,
+        "stretchZ": 1.0,
+        "offsetY": -1.0265551
+       },
+       "BlockL": {
+        "stretchX": 1.0,
+        "stretchY": 0.8686142,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       }
+      }
+     },
+     {
+      "frame": 119,
+      "elements": {
+       "ClewRopeR5": {
+        "rotationX": 10.710616,
+        "rotationY": 7.7557316,
+        "rotationZ": 12.312534,
+        "stretchX": 1.0,
+        "stretchY": 0.836579,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL5": {
+        "rotationX": 13.089085,
+        "rotationY": 6.66778,
+        "rotationZ": -5.451977,
+        "stretchX": 1.0,
+        "stretchY": 1.1700543,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block11": {
+        "stretchX": 1.0,
+        "stretchY": 1.1953443,
+        "stretchZ": 1.0,
+        "offsetY": -0.98052585
+       },
+       "BlockL4": {
+        "stretchX": 1.0,
+        "stretchY": 0.85466117,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "RClew1": {
+        "rotationX": 15.655178,
+        "rotationY": 1.419288,
+        "rotationZ": 11.154207,
+        "stretchX": 1.0,
+        "stretchY": 0.75457656,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LClew1": {
+        "rotationX": 15.749073,
+        "rotationY": -0.06987312,
+        "rotationZ": -1.5395734,
+        "stretchX": 1.0,
+        "stretchY": 1.2167215,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block4": {
+        "stretchX": 1.0,
+        "stretchY": 1.3252466,
+        "stretchZ": 1.0,
+        "offsetY": -1.4725406
+       },
+       "BlockL2": {
+        "stretchX": 1.0,
+        "stretchY": 0.82188076,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "ClewRopeR1": {
+        "rotationX": 17.391605,
+        "rotationY": 0.7097095,
+        "rotationZ": 7.2323546,
+        "stretchX": 1.0,
+        "stretchY": 0.649664,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL1": {
+        "rotationX": 16.545773,
+        "rotationY": -0.22193037,
+        "rotationZ": -0.6667608,
+        "stretchX": 1.0,
+        "stretchY": 1.285295,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block1": {
+        "stretchX": 1.0,
+        "stretchY": 1.5392573,
+        "stretchZ": 1.0,
+        "offsetY": -2.102016
+       },
+       "BlockL": {
+        "stretchX": 1.0,
+        "stretchY": 0.77803147,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       }
+      }
+     },
+     {
+      "frame": 134,
+      "elements": {
+       "ClewRopeR5": {
+        "rotationX": 13.132218,
+        "rotationY": 11.397399,
+        "rotationZ": 22.327541,
+        "stretchX": 1.0,
+        "stretchY": 0.7737416,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL5": {
+        "rotationX": 19.603115,
+        "rotationY": 9.949806,
+        "rotationZ": -6.185379,
+        "stretchX": 1.0,
+        "stretchY": 1.244061,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block11": {
+        "stretchX": 1.0,
+        "stretchY": 1.2924211,
+        "stretchZ": 1.0,
+        "offsetY": -1.3575504
+       },
+       "BlockL4": {
+        "stretchX": 1.0,
+        "stretchY": 0.8038191,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "RClew1": {
+        "rotationX": 21.743542,
+        "rotationY": 4.089491,
+        "rotationZ": 22.470701,
+        "stretchX": 1.0,
+        "stretchY": 0.6488894,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LClew1": {
+        "rotationX": 23.151512,
+        "rotationY": 0.25208515,
+        "rotationZ": -0.18581438,
+        "stretchX": 1.0,
+        "stretchY": 1.30596,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block4": {
+        "stretchX": 1.0,
+        "stretchY": 1.5410947,
+        "stretchZ": 1.0,
+        "offsetY": -2.1066635
+       },
+       "BlockL2": {
+        "stretchX": 1.0,
+        "stretchY": 0.7657202,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "ClewRopeR1": {
+        "rotationX": 26.50212,
+        "rotationY": 3.2923574,
+        "rotationZ": 17.253319,
+        "stretchX": 1.0,
+        "stretchY": 0.47221678,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL1": {
+        "rotationX": 24.515182,
+        "rotationY": -0.11499858,
+        "rotationZ": 0.1622636,
+        "stretchX": 1.0,
+        "stretchY": 1.3991077,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block1": {
+        "stretchX": 1.0,
+        "stretchY": 2.1176715,
+        "stretchZ": 1.0,
+        "offsetY": -3.1666994
+       },
+       "BlockL": {
+        "stretchX": 1.0,
+        "stretchY": 0.7147413,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       }
+      }
+     },
+     {
+      "frame": 149,
+      "elements": {
+       "ClewRopeR5": {
+        "rotationX": 12.338705,
+        "rotationY": 13.430788,
+        "rotationZ": 34.97586,
+        "stretchX": 1.0,
+        "stretchY": 0.7349007,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL5": {
+        "rotationX": 25.780727,
+        "rotationY": 13.32914,
+        "rotationZ": -5.872364,
+        "stretchX": 1.0,
+        "stretchY": 1.3061498,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block11": {
+        "stretchX": 1.0,
+        "stretchY": 1.360728,
+        "stretchZ": 1.0,
+        "offsetY": -1.5905957
+       },
+       "BlockL4": {
+        "stretchX": 1.0,
+        "stretchY": 0.76560897,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "RClew1": {
+        "rotationX": 23.529963,
+        "rotationY": 8.0071335,
+        "rotationZ": 38.77959,
+        "stretchX": 1.0,
+        "stretchY": 0.5761734,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LClew1": {
+        "rotationX": 30.144596,
+        "rotationY": 1.042464,
+        "rotationZ": 2.1608315,
+        "stretchX": 1.0,
+        "stretchY": 1.3783277,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block4": {
+        "stretchX": 1.0,
+        "stretchY": 1.7355886,
+        "stretchZ": 1.0,
+        "offsetY": -2.5429595
+       },
+       "BlockL2": {
+        "stretchX": 1.0,
+        "stretchY": 0.72551686,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "ClewRopeR1": {
+        "rotationX": 32.51323,
+        "rotationY": 10.671888,
+        "rotationZ": 39.67336,
+        "stretchX": 1.0,
+        "stretchY": 0.32160544,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL1": {
+        "rotationX": 32.32413,
+        "rotationY": 0.27112874,
+        "rotationZ": 1.5031374,
+        "stretchX": 1.0,
+        "stretchY": 1.4903466,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block1": {
+        "stretchX": 1.0,
+        "stretchY": 3.1094,
+        "stretchZ": 1.0,
+        "offsetY": -4.0703673
+       },
+       "BlockL": {
+        "stretchX": 1.0,
+        "stretchY": 0.67098486,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       }
+      }
+     },
+     {
+      "frame": 157,
+      "elements": {
+       "ClewRopeR5": {
+        "rotationX": 10.70362,
+        "rotationY": 13.253653,
+        "rotationZ": 41.898674,
+        "stretchX": 1.0,
+        "stretchY": 0.7267205,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL5": {
+        "rotationX": 28.685577,
+        "rotationY": 15.078736,
+        "rotationZ": -5.360302,
+        "stretchX": 1.0,
+        "stretchY": 1.3319647,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block11": {
+        "stretchX": 1.0,
+        "stretchY": 1.3760449,
+        "stretchZ": 1.0,
+        "offsetY": -1.6396769
+       },
+       "BlockL4": {
+        "stretchX": 1.0,
+        "stretchY": 0.7507706,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "RClew1": {
+        "rotationX": 21.69478,
+        "rotationY": 9.567339,
+        "rotationZ": 48.58786,
+        "stretchX": 1.0,
+        "stretchY": 0.5583193,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LClew1": {
+        "rotationX": 33.461037,
+        "rotationY": 1.6451211,
+        "rotationZ": 3.6390138,
+        "stretchX": 1.0,
+        "stretchY": 1.4075139,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block4": {
+        "stretchX": 1.0,
+        "stretchY": 1.7910899,
+        "stretchZ": 1.0,
+        "offsetY": -2.6500845
+       },
+       "BlockL2": {
+        "stretchX": 1.0,
+        "stretchY": 0.7104726,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "ClewRopeR1": {
+        "rotationX": 28.829294,
+        "rotationY": 15.723918,
+        "rotationZ": 60.291245,
+        "stretchX": 1.0,
+        "stretchY": 0.27612504,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL1": {
+        "rotationX": 36.16972,
+        "rotationY": 0.59147936,
+        "rotationZ": 2.3278134,
+        "stretchX": 1.0,
+        "stretchY": 1.5269183,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block1": {
+        "stretchX": 1.0,
+        "stretchY": 3.6215477,
+        "stretchZ": 1.0,
+        "offsetY": -4.3432493
+       },
+       "BlockL": {
+        "stretchX": 1.0,
+        "stretchY": 0.6549139,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       }
+      }
+     },
+     {
+      "frame": 164,
+      "elements": {
+       "ClewRopeR5": {
+        "rotationX": 8.441564,
+        "rotationY": 11.995038,
+        "rotationZ": 48.779785,
+        "stretchX": 1.0,
+        "stretchY": 0.7266821,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL5": {
+        "rotationX": 31.437725,
+        "rotationY": 16.876635,
+        "rotationZ": -4.621439,
+        "stretchX": 1.0,
+        "stretchY": 1.3539776,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block11": {
+        "stretchX": 1.0,
+        "stretchY": 1.3761175,
+        "stretchZ": 1.0,
+        "offsetY": -1.6399072
+       },
+       "BlockL4": {
+        "stretchX": 1.0,
+        "stretchY": 0.73856467,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "RClew1": {
+        "rotationX": 17.814978,
+        "rotationY": 9.94104,
+        "rotationZ": 58.809067,
+        "stretchX": 1.0,
+        "stretchY": 0.5551678,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LClew1": {
+        "rotationX": 36.640076,
+        "rotationY": 2.397208,
+        "rotationZ": 5.2930894,
+        "stretchX": 1.0,
+        "stretchY": 1.431761,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block4": {
+        "stretchX": 1.0,
+        "stretchY": 1.8012573,
+        "stretchZ": 1.0,
+        "offsetY": -2.6689932
+       },
+       "BlockL2": {
+        "stretchX": 1.0,
+        "stretchY": 0.69844055,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "ClewRopeR1": {
+        "rotationX": 15.968282,
+        "rotationY": 14.8094425,
+        "rotationZ": 86.47642,
+        "stretchX": 1.0,
+        "stretchY": 0.26746067,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL1": {
+        "rotationX": 39.974403,
+        "rotationY": 1.0072134,
+        "rotationZ": 3.2399058,
+        "stretchX": 1.0,
+        "stretchY": 1.5572122,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block1": {
+        "stretchX": 1.0,
+        "stretchY": 3.7388675,
+        "stretchZ": 1.0,
+        "offsetY": -4.395236
+       },
+       "BlockL": {
+        "stretchX": 1.0,
+        "stretchY": 0.64217323,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       }
+      }
+     },
+     {
+      "frame": 169,
+      "elements": {
+       "ClewRopeR5": {
+        "rotationX": 6.7105494,
+        "rotationY": 10.505899,
+        "rotationZ": 53.13485,
+        "stretchX": 1.0,
+        "stretchY": 0.73119783,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL5": {
+        "rotationX": 33.176025,
+        "rotationY": 18.103794,
+        "rotationZ": -4.0040016,
+        "stretchX": 1.0,
+        "stretchY": 1.3664477,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block11": {
+        "stretchX": 1.0,
+        "stretchY": 1.3676189,
+        "stretchZ": 1.0,
+        "offsetY": -1.612813
+       },
+       "BlockL4": {
+        "stretchX": 1.0,
+        "stretchY": 0.7318246,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "RClew1": {
+        "rotationX": 14.286472,
+        "rotationY": 9.205183,
+        "rotationZ": 65.36986,
+        "stretchX": 1.0,
+        "stretchY": 0.5614415,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LClew1": {
+        "rotationX": 38.67562,
+        "rotationY": 2.9842484,
+        "rotationZ": 6.485677,
+        "stretchX": 1.0,
+        "stretchY": 1.445102,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block4": {
+        "stretchX": 1.0,
+        "stretchY": 1.7811295,
+        "stretchZ": 1.0,
+        "offsetY": -2.631351
+       },
+       "BlockL2": {
+        "stretchX": 1.0,
+        "stretchY": 0.6919927,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "ClewRopeR1": {
+        "rotationX": 5.0172195,
+        "rotationY": 7.241979,
+        "rotationZ": 101.18884,
+        "stretchX": 1.0,
+        "stretchY": 0.2844948,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL1": {
+        "rotationX": 42.486946,
+        "rotationY": 1.3409984,
+        "rotationZ": 3.8918557,
+        "stretchX": 1.0,
+        "stretchY": 1.5738479,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block1": {
+        "stretchX": 1.0,
+        "stretchY": 3.515003,
+        "stretchZ": 1.0,
+        "offsetY": -4.2930317
+       },
+       "BlockL": {
+        "stretchX": 1.0,
+        "stretchY": 0.6353854,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       }
+      }
+     },
+     {
+      "frame": 174,
+      "elements": {
+       "ClewRopeR5": {
+        "rotationX": 4.8925915,
+        "rotationY": 8.505025,
+        "rotationZ": 57.16053,
+        "stretchX": 1.0,
+        "stretchY": 0.73924106,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL5": {
+        "rotationX": 34.828453,
+        "rotationY": 19.354235,
+        "rotationZ": -3.2860794,
+        "stretchX": 1.0,
+        "stretchY": 1.3770992,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block11": {
+        "stretchX": 1.0,
+        "stretchY": 1.3527387,
+        "stretchZ": 1.0,
+        "offsetY": -1.5645536
+       },
+       "BlockL4": {
+        "stretchX": 1.0,
+        "stretchY": 0.7261641,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "RClew1": {
+        "rotationX": 10.26391,
+        "rotationY": 7.581287,
+        "rotationZ": 71.33489,
+        "stretchX": 1.0,
+        "stretchY": 0.57414633,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LClew1": {
+        "rotationX": 40.638336,
+        "rotationY": 3.6409512,
+        "rotationZ": 7.7458153,
+        "stretchX": 1.0,
+        "stretchY": 1.4561386,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block4": {
+        "stretchX": 1.0,
+        "stretchY": 1.7417163,
+        "stretchZ": 1.0,
+        "offsetY": -2.555122
+       },
+       "BlockL2": {
+        "stretchX": 1.0,
+        "stretchY": 0.6867478,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "ClewRopeR1": {
+        "rotationX": -4.964308,
+        "rotationY": -4.4415684,
+        "rotationZ": 109.69928,
+        "stretchX": 1.0,
+        "stretchY": 0.31670263,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL1": {
+        "rotationX": 44.979248,
+        "rotationY": 1.7225575,
+        "rotationZ": 4.5760775,
+        "stretchX": 1.0,
+        "stretchY": 1.5875933,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block1": {
+        "stretchX": 1.0,
+        "stretchY": 3.157536,
+        "stretchZ": 1.0,
+        "offsetY": -4.0997844
+       },
+       "BlockL": {
+        "stretchX": 1.0,
+        "stretchY": 0.62988424,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       }
+      }
+     },
+     {
+      "frame": 179,
+      "elements": {
+       "SparORIGIN": {
+        "rotationX": 0.0,
+        "rotationY": -90.0,
+        "rotationZ": 0.0
+       },
+       "SailUnfurled": {
+        "offsetX": 1.1,
+        "offsetY": 0.0,
+        "offsetZ": -4.0,
+        "rotationX": 0.0,
+        "rotationY": -90.0,
+        "rotationZ": 0.0
+       },
+       "SailFurled": {
+        "offsetX": 2.0,
+        "offsetY": 0.0,
+        "offsetZ": 2.0,
+        "rotationX": 0.0,
+        "rotationY": -90.0,
+        "rotationZ": 0.0
+       },
+       "SailHalf": {
+        "offsetX": 0.6,
+        "offsetY": 0.0,
+        "offsetZ": -4.0,
+        "rotationX": 0.0,
+        "rotationY": -90.0,
+        "rotationZ": 0.0
+       },
+       "ClewRopeR5": {
+        "rotationX": 3.0533085,
+        "rotationY": 6.0327477,
+        "rotationZ": 60.752457,
+        "stretchX": 1.0,
+        "stretchY": 0.75063854,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL5": {
+        "rotationX": 36.387043,
+        "rotationY": 20.627647,
+        "rotationZ": -2.4660778,
+        "stretchX": 1.0,
+        "stretchY": 1.3858938,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block11": {
+        "stretchX": 1.0,
+        "stretchY": 1.3321991,
+        "stretchZ": 1.0,
+        "offsetY": -1.4961687
+       },
+       "BlockL4": {
+        "stretchX": 1.0,
+        "stretchY": 0.721556,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "RClew1": {
+        "rotationX": 5.9873295,
+        "rotationY": 5.122575,
+        "rotationZ": 76.40893,
+        "stretchX": 1.0,
+        "stretchY": 0.5927762,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "LClew1": {
+        "rotationX": 42.522797,
+        "rotationY": 4.3677635,
+        "rotationZ": 9.070653,
+        "stretchX": 1.0,
+        "stretchY": 1.4648399,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block4": {
+        "stretchX": 1.0,
+        "stretchY": 1.6869774,
+        "stretchZ": 1.0,
+        "offsetY": -2.443343
+       },
+       "BlockL2": {
+        "stretchX": 1.0,
+        "stretchY": 0.68266845,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       },
+       "ClewRopeR1": {
+        "rotationX": -14.04406,
+        "rotationY": -17.077013,
+        "rotationZ": 111.89503,
+        "stretchX": 1.0,
+        "stretchY": 0.35983014,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "ClewRopeL1": {
+        "rotationX": 47.45011,
+        "rotationY": 2.1539836,
+        "rotationZ": 5.29047,
+        "stretchX": 1.0,
+        "stretchY": 1.5984198,
+        "stretchZ": 1.0,
+        "rotShortestDistanceX": true,
+        "rotShortestDistanceY": true,
+        "rotShortestDistanceZ": true
+       },
+       "Block1": {
+        "stretchX": 1.0,
+        "stretchY": 2.779089,
+        "stretchZ": 1.0,
+        "offsetY": -3.8410192
+       },
+       "BlockL": {
+        "stretchX": 1.0,
+        "stretchY": 0.62561786,
+        "stretchZ": 1.0,
+        "offsetY": -0.0
+       }
+      }
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "file": "game:shapes/entity/nonliving/boat/sailed.json",
+  "op": "add",
+  "path": "/animations/2/keyframes/1/elements/FlagWrap/rotShortestDistanceY",
+  "value": true
+ }
+]
