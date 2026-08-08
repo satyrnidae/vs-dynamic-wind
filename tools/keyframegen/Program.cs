@@ -403,6 +403,11 @@ for (int bi = 0; bi < branches.Length; bi++)
         // proportion to how compressed the rope is at this frame, so the pulley lifts clear instead of
         // visually clipping through the post near the point where the rope is shortest. MaxPulleyLift is
         // a tuned constant, not a closed-form geometric solve like the rest of this rig.
+        //
+        // offsetX/offsetZ must be emitted explicitly (as 0) alongside offsetY: AnimationKeyFrameElement's
+        // PositionSet is true if ANY offset axis is present, but lerpKeyFrameElement then unconditionally
+        // reads .Value on all three - an omitted axis throws "Nullable object must have a value" every
+        // frame this element is keyframed, not just a cosmetic default-to-zero.
         float stbdPulleyScale = Math.Abs(rStbd.Value.scale) > 1e-6f ? 1f / rStbd.Value.scale : 1f;
         float portPulleyScale = Math.Abs(rPort.Value.scale) > 1e-6f ? 1f / rPort.Value.scale : 1f;
         float stbdLift = -MaxPulleyLift * Math.Clamp(1f - rStbd.Value.scale, 0f, 1f);
@@ -412,8 +417,8 @@ for (int bi = 0; bi < branches.Length; bi++)
         {
             $"      \"{b.StbdRope}\": {{ \"rotationX\": {Fmt(rStbd.Value.rootRx)}, \"rotationY\": {Fmt(rStbd.Value.rootRy)}, \"rotationZ\": {Fmt(rStbd.Value.rootRz)}, \"stretchX\": 1.0, \"stretchY\": {Fmt(rStbd.Value.scale)}, \"stretchZ\": 1.0, \"rotShortestDistanceX\": true, \"rotShortestDistanceY\": true, \"rotShortestDistanceZ\": true }}",
             $"      \"{b.PortRope}\": {{ \"rotationX\": {Fmt(rPort.Value.rootRx)}, \"rotationY\": {Fmt(rPort.Value.rootRy)}, \"rotationZ\": {Fmt(rPort.Value.rootRz)}, \"stretchX\": 1.0, \"stretchY\": {Fmt(rPort.Value.scale)}, \"stretchZ\": 1.0, \"rotShortestDistanceX\": true, \"rotShortestDistanceY\": true, \"rotShortestDistanceZ\": true }}",
-            $"      \"{b.StbdPulley}\": {{ \"stretchX\": 1.0, \"stretchY\": {Fmt(stbdPulleyScale)}, \"stretchZ\": 1.0, \"offsetY\": {Fmt(stbdLift)} }}",
-            $"      \"{b.PortPulley}\": {{ \"stretchX\": 1.0, \"stretchY\": {Fmt(portPulleyScale)}, \"stretchZ\": 1.0, \"offsetY\": {Fmt(portLift)} }}",
+            $"      \"{b.StbdPulley}\": {{ \"stretchX\": 1.0, \"stretchY\": {Fmt(stbdPulleyScale)}, \"stretchZ\": 1.0, \"offsetX\": 0.0, \"offsetY\": {Fmt(stbdLift)}, \"offsetZ\": 0.0 }}",
+            $"      \"{b.PortPulley}\": {{ \"stretchX\": 1.0, \"stretchY\": {Fmt(portPulleyScale)}, \"stretchZ\": 1.0, \"offsetX\": 0.0, \"offsetY\": {Fmt(portLift)}, \"offsetZ\": 0.0 }}",
         };
 
         return $"    \"{frame}\": {{\n" + string.Join(",\n", lines) + "\n    }";
