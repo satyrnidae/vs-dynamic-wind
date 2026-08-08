@@ -706,7 +706,8 @@ Cell positions are advected from a single anchor time, so one snapshot stays cor
 
 ## Repo / workflow
 
-Local git repo (iterating locally; not pushed anywhere yet). Conventions:
+Hosted at `github.com/satyrnidae/vs-dynamic-wind` (`origin`); work happens on feature branches merged via PR.
+Conventions:
 - The vendored `libs/` DLLs are **git-ignored, not committed** (third-party binaries). A fresh clone must
   repopulate them before building - they are compile-time only (`<Private>False</Private>`) and never shipped:
   ```bash
