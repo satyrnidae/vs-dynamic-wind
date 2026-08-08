@@ -265,7 +265,16 @@ systems, and couples the rest of the world to it:
     within a magnitude of 4-8): a fixed `[0,16,0]` step has no scale of its own to absorb the rope
     shortening beyond the pulley's own reciprocal stretch, so as the rope compresses near either trim
     extreme the pulley's fixed chain position would otherwise ride close enough to the deck knot/post to
-    visibly clip through it.
+    visibly clip through it. **A keyframed offset/rotation/stretch must always specify all three axes,
+    even ones left at their identity value (0 for offset/rotation, 1 for stretch)** - the engine's
+    `AnimationKeyFrameElement.PositionSet`/`RotationSet`/`StretchSet` each go true as soon as ANY single
+    axis of that group is present, but `Animation.lerpKeyFrameElement` then unconditionally reads `.Value`
+    on all three `double?` fields of that group once triggered. Emitting only `offsetY` (as the pulley
+    once did, omitting `offsetX`/`offsetZ` since they're always 0) passes `PositionSet` but throws
+    `Nullable object must have a value` in `lerpKeyFrameElement` on every tick that element is
+    interpolated - i.e. constantly, for any sailboat with the rig actively swinging, not a rare edge case.
+    `tools/keyframegen/Program.cs` always emits the full axis triple for every group it writes because of
+    this; don't drop an all-zero/all-one axis as a "no-op" when hand-editing or extending baked keyframes.
   - The terminal **knot** mesh needs no keyframe of its own any more (an earlier version counter-rotated it
     back to a fixed rest orientation so it wouldn't visibly spin with the rope above it; removed once the
     rig's terminal knot pieces were redesigned to simply ride the rope - see `tools/keyframegen/Program.cs`'s
@@ -273,11 +282,68 @@ systems, and couples the rest of the world to it:
     as the root, since neither its scale nor its offset is linear in trim angle.
 
   The root's own solve is EXACT, not axial: aiming the root's local +Y at the anchor leaves each knot up
-  to a third of a block adrift at full trim (they hang a few px off the centreline), so the aim targets the
-  knot's own offset `u` - scale follows from `|S*u| = |d|` alone, then the rotation is the rest orientation
-  composed with the minimal rotation carrying the scaled offset onto the target. Rest pose (frame 90, angle
-  0) reproduces vanilla exactly for all three keyframed elements (rotation ~1e-6°, scale ~1.0000000) so
-  nothing shifts on load. `tools/keyframegen/Program.cs` computes this per branch:
+  to a third of a block adrift at full trim (they hang a few px off the centreline), so the aim targets a
+  vector `u` - scale follows from `|S*u| = |d|` alone, then the rotation is the rest orientation composed
+  with the minimal rotation carrying the scaled offset onto the target.
+
+  **`u` must be the chain's own natural (unstretched) reach, NOT the anchor's own position** - an earlier
+  version derived `u` directly from the anchor (`anchor position - root pivot`), which is only valid if the
+  rope's natural rest length already happens to coincide with the anchor's actual position. It doesn't:
+  measured directly (composing the REAL element chain - root's own authored rest transform through its
+  plain, unkeyframed `[0,16,0]` segments down to the true terminal element - rather than trusting `Solve()`'s
+  own self-consistent target formula, which is exact by construction regardless of whether `u` means
+  anything physically) the gap between the rope's true rest position and the anchor was ~0.4-1.5 blocks for
+  EVERY branch, even at frame 89 (angle 0, scale exactly 1 - i.e. present with zero stretch applied, ruling
+  out "not stretching enough" as the mechanism, though not the symptom - the resulting detachment DOES grow
+  worse away from rest since the wrongly-anchored `u`'s error compounds with `s`). Fixed by deriving `u` from
+  the chain's own natural rest position instead: `WalkToTrueLeaf` walks DOWN from the root through its real
+  children (preferring a non-pulley child at any fork - the pulley branches off as a SIBLING of the true
+  terminal segment in `SailFurled`, so it is not always an ancestor of the terminus; if the pulley is the
+  ONLY child at a fork it genuinely IS the terminus instead, as in `SailHalf`/`SailUnfurled` which have no
+  separate sibling terminal segment beyond it - the disambiguation matters since a naive "always take
+  child[0]" walk silently picks the WRONG branch at `SailFurled`'s fork), then the SAME `RestChainMatrix`
+  helper already used for the ancestor-side chain composes the descendant path's rest transforms down to
+  that leaf, giving its natural position directly. The rotation now carries the chain's TRUE natural
+  direction onto the anchor's true direction, and the scale stretches the chain's TRUE rest length to the
+  anchor's true distance - not assuming the anchor's own direction/distance were already the chain's own.
+  Confirmed via the same true-chain measurement: gap zero for `SailFurled`/`SailHalf` at every frame from
+  the start; `SailUnfurled` initially still showed a residual (down from ~1.5 blocks to ~0.05-0.24) that
+  traced to a topology misread, not a math error - see below.
+
+  **The pulley is a decorative rider, not the rope's own endpoint - `WalkToTrueLeaf` must never descend
+  into it, even when it's the only child at a fork.** An earlier version of the walk treated "pulley is the
+  only child" as "the pulley genuinely IS the terminus" and solved through it, needing a `Sheet.FixedTail`
+  split (a constant, non-scaling addition modeling the pulley's own reciprocal-stretch keyframe) to
+  partially compensate - this reduced but never fully closed `SailUnfurled`'s gap (~0-0.28 blocks
+  remaining), because it was solving for the wrong physical point in the first place. The pulley is always
+  GROUPED UNDER a real rope segment (visually riding partway down it, like a real block-and-tackle); that
+  segment - not the pulley - is the true terminus regardless of whether the pulley happens to be its only
+  child in the shape hierarchy. `WalkToTrueLeaf` now stops at whichever segment the pulley is grouped under
+  instead of descending into it, and the leaf's own FAR corner (`To`, not `From`/local origin - a terminal
+  rope segment is a box with real size past its own origin, e.g. ~4px, and that extent inherits the SAME
+  cumulative stretch as everything else once the rope is scaled; measuring only the origin under-counts the
+  natural reach and made `Solve()` over-stretch to compensate, visibly overshooting the anchor - "the rope
+  stretches past the post") is always a plain, unkeyframed continuation of the chain that scales uniformly
+  with the rest of it - no split needed anywhere. `Sheet.FixedTail`/the quadratic scale solve in `Solve()`
+  are kept (a nonzero fixed tail degrades gracefully to the old simple ratio when zero) in case some future
+  branch's topology needs it again, but nothing currently sets it nonzero. Result: gap EXACTLY zero for all
+  three branches at every baked frame, confirmed via the true-chain check (not just `Solve()`'s own
+  tautological self-consistency) - the original ~0.9-1.5 block gap this whole investigation started from is
+  fully closed, not just reduced.
+
+  **The anchor's own capture had the SAME corner-vs-extent mistake**, on the other end of the rope: it
+  queried the anchor element's own local origin (`(0,0,0)`, i.e. one specific corner of the deck-knot marker
+  box), tying every rope to that corner rather than a natural contact point. Fixed by querying the CENTRE
+  of whichever of the anchor box's 6 faces is closest to the rope root's own natural rest position (found
+  by comparing all 6 face-centre candidates' rest positions and picking the nearest, rather than hardcoding
+  which local axis is "fore" on that anchor's own ~10°-rotated geometry - the two deck anchors aren't
+  identically oriented, so a hardcoded axis guess would need to differ per anchor anyway).
+
+  Rest pose (frame 89, angle 0) reproduces vanilla exactly
+  for all three keyframed elements (rotation ~1e-6°, scale ~1.0000000) so nothing shifts on load - this
+  claim was previously validated only against `Solve()`'s own tautological consistency, not against the
+  real chain, and turned out to still hold once actually checked. `tools/keyframegen/Program.cs` computes
+  this per branch:
   anchors are captured ONCE per branch at rest, lifted into **`MastORIGIN`'s parent space** - the nearest
   frame that does not move when the rig swings, so a deck knot is fixed there by definition - by walking
   the parent links from the clew root back up to the rotator, so the shape's nesting can change without the
@@ -315,10 +381,62 @@ systems, and couples the rest of the world to it:
   to fix this - each sail-state change forces the entity's `AnimationCache` to rebuild (so the billow
   animation never builds against a stale cache - see "Sail billow intensity" above), which re-processes
   the full keyframe set, so keyframe count is a recurring cost during normal play, not a one-time load
-  cost. Instead the bake is locally densified: `extraAngles` (85/80/67.5/-67.5/-80/-85, 6 extra keyframes,
-  19 total) concentrates additional samples in the two outermost bands where the curvature was measured,
-  bringing the worst single-step Euler change down to a smooth few degrees per axis with no sign flips,
-  while leaving the rest of the grid at its original 15° step.
+  cost. Instead the 15° grid is locally densified by `RefineSide`, an ADAPTIVE bisection pass (not a
+  hand-picked fixed angle list - an earlier version used one, see below) run independently per branch and
+  per side (positive/negative), each seeded from the stable angle-0 anchor. The refinement criterion is the
+  actual rendered POSITION gap (`PositionThresholdBlocks`, 0.04 blocks) the ENGINE's own linear
+  interpolation between two adjacent baked keyframes would produce, measured directly rather than proxied:
+  for every adjacent pair, `SolveAngle` re-solves the exact midpoint frame, `LerpRaw` reproduces what
+  `lerpKeyFrameElement` would render there by linearly interpolating the two neighbours' baked
+  rootRx/Y/Z/scale at the true fractional frame position, and `ReconstructPos` turns both into 3D positions
+  (same composition the runtime performs) to compare. Over threshold -> insert the midpoint angle (skipped
+  if it would round to the same integer frame as either neighbour - frame resolution exhausted right there,
+  not fixable by further bisection) and repeat until stable or `MaxRefineIterationsPerSide` is hit. An
+  EARLIER version of this pass measured summed |Δrotation| in EULER DEGREES between adjacent frames instead
+  (threshold ~15°) - a worse proxy that both over- and under-flagged: Euler angle change can diverge sharply
+  near a near-singular aim-solve configuration even while the true positional error stays small (over-
+  flagging, wasting keyframes), and conversely can understate the true positional gap elsewhere (under-
+  flagging, leaving a real visible detachment - this was the actual cause of a reported "clew rope detaches
+  from its knot" bug that persisted even after the degree-based pass converged, since a bounded ANGULAR
+  step doesn't bound the rendered POSITIONAL step once the lever arm and interpolation nonlinearity are
+  taken into account). Switching to the direct positional criterion fixed the persisting detachment AND
+  reduced the total keyframe count (currently ~29 across all three branches, versus 47 for the degree-based
+  pass and 19 for the original fixed scheme) - proof the degree-based threshold was mis-allocating density,
+  not just under-provisioning it. This converges to however much density each branch/side/sheet actually
+  needs rather than assuming the curvature is symmetric between port and starboard or fixed in location -
+  both turned out to be false once `SailRoot`'s own offset was folded into the solve (see below): each
+  sheet goes taut on a DIFFERENT side of the swing. `KFGEN_RESIDUAL=1` (any env var value) makes the tool
+  also verify two DIFFERENT things at every baked frame: (1) that the emitted rotation+scale reconstructs
+  `Solve()`'s OWN target to within 1mm - a tautology by construction, so this only catches an implementation
+  bug in `Solve()` itself, not whether that target is physically meaningful; and (2) a TRUECHAIN check that
+  actually composes the real element chain (root's solved rotation+scale, plain unkeyframed intermediate
+  segments, the true terminal leaf found via `WalkToTrueLeaf`) and compares ITS position against the anchor
+  - this is what caught the `u`-derivation bug described above, since check (1) alone passed throughout
+  despite `u` being wrong (self-consistency isn't correctness).
+
+  **`SailRoot`'s own offset must be replicated, not just its rotation.** `SailFurled`/`SailHalf`/
+  `SailUnfurled` are the actual swing target in the shape's own hand-authored `rotatesail` keyframes (NOT
+  `MastORIGIN` - `MastORIGIN`/`Mast7` carry no keyframes of their own in the current rig at all, despite
+  earlier revisions of this doc; the swing is baked directly onto the three sail-state root elements,
+  3 keyframes each at frames 0/89/179, linearly interpolated by the engine in between), and each keyframe
+  sets BOTH a `rotationY` AND a small `offsetX`/`offsetY`/`offsetZ` (up to 4px, asymmetric between frame 0
+  and frame 179 - e.g. `SailHalf`: `(-4,0,0)` at frame 0 vs `(0.6,0,-4)` at frame 179) - a hand-tuned
+  correction because these elements pivot about their OWN local `rotationOrigin`, not the true mast axis.
+  `keyframegen`'s chain composition originally injected only `degOffY = angleDeg` at this node with no
+  translation - correct for the rotation alone (`FrameForAngle`'s frame↔angle mapping is exactly the
+  algebraic inverse of the engine's own linear `rotationY` lerp between 0/89/179, so that part matched by
+  construction) but silently dropped the offset. That reproduced correctly only at frame 89 (angle 0, where
+  both branches' offset is genuinely zero) and left the clew-rope aim solve targeting the anchor from a
+  rope root that wasn't actually where the rendered mesh was everywhere else - worst near the extremes,
+  where the offset is largest - which read in-game as the clew ropes visibly detached from their deck
+  knots except dead-ahead. Fixed by interpolating that same offset (`Branch.Frame0Offset`/`Frame179Offset`,
+  hardcoded per branch from the real values in `boat-sailed-animations.json`'s own `SailFurled`/`SailHalf`/
+  `SailUnfurled` keyframes - keep both in sync if the swing is ever re-authored) via the identical
+  frame-fraction lerp the engine performs, and setting it as `translateX/Y/Z` alongside `degOffY` on the
+  SAME injected `ElementPose` for that chain link - matching exactly how the real baked keyframe sets both
+  fields on the same element simultaneously. This is what necessitated the adaptive re-bake above: the
+  corrected curve is genuinely sharper than the offset-less approximation the original density tuning was
+  measured against.
 - **Weather** - `WeatherCoupling` (Harmony postfix on `WeatherSystemBase.GetRainCloudness`) raises
   cloudness/rain inside lows and lowers it in highs - storms form in **low** pressure, highs are
   fair-weather subsidence, matching real synoptic charts (see [noaa.gov/jetstream/wxmaps](https://www.noaa.gov/jetstream/wxmaps)).
