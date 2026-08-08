@@ -259,13 +259,17 @@ systems, and couples the rest of the world to it:
   off the root - which is exactly the problem for the pulley block partway down that chain, so it ALSO
   gets its own keyframe track alongside the root:
   - **Pulley block** - gets the root's `stretchY` **reciprocally** (`1/scale`, its own `stretchY` keyframe)
-    so it rides the rope without stretching along with it. It ALSO gets a small `OffsetY` (negative = up
-    the chain, toward the root - the chain runs `[0,16,0]`, i.e. +Y is down the rope) ramped in proportion
-    to how compressed the rope is at that frame (`-MaxPulleyLift * clamp(1 - scale, 0, 1)`, tuned in-game
-    within a magnitude of 4-8): a fixed `[0,16,0]` step has no scale of its own to absorb the rope
-    shortening beyond the pulley's own reciprocal stretch, so as the rope compresses near either trim
-    extreme the pulley's fixed chain position would otherwise ride close enough to the deck knot/post to
-    visibly clip through it. **A keyframed offset/rotation/stretch must always specify all three axes,
+    so it rides the rope without stretching along with it. It ALSO gets an `OffsetY` (negative = up the
+    chain, toward the root; positive = down the chain, away from the root - the chain runs `[0,16,0]`, i.e.
+    +Y is down the rope) that slides it BOTH ways, symmetric and unclamped: `PulleyLiftPerScaleUnit *
+    (scale - 1)`, tuned in-game within a magnitude of 4-8 for the compression side. A fixed `[0,16,0]` step
+    has no scale of its own to absorb the rope's length change beyond the pulley's own reciprocal stretch,
+    so as the rope compresses near one trim extreme the pulley's fixed chain position would otherwise ride
+    close enough to the deck knot/post to visibly clip through it - and as the rope EXTENDS near the
+    opposite extreme, that same fixed position instead clips through a DIFFERENT post further toward the
+    fore of the ship. Both are the same problem in opposite directions, hence the one symmetric ramp rather
+    than a one-sided clamp (an earlier version clamped to the compression side only, leaving the extension
+    side entirely unaddressed). **A keyframed offset/rotation/stretch must always specify all three axes,
     even ones left at their identity value (0 for offset/rotation, 1 for stretch)** - the engine's
     `AnimationKeyFrameElement.PositionSet`/`RotationSet`/`StretchSet` each go true as soon as ANY single
     axis of that group is present, but `Animation.lerpKeyFrameElement` then unconditionally reads `.Value`

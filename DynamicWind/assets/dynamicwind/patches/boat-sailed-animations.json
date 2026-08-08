@@ -621,7 +621,7 @@
         "stretchY": 0.73292166,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 5.101632,
         "offsetZ": 0.0
        },
        "BlockL4": {
@@ -629,7 +629,7 @@
         "stretchY": 1.3071543,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -1.4098763,
+        "offsetY": -3.2897115,
         "offsetZ": 0.0
        },
        "RClew1": {
@@ -659,7 +659,7 @@
         "stretchY": 0.6608622,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 7.184447,
         "offsetZ": 0.0
        },
        "BlockL2": {
@@ -667,7 +667,7 @@
         "stretchY": 1.596714,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -2.2422829,
+        "offsetY": -5.231993,
         "offsetZ": 0.0
        },
        "ClewRopeR1": {
@@ -697,7 +697,7 @@
         "stretchY": 0.6116302,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 8.8896475,
         "offsetZ": 0.0
        },
        "BlockL": {
@@ -705,7 +705,7 @@
         "stretchY": 2.6569345,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -3.7417583,
+        "offsetY": -8.73077,
         "offsetZ": 0.0
        }
       }
@@ -740,7 +740,7 @@
         "stretchY": 0.61593,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 8.729855,
         "offsetZ": 0.0
        },
        "BlockL": {
@@ -748,7 +748,7 @@
         "stretchY": 2.939656,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -3.9589448,
+        "offsetY": -9.237537,
         "offsetZ": 0.0
        }
       }
@@ -783,7 +783,7 @@
         "stretchY": 0.7392489,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 4.938142,
         "offsetZ": 0.0
        },
        "BlockL4": {
@@ -791,7 +791,7 @@
         "stretchY": 1.3353153,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -1.5066794,
+        "offsetY": -3.5155854,
         "offsetZ": 0.0
        },
        "RClew1": {
@@ -821,7 +821,7 @@
         "stretchY": 0.6699634,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 6.896663,
         "offsetZ": 0.0
        },
        "BlockL2": {
@@ -829,7 +829,7 @@
         "stretchY": 1.6798755,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -2.4283068,
+        "offsetY": -5.666049,
         "offsetZ": 0.0
        },
        "ClewRopeR1": {
@@ -859,7 +859,7 @@
         "stretchY": 0.62095255,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 8.546007,
         "offsetZ": 0.0
        },
        "BlockL": {
@@ -867,7 +867,7 @@
         "stretchY": 3.2353702,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -4.1454983,
+        "offsetY": -9.672829,
         "offsetZ": 0.0
        }
       }
@@ -902,7 +902,7 @@
         "stretchY": 0.62659985,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 8.342808,
         "offsetZ": 0.0
        },
        "BlockL": {
@@ -910,7 +910,7 @@
         "stretchY": 3.5189927,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -4.2949667,
+        "offsetY": -10.021588,
         "offsetZ": 0.0
        }
       }
@@ -945,7 +945,7 @@
         "stretchY": 0.7479957,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 4.7166853,
         "offsetZ": 0.0
        },
        "BlockL4": {
@@ -953,7 +953,7 @@
         "stretchY": 1.3501366,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -1.5560052,
+        "offsetY": -3.630679,
         "offsetZ": 0.0
        },
        "RClew1": {
@@ -983,7 +983,7 @@
         "stretchY": 0.68145925,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 6.5441484,
         "offsetZ": 0.0
        },
        "BlockL2": {
@@ -991,7 +991,7 @@
         "stretchY": 1.7312115,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -2.534219,
+        "offsetY": -5.9131775,
         "offsetZ": 0.0
        },
        "ClewRopeR1": {
@@ -1021,7 +1021,7 @@
         "stretchY": 0.6329589,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 8.11834,
         "offsetZ": 0.0
        },
        "BlockL": {
@@ -1029,7 +1029,7 @@
         "stretchY": 3.7345076,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -4.3933625,
+        "offsetY": -10.251179,
         "offsetZ": 0.0
        }
       }
@@ -1064,7 +1064,7 @@
         "stretchY": 0.64006317,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 7.8728404,
         "offsetZ": 0.0
        },
        "BlockL": {
@@ -1072,7 +1072,7 @@
         "stretchY": 3.8229773,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -4.4305425,
+        "offsetY": -10.337933,
         "offsetZ": 0.0
        }
       }
@@ -1107,7 +1107,7 @@
         "stretchY": 0.75941795,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 4.4351716,
         "offsetZ": 0.0
        },
        "BlockL4": {
@@ -1115,7 +1115,7 @@
         "stretchY": 1.3502742,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -1.556458,
+        "offsetY": -3.6317353,
         "offsetZ": 0.0
        },
        "RClew1": {
@@ -1145,7 +1145,7 @@
         "stretchY": 0.6957099,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 6.123331,
         "offsetZ": 0.0
        },
        "BlockL2": {
@@ -1153,7 +1153,7 @@
         "stretchY": 1.7386436,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -2.549034,
+        "offsetY": -5.9477463,
         "offsetZ": 0.0
        },
        "ClewRopeR1": {
@@ -1183,7 +1183,7 @@
         "stretchY": 0.6480523,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 7.6031947,
         "offsetZ": 0.0
        },
        "BlockL": {
@@ -1191,7 +1191,7 @@
         "stretchY": 3.7562392,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -4.4026575,
+        "offsetY": -10.272868,
         "offsetZ": 0.0
        }
       }
@@ -1226,7 +1226,7 @@
         "stretchY": 0.77351266,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 4.099251,
         "offsetZ": 0.0
        },
        "BlockL4": {
@@ -1234,7 +1234,7 @@
         "stretchY": 1.3358244,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -1.5083917,
+        "offsetY": -3.5195808,
         "offsetZ": 0.0
        },
        "RClew1": {
@@ -1264,7 +1264,7 @@
         "stretchY": 0.712713,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 5.64325,
         "offsetZ": 0.0
        },
        "BlockL2": {
@@ -1272,7 +1272,7 @@
         "stretchY": 1.7004353,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -2.4714918,
+        "offsetY": -5.766814,
         "offsetZ": 0.0
        },
        "ClewRopeR1": {
@@ -1302,7 +1302,7 @@
         "stretchY": 0.6663814,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 7.008989,
         "offsetZ": 0.0
        },
        "BlockL": {
@@ -1310,7 +1310,7 @@
         "stretchY": 3.2779014,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -4.1695604,
+        "offsetY": -9.728974,
         "offsetZ": 0.0
        }
       }
@@ -1345,7 +1345,7 @@
         "stretchY": 0.7905489,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 3.7092137,
         "offsetZ": 0.0
        },
        "BlockL4": {
@@ -1353,7 +1353,7 @@
         "stretchY": 1.3084558,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -1.4144422,
+        "offsetY": -3.300365,
         "offsetZ": 0.0
        },
        "RClew1": {
@@ -1383,7 +1383,7 @@
         "stretchY": 0.73301774,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 5.0991287,
         "offsetZ": 0.0
        },
        "BlockL2": {
@@ -1391,7 +1391,7 @@
         "stretchY": 1.6259031,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -2.3097432,
+        "offsetY": -5.3894005,
         "offsetZ": 0.0
        },
        "ClewRopeR1": {
@@ -1421,7 +1421,7 @@
         "stretchY": 0.6886011,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 6.3310747,
         "offsetZ": 0.0
        },
        "BlockL": {
@@ -1429,7 +1429,7 @@
         "stretchY": 2.6952147,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -3.7738323,
+        "offsetY": -8.805609,
         "offsetZ": 0.0
        }
       }
@@ -1464,7 +1464,7 @@
         "stretchY": 0.81061524,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 3.2708325,
         "offsetZ": 0.0
        },
        "BlockL4": {
@@ -1472,7 +1472,7 @@
         "stretchY": 1.2711413,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -1.2798325,
+        "offsetY": -2.9862757,
         "offsetZ": 0.0
        },
        "RClew1": {
@@ -1502,7 +1502,7 @@
         "stretchY": 0.7566368,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 4.5029335,
         "offsetZ": 0.0
        },
        "BlockL2": {
@@ -1510,7 +1510,7 @@
         "stretchY": 1.528603,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -2.0748475,
+        "offsetY": -4.8413105,
         "offsetZ": 0.0
        },
        "ClewRopeR1": {
@@ -1540,7 +1540,7 @@
         "stretchY": 0.71499693,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 5.5805035,
         "offsetZ": 0.0
        },
        "BlockL": {
@@ -1548,7 +1548,7 @@
         "stretchY": 2.2123053,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -3.2878969,
+        "offsetY": -7.6717596,
         "offsetZ": 0.0
        }
       }
@@ -1583,7 +1583,7 @@
         "stretchY": 0.860807,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 2.2638085,
         "offsetZ": 0.0
        },
        "BlockL4": {
@@ -1591,7 +1591,7 @@
         "stretchY": 1.1789173,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.91058457,
+        "offsetY": -2.1246972,
         "offsetZ": 0.0
        },
        "RClew1": {
@@ -1621,7 +1621,7 @@
         "stretchY": 0.81648767,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 3.1466157,
         "offsetZ": 0.0
        },
        "BlockL2": {
@@ -1629,7 +1629,7 @@
         "stretchY": 1.3206677,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -1.4568436,
+        "offsetY": -3.3993018,
         "offsetZ": 0.0
        },
        "ClewRopeR1": {
@@ -1659,7 +1659,7 @@
         "stretchY": 0.784207,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 3.8524296,
         "offsetZ": 0.0
        },
        "BlockL": {
@@ -1667,7 +1667,7 @@
         "stretchY": 1.5875139,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -2.2205057,
+        "offsetY": -5.18118,
         "offsetZ": 0.0
        }
       }
@@ -1702,7 +1702,7 @@
         "stretchY": 0.92566746,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 1.1242213,
         "offsetZ": 0.0
        },
        "BlockL4": {
@@ -1710,7 +1710,7 @@
         "stretchY": 1.0818348,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.45386696,
+        "offsetY": -1.0590229,
         "offsetZ": 0.0
        },
        "RClew1": {
@@ -1740,7 +1740,7 @@
         "stretchY": 0.8960396,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 1.6243095,
         "offsetZ": 0.0
        },
        "BlockL2": {
@@ -1748,7 +1748,7 @@
         "stretchY": 1.137985,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.72752273,
+        "offsetY": -1.697553,
         "offsetZ": 0.0
        },
        "ClewRopeR1": {
@@ -1778,7 +1778,7 @@
         "stretchY": 0.8823501,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 1.8667183,
         "offsetZ": 0.0
        },
        "BlockL": {
@@ -1786,7 +1786,7 @@
         "stretchY": 1.2332196,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -1.1346864,
+        "offsetY": -2.6476016,
         "offsetZ": 0.0
        }
       }
@@ -1850,7 +1850,7 @@
         "stretchY": 1.0062273,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.037132144,
+        "offsetY": -0.08664167,
         "offsetZ": 0.0
        },
        "BlockL4": {
@@ -1858,7 +1858,7 @@
         "stretchY": 0.9929224,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 0.099792,
         "offsetZ": 0.0
        },
        "RClew1": {
@@ -1888,7 +1888,7 @@
         "stretchY": 1.0011492,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.00688684,
+        "offsetY": -0.016069293,
         "offsetZ": 0.0
        },
        "BlockL2": {
@@ -1896,7 +1896,7 @@
         "stretchY": 0.995379,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 0.06499481,
         "offsetZ": 0.0
        },
        "ClewRopeR1": {
@@ -1926,7 +1926,7 @@
         "stretchY": 1.025023,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.14647257,
+        "offsetY": -0.34176934,
         "offsetZ": 0.0
        },
        "BlockL": {
@@ -1934,7 +1934,7 @@
         "stretchY": 1.0168606,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.09948599,
+        "offsetY": -0.23213398,
         "offsetZ": 0.0
        }
       }
@@ -1969,7 +1969,7 @@
         "stretchY": 1.09581,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.5245986,
+        "offsetY": -1.2240634,
         "offsetZ": 0.0
        },
        "BlockL4": {
@@ -1977,7 +1977,7 @@
         "stretchY": 0.91347927,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 1.3260183,
         "offsetZ": 0.0
        },
        "RClew1": {
@@ -2007,7 +2007,7 @@
         "stretchY": 1.1493186,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.7795154,
+        "offsetY": -1.8188692,
         "offsetZ": 0.0
        },
        "BlockL2": {
@@ -2015,7 +2015,7 @@
         "stretchY": 0.88889706,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 1.7498548,
         "offsetZ": 0.0
        },
        "ClewRopeR1": {
@@ -2045,7 +2045,7 @@
         "stretchY": 1.2544602,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -1.2170663,
+        "offsetY": -2.8398213,
         "offsetZ": 0.0
        },
        "BlockL": {
@@ -2053,7 +2053,7 @@
         "stretchY": 0.8742031,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 2.0145855,
         "offsetZ": 0.0
        }
       }
@@ -2088,7 +2088,7 @@
         "stretchY": 1.1438429,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.75452435,
+        "offsetY": -1.7605568,
         "offsetZ": 0.0
        },
        "BlockL4": {
@@ -2096,7 +2096,7 @@
         "stretchY": 0.87970185,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 1.9144831,
         "offsetZ": 0.0
        },
        "RClew1": {
@@ -2126,7 +2126,7 @@
         "stretchY": 1.2375889,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -1.1518636,
+        "offsetY": -2.6876817,
         "offsetZ": 0.0
        },
        "BlockL2": {
@@ -2134,7 +2134,7 @@
         "stretchY": 0.8456007,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 2.5562768,
         "offsetZ": 0.0
        },
        "ClewRopeR1": {
@@ -2164,7 +2164,7 @@
         "stretchY": 1.4163978,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -1.7639018,
+        "offsetY": -4.115771,
         "offsetZ": 0.0
        },
        "BlockL": {
@@ -2172,7 +2172,7 @@
         "stretchY": 0.82043785,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 3.0640588,
         "offsetZ": 0.0
        }
       }
@@ -2207,7 +2207,7 @@
         "stretchY": 1.192642,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.9691522,
+        "offsetY": -2.2613552,
         "offsetZ": 0.0
        },
        "BlockL4": {
@@ -2215,7 +2215,7 @@
         "stretchY": 0.84978175,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 2.474818,
         "offsetZ": 0.0
        },
        "RClew1": {
@@ -2245,7 +2245,7 @@
         "stretchY": 1.3342654,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -1.5031435,
+        "offsetY": -3.507335,
         "offsetZ": 0.0
        },
        "BlockL2": {
@@ -2253,7 +2253,7 @@
         "stretchY": 0.8083564,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 3.319093,
         "offsetZ": 0.0
        },
        "ClewRopeR1": {
@@ -2283,7 +2283,7 @@
         "stretchY": 1.6260448,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -2.3100648,
+        "offsetY": -5.390151,
         "offsetZ": 0.0
        },
        "BlockL": {
@@ -2291,7 +2291,7 @@
         "stretchY": 0.7758962,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 4.0436506,
         "offsetZ": 0.0
        }
       }
@@ -2326,7 +2326,7 @@
         "stretchY": 1.2397497,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -1.1603132,
+        "offsetY": -2.7073975,
         "offsetZ": 0.0
        },
        "BlockL4": {
@@ -2334,7 +2334,7 @@
         "stretchY": 0.82351905,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 3.0002139,
         "offsetZ": 0.0
        },
        "RClew1": {
@@ -2364,7 +2364,7 @@
         "stretchY": 1.4365153,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -1.8232259,
+        "offsetY": -4.254194,
         "offsetZ": 0.0
        },
        "BlockL2": {
@@ -2372,7 +2372,7 @@
         "stretchY": 0.7758894,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 4.043809,
         "offsetZ": 0.0
        },
        "ClewRopeR1": {
@@ -2402,7 +2402,7 @@
         "stretchY": 1.9021636,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -2.8456972,
+        "offsetY": -6.6399603,
         "offsetZ": 0.0
        },
        "BlockL": {
@@ -2410,7 +2410,7 @@
         "stretchY": 0.73818,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 4.9655643,
         "offsetZ": 0.0
        }
       }
@@ -2445,7 +2445,7 @@
         "stretchY": 1.2829053,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -1.3231155,
+        "offsetY": -3.0872693,
         "offsetZ": 0.0
        },
        "BlockL4": {
@@ -2453,7 +2453,7 @@
         "stretchY": 0.8006882,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 3.484958,
         "offsetZ": 0.0
        },
        "RClew1": {
@@ -2483,7 +2483,7 @@
         "stretchY": 1.5384052,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -2.099857,
+        "offsetY": -4.899667,
         "offsetZ": 0.0
        },
        "BlockL2": {
@@ -2491,7 +2491,7 @@
         "stretchY": 0.7482392,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 4.710593,
         "offsetZ": 0.0
        },
        "ClewRopeR1": {
@@ -2521,7 +2521,7 @@
         "stretchY": 2.2700443,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -3.3568797,
+        "offsetY": -7.8327193,
         "offsetZ": 0.0
        },
        "BlockL": {
@@ -2529,7 +2529,7 @@
         "stretchY": 0.70686746,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 5.8056936,
         "offsetZ": 0.0
        }
       }
@@ -2564,7 +2564,7 @@
         "stretchY": 1.3186852,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -1.4500133,
+        "offsetY": -3.3833642,
         "offsetZ": 0.0
        },
        "BlockL4": {
@@ -2572,7 +2572,7 @@
         "stretchY": 0.7811186,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 3.9230154,
         "offsetZ": 0.0
        },
        "RClew1": {
@@ -2602,7 +2602,7 @@
         "stretchY": 1.6301236,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -2.3192976,
+        "offsetY": -5.4116945,
         "offsetZ": 0.0
        },
        "BlockL2": {
@@ -2610,7 +2610,7 @@
         "stretchY": 0.7243339,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 5.3281026,
         "offsetZ": 0.0
        },
        "ClewRopeR1": {
@@ -2640,7 +2640,7 @@
         "stretchY": 2.747723,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -3.8163736,
+        "offsetY": -8.904872,
         "offsetZ": 0.0
        },
        "BlockL": {
@@ -2648,7 +2648,7 @@
         "stretchY": 0.6803183,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 6.5786037,
         "offsetZ": 0.0
        }
       }
@@ -2683,7 +2683,7 @@
         "stretchY": 1.3441422,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -1.5361866,
+        "offsetY": -3.5844355,
         "offsetZ": 0.0
        },
        "BlockL4": {
@@ -2691,7 +2691,7 @@
         "stretchY": 0.7645458,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 4.3115253,
         "offsetZ": 0.0
        },
        "RClew1": {
@@ -2721,7 +2721,7 @@
         "stretchY": 1.699401,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -2.4693441,
+        "offsetY": -5.761803,
         "offsetZ": 0.0
        },
        "BlockL2": {
@@ -2729,7 +2729,7 @@
         "stretchY": 0.7043466,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 5.8765783,
         "offsetZ": 0.0
        },
        "ClewRopeR1": {
@@ -2759,7 +2759,7 @@
         "stretchY": 3.2998273,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -4.181723,
+        "offsetY": -9.757354,
         "offsetZ": 0.0
        },
        "BlockL": {
@@ -2767,7 +2767,7 @@
         "stretchY": 0.65851516,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 7.2599506,
         "offsetZ": 0.0
        }
       }
@@ -2802,7 +2802,7 @@
         "stretchY": 1.3565028,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -1.5768614,
+        "offsetY": -3.6793432,
         "offsetZ": 0.0
        },
        "BlockL4": {
@@ -2810,7 +2810,7 @@
         "stretchY": 0.7508789,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 4.6448174,
         "offsetZ": 0.0
        },
        "RClew1": {
@@ -2840,7 +2840,7 @@
         "stretchY": 1.7337211,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -2.5392358,
+        "offsetY": -5.924884,
         "offsetZ": 0.0
        },
        "BlockL2": {
@@ -2848,7 +2848,7 @@
         "stretchY": 0.6873824,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 6.36712,
         "offsetZ": 0.0
        },
        "ClewRopeR1": {
@@ -2878,7 +2878,7 @@
         "stretchY": 3.7077405,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -4.381764,
+        "offsetY": -10.224115,
         "offsetZ": 0.0
        },
        "BlockL": {
@@ -2886,7 +2886,7 @@
         "stretchY": 0.6402579,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 7.86619,
         "offsetZ": 0.0
        }
       }
@@ -2921,7 +2921,7 @@
         "stretchY": 3.7509036,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -4.400386,
+        "offsetY": -10.267567,
         "offsetZ": 0.0
        },
        "BlockL": {
@@ -2929,7 +2929,7 @@
         "stretchY": 0.6327483,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 8.125702,
         "offsetZ": 0.0
        }
       }
@@ -2964,7 +2964,7 @@
         "stretchY": 1.3543032,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -1.5696777,
+        "offsetY": -3.6625814,
         "offsetZ": 0.0
        },
        "BlockL4": {
@@ -2972,7 +2972,7 @@
         "stretchY": 0.7398562,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 4.922596,
         "offsetZ": 0.0
        },
        "RClew1": {
@@ -3002,7 +3002,7 @@
         "stretchY": 1.7269012,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -2.5255685,
+        "offsetY": -5.892993,
         "offsetZ": 0.0
        },
        "BlockL2": {
@@ -3010,7 +3010,7 @@
         "stretchY": 0.67372024,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 6.7801385,
         "offsetZ": 0.0
        },
        "ClewRopeR1": {
@@ -3040,7 +3040,7 @@
         "stretchY": 3.6568117,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -4.359226,
+        "offsetY": -10.171528,
         "offsetZ": 0.0
        },
        "BlockL": {
@@ -3048,7 +3048,7 @@
         "stretchY": 0.6257523,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 8.373071,
         "offsetZ": 0.0
        }
       }
@@ -3083,7 +3083,7 @@
         "stretchY": 1.3377085,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -1.5147178,
+        "offsetY": -3.5343416,
         "offsetZ": 0.0
        },
        "BlockL4": {
@@ -3091,7 +3091,7 @@
         "stretchY": 0.73147815,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 5.139328,
         "offsetZ": 0.0
        },
        "RClew1": {
@@ -3121,7 +3121,7 @@
         "stretchY": 1.6809679,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -2.4306278,
+        "offsetY": -5.671465,
         "offsetZ": 0.0
        },
        "BlockL2": {
@@ -3129,7 +3129,7 @@
         "stretchY": 0.66260695,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 7.1286645,
         "offsetZ": 0.0
        },
        "ClewRopeR1": {
@@ -3159,7 +3159,7 @@
         "stretchY": 3.2002597,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -4.1251526,
+        "offsetY": -9.625356,
         "offsetZ": 0.0
        },
        "BlockL": {
@@ -3167,7 +3167,7 @@
         "stretchY": 0.6140746,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 8.798534,
         "offsetZ": 0.0
        }
       }
@@ -3202,7 +3202,7 @@
         "stretchY": 2.9279757,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -3.9508028,
+        "offsetY": -9.218539,
         "offsetZ": 0.0
        },
        "BlockL": {
@@ -3210,7 +3210,7 @@
         "stretchY": 0.60961443,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 8.965336,
         "offsetZ": 0.0
        }
       }
@@ -3274,7 +3274,7 @@
         "stretchY": 1.308196,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -1.4135313,
+        "offsetY": -3.2982397,
         "offsetZ": 0.0
        },
        "BlockL4": {
@@ -3282,7 +3282,7 @@
         "stretchY": 0.72549844,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 5.297079,
         "offsetZ": 0.0
        },
        "RClew1": {
@@ -3312,7 +3312,7 @@
         "stretchY": 1.6059867,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -2.263979,
+        "offsetY": -5.2826176,
         "offsetZ": 0.0
        },
        "BlockL2": {
@@ -3320,7 +3320,7 @@
         "stretchY": 0.6544049,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 7.3934836,
         "offsetZ": 0.0
        },
        "ClewRopeR1": {
@@ -3350,7 +3350,7 @@
         "stretchY": 2.668124,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -3.7512288,
+        "offsetY": -8.752867,
         "offsetZ": 0.0
        },
        "BlockL": {
@@ -3358,7 +3358,7 @@
         "stretchY": 0.6055672,
         "stretchZ": 1.0,
         "offsetX": 0.0,
-        "offsetY": -0.0,
+        "offsetY": 9.11882,
         "offsetZ": 0.0
        }
       }

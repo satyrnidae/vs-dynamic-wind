@@ -440,10 +440,13 @@ bakeAngles = bakeAngles.Distinct().OrderByDescending(a => a).ToList();
 var positiveAngles = bakeAngles.Where(a => a > 0f).OrderBy(a => a).ToList();
 var negativeAngles = bakeAngles.Where(a => a < 0f).OrderByDescending(a => a).ToList();
 
-// How far (pixel units, matching From/RotationOrigin) the pulley blocks lift up their own rope toward the
-// root at maximum rope compression, to clear the deck post. Tuned in-game; the user's own estimate was a
-// magnitude of 4-8, starting at the midpoint.
-const float MaxPulleyLift = 6f;
+// How far (pixel units, matching From/RotationOrigin) the pulley blocks slide along their own rope per
+// unit of scale deviation from 1 - toward the root (up the chain) as the rope compresses, to clear the
+// deck post; AWAY from the root (down the chain) as the rope extends, to clear a DIFFERENT post further
+// toward the fore of the ship the pulley would otherwise clip through when stretched. Tuned in-game; 6
+// (the compression side's own original estimate) and 10 both still clipped the top half of the pulley
+// block on full extension, raised to 14.
+const float PulleyLiftPerScaleUnit = 14f;
 
 var sb = new StringBuilder();
 sb.Append("{\n");
@@ -564,7 +567,7 @@ for (int bi = 0; bi < branches.Length; bi++)
                 // path is a plain, unkeyframed [0,16,0] step, so it just inherits root's cumulative scale)
                 // down to the leaf, and compare that leaf's true position against the anchor target.
                 float pulleyScale = Math.Abs(r.scale) > 1e-6f ? 1f / r.scale : 1f;
-                float pulleyLift = -MaxPulleyLift * Math.Clamp(1f - r.scale, 0f, 1f);
+                float pulleyLift = PulleyLiftPerScaleUnit * (r.scale - 1f);
 
                 List<ShapeElement> segs = WalkToTrueLeaf(sheet.RootElem, sheet.PulleyElem);
                 ShapeElement leaf = segs[^1];
@@ -620,13 +623,15 @@ for (int bi = 0; bi < branches.Length; bi++)
         // (plain [0,16,0] bones have no scale of their own to absorb it), so the pulley block would
         // stretch right along with the rope unless given 1/scale of its own to cancel that back out.
         //
-        // Pulley OffsetY: a fixed [0,16,0] step down the chain has no way to absorb the rope shortening
-        // beyond its own stretch - as the rope compresses (scale < 1) the pulley's fixed chain position
-        // rides increasingly close to the deck knot/post. Ramp a negative OffsetY (up the chain, toward
-        // the root - see CLAUDE.md's Clew ropes section for the +Y-down-the-rope convention) in
-        // proportion to how compressed the rope is at this frame, so the pulley lifts clear instead of
-        // visually clipping through the post near the point where the rope is shortest. MaxPulleyLift is
-        // a tuned constant, not a closed-form geometric solve like the rest of this rig.
+        // Pulley OffsetY: a fixed [0,16,0] step down the chain has no way to absorb the rope's length
+        // change beyond its own reciprocal stretch - as the rope compresses (scale < 1) the pulley's fixed
+        // chain position rides increasingly close to the deck knot/post; as it EXTENDS (scale > 1) the
+        // pulley's fixed position instead clips through a DIFFERENT post further toward the fore of the
+        // ship. Both are the same problem in opposite directions, so both get one symmetric, unclamped
+        // ramp: OffsetY proportional to (scale - 1) - negative (up the chain, toward the root - see
+        // CLAUDE.md's Clew ropes section for the +Y-down-the-rope convention) when compressed, positive
+        // (down the chain, away from the root) when extended. PulleyLiftPerScaleUnit is a tuned constant,
+        // not a closed-form geometric solve like the rest of this rig.
         //
         // offsetX/offsetZ must be emitted explicitly (as 0) alongside offsetY: AnimationKeyFrameElement's
         // PositionSet is true if ANY offset axis is present, but lerpKeyFrameElement then unconditionally
@@ -634,8 +639,8 @@ for (int bi = 0; bi < branches.Length; bi++)
         // frame this element is keyframed, not just a cosmetic default-to-zero.
         float stbdPulleyScale = Math.Abs(rStbd.scale) > 1e-6f ? 1f / rStbd.scale : 1f;
         float portPulleyScale = Math.Abs(rPort.scale) > 1e-6f ? 1f / rPort.scale : 1f;
-        float stbdLift = -MaxPulleyLift * Math.Clamp(1f - rStbd.scale, 0f, 1f);
-        float portLift = -MaxPulleyLift * Math.Clamp(1f - rPort.scale, 0f, 1f);
+        float stbdLift = PulleyLiftPerScaleUnit * (rStbd.scale - 1f);
+        float portLift = PulleyLiftPerScaleUnit * (rPort.scale - 1f);
 
         var lines = new List<string>
         {
