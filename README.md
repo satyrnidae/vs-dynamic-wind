@@ -10,7 +10,8 @@ Built for Vintage Story **1.22.3**.
 ## AI Usage Disclosures
 - **This mod was developed with the use of an LLM.**
   - Alternatives are available, including [Wind Vanes & Randomized Winds](https://mods.vintagestory.at/windvanes) and [Pelagus Winds](https://mods.vintagestory.at/pelaguswinds) ([or its fork for 1.22.3](https://mods.vintagestory.at/show/mod/52907))
-- **NO VISUAL ASSETS** (map icons, models) were created using artificial intelligence
+- **Visual Assets** (map icons, models, animations) were not created using artificial intelligence
+  - Clew line stretch animation is dynamically generated using code written with the use of an LLM
 - Mod is CC0/Public Domain as a result of AI involvement
 
 ## What it does
